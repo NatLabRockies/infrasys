@@ -1,13 +1,14 @@
 """Manages supplemental"""
 
 import sqlite3
+from contextlib import contextmanager
 from typing import Any, Callable, Generator, Iterable, Optional, Type, TypeVar, cast
 from uuid import UUID
 
 from loguru import logger
 
 from infrasys.component import Component
-from infrasys.exceptions import ISAlreadyAttached, ISNotStored
+from infrasys.exceptions import ISAlreadyAttached, ISNotStored, ISOperationNotAllowed
 from infrasys.supplemental_attribute import SupplementalAttribute
 from infrasys.supplemental_attribute_associations import (
     SupplementalAttributeAssociationsStore,
@@ -20,15 +21,17 @@ class SupplementalAttributeManager:
     """Manages supplemental attributes"""
 
     def __init__(self, con: sqlite3.Connection, initialize: bool = True, **kwargs) -> None:
+        self._con = con
         self._attributes: dict[Type, dict[UUID, SupplementalAttribute]] = {}
         self._associations = SupplementalAttributeAssociationsStore(con, initialize=initialize)
+        self._context: sqlite3.Connection | None = None
+        self._context_new_attributes: list[SupplementalAttribute] = []
 
     def add(
         self,
         component: Optional[Component],
         attribute: SupplementalAttribute,
         deserialization_in_progress=False,
-        connection: sqlite3.Connection | None = None,
     ) -> None:
         """Add one or more supplemental attributes to the system.
 
@@ -52,8 +55,40 @@ class SupplementalAttributeManager:
 
             self._attributes[attr_type][attribute.uuid] = attribute
 
-        if component is not None:
-            self._associations.add(component, attribute, connection=connection)
+        try:
+            if component is not None:
+                self._associations.add(component, attribute, connection=self._context)
+        except Exception:
+            if not already_attached:
+                self.rollback_attribute_addition(attribute)
+            raise
+
+        if self._context is not None and not already_attached:
+            self._context_new_attributes.append(attribute)
+
+    @contextmanager
+    def open_metadata_store(self) -> Generator[sqlite3.Connection, None, None]:
+        if self._context is not None:
+            msg = "Cannot nest open_metadata_store contexts."
+            raise ISOperationNotAllowed(msg)
+
+        self._context = self._con
+        self._context_new_attributes = []
+        try:
+            yield self._con
+        except Exception:
+            self._con.rollback()
+            self._rollback_new_attributes()
+            raise
+        else:
+            self._con.commit()
+        finally:
+            self._context = None
+            self._context_new_attributes = []
+
+    def _rollback_new_attributes(self) -> None:
+        for attribute in self._context_new_attributes:
+            self.rollback_attribute_addition(attribute)
 
     def rollback_attribute_addition(self, attribute: SupplementalAttribute) -> None:
         """Remove an attribute from in-memory cache without modifying DB associations."""

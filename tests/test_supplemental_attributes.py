@@ -167,7 +167,7 @@ def test_supplemental_attributes_with_time_series():
     system.info()
 
 
-def test_add_supplemental_attribute_with_connection_context():
+def test_add_supplemental_attribute_with_metadata_context():
     bus = SimpleBus(name="test-bus", voltage=1.1)
     gen = SimpleGenerator(name="gen1", active_power=1.0, rating=1.0, bus=bus, available=True)
     attr1 = GeographicInfo.example()
@@ -176,9 +176,9 @@ def test_add_supplemental_attribute_with_connection_context():
     system = SimpleSystem(auto_add_composed_components=True)
     system.add_component(gen)
 
-    with system.open_supplemental_attribute_store() as conn:
-        system.add_supplemental_attribute(bus, attr1, connection=conn)
-        system.add_supplemental_attribute(bus, attr2, connection=conn)
+    with system.open_metadata_store():
+        system.add_supplemental_attribute(bus, attr1)
+        system.add_supplemental_attribute(bus, attr2)
 
     attrs = system.get_supplemental_attributes_with_component(bus)
     assert len(attrs) == 2
@@ -186,7 +186,7 @@ def test_add_supplemental_attribute_with_connection_context():
     assert system.get_num_components_with_supplemental_attributes() == 1
 
 
-def test_add_supplemental_attribute_with_connection_context_rolls_back_on_error():
+def test_add_supplemental_attribute_with_metadata_context_rolls_back_on_error():
     bus = SimpleBus(name="test-bus", voltage=1.1)
     gen = SimpleGenerator(name="gen1", active_power=1.0, rating=1.0, bus=bus, available=True)
     attr1 = GeographicInfo.example()
@@ -194,12 +194,40 @@ def test_add_supplemental_attribute_with_connection_context_rolls_back_on_error(
     system.add_component(gen)
 
     with pytest.raises(ISAlreadyAttached):
-        with system.open_supplemental_attribute_store() as conn:
-            system.add_supplemental_attribute(bus, attr1, connection=conn)
-            system.add_supplemental_attribute(bus, attr1, connection=conn)
+        with system.open_metadata_store():
+            system.add_supplemental_attribute(bus, attr1)
+            system.add_supplemental_attribute(bus, attr1)
+
+
+def test_add_supplemental_attribute_rejects_connection_kwarg():
+    bus = SimpleBus(name="test-bus", voltage=1.1)
+    gen = SimpleGenerator(name="gen1", active_power=1.0, rating=1.0, bus=bus, available=True)
+    attr1 = GeographicInfo.example()
+    system = SimpleSystem(auto_add_composed_components=True)
+    system.add_component(gen)
+
+    with pytest.raises(TypeError):
+        getattr(system, "add_supplemental_attribute")(bus, attr1, connection=system._con)
 
     assert not system.get_supplemental_attributes_with_component(bus)
     assert system.get_num_supplemental_attributes() == 0
     assert system.get_num_components_with_supplemental_attributes() == 0
     with pytest.raises(ISNotStored):
         system.get_supplemental_attribute_by_uuid(attr1.uuid)
+
+
+def test_supplemental_attribute_manager_metadata_context_rolls_back_on_error():
+    bus = SimpleBus(name="test-bus", voltage=1.1)
+    gen = SimpleGenerator(name="gen1", active_power=1.0, rating=1.0, bus=bus, available=True)
+    attr1 = GeographicInfo.example()
+    system = SimpleSystem(auto_add_composed_components=True)
+    system.add_component(gen)
+
+    with pytest.raises(RuntimeError):
+        with system._supplemental_attr_mgr.open_metadata_store():
+            system.add_supplemental_attribute(bus, attr1)
+            msg = "boom"
+            raise RuntimeError(msg)
+
+    assert not system.get_supplemental_attributes_with_component(bus)
+    assert system.get_num_supplemental_attributes() == 0

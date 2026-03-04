@@ -123,8 +123,6 @@ class System:
         self._supplemental_attr_mgr = (
             supplemental_attribute_manager or SupplementalAttributeManager(self._con)
         )
-        self._supplemental_attr_context: sqlite3.Connection | None = None
-        self._supplemental_attr_context_new_attributes: list[SupplementalAttribute] = []
         self._closed = False
 
         self._data_format_version: Optional[str] = None
@@ -615,7 +613,6 @@ class System:
         self,
         component: Component,
         attribute: SupplementalAttribute,
-        connection: sqlite3.Connection | None = None,
     ) -> None:
         """Attach a supplemental attribute to a component. The attribute will get added to the
         system if it is not already stored.
@@ -626,8 +623,6 @@ class System:
             Existing component
         attribute
             Supplemental attribute to attach to the component
-        connection
-            Optional connection returned by :meth:`open_supplemental_attribute_store`.
 
         Raises
         ------
@@ -641,16 +636,7 @@ class System:
         >>> geo_json = GeographicInfo.example()
         >>> system.add_supplemental_attribute(bus, geo_json)
         """
-        active_connection = connection or self._supplemental_attr_context
-        is_new_attribute = not self._supplemental_attr_mgr.has_attribute(attribute)
-        try:
-            self._supplemental_attr_mgr.add(component, attribute, connection=active_connection)
-        except Exception:
-            if is_new_attribute:
-                self._supplemental_attr_mgr.rollback_attribute_addition(attribute)
-            raise
-        if active_connection is not None and is_new_attribute:
-            self._supplemental_attr_context_new_attributes.append(attribute)
+        self._supplemental_attr_mgr.add(component, attribute)
 
     def change_component_uuid(self, component: Component) -> None:
         """Change the component UUID.
@@ -1485,44 +1471,26 @@ class System:
             yield conn
 
     @contextmanager
-    def open_supplemental_attribute_store(self) -> Generator[sqlite3.Connection, None, None]:
-        """Open a connection to the supplemental attribute store.
+    def open_metadata_store(self) -> Generator[sqlite3.Connection, None, None]:
+        """Open a connection to the metadata store.
 
-        This can improve performance when adding many supplemental attributes by committing once.
-        Any failure rolls back the SQLite transaction and in-memory supplemental attribute cache.
+        This transaction applies to metadata stored in SQLite, including supplemental
+        attribute associations and time series metadata rows. Any failure rolls back
+        the SQLite transaction and in-memory supplemental attribute cache updates.
 
         Returns
         -------
         sqlite3.Connection
-            SQLite connection for use with :meth:`add_supplemental_attribute`.
+            SQLite connection for metadata operations.
 
         Examples
         --------
-        >>> with system.open_supplemental_attribute_store() as conn:
-        ...     system.add_supplemental_attribute(bus, geo1, connection=conn)
-        ...     system.add_supplemental_attribute(bus, geo2, connection=conn)
+        >>> with system.open_metadata_store():
+        ...     system.add_supplemental_attribute(bus, geo1)
+        ...     system.add_supplemental_attribute(bus, geo2)
         """
-        if self._supplemental_attr_context is not None:
-            msg = "Cannot nest open_supplemental_attribute_store contexts."
-            raise ISOperationNotAllowed(msg)
-
-        self._supplemental_attr_context = self._con
-        self._supplemental_attr_context_new_attributes = []
-        try:
-            yield self._con
-        except Exception:
-            self._con.rollback()
-            self._rollback_new_supplemental_attributes()
-            raise
-        else:
-            self._con.commit()
-        finally:
-            self._supplemental_attr_context = None
-            self._supplemental_attr_context_new_attributes = []
-
-    def _rollback_new_supplemental_attributes(self) -> None:
-        for attribute in self._supplemental_attr_context_new_attributes:
-            self._supplemental_attr_mgr.rollback_attribute_addition(attribute)
+        with self._supplemental_attr_mgr.open_metadata_store() as connection:
+            yield connection
 
     def serialize_system_attributes(self) -> dict[str, Any]:
         """Allows subclasses to serialize attributes at the root level."""
