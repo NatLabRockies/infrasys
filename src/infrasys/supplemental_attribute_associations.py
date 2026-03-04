@@ -1,6 +1,5 @@
 """Stores supplemental attribute associations in SQLite database"""
 
-import itertools
 import sqlite3
 from typing import Any, Optional, Sequence
 from uuid import UUID
@@ -31,8 +30,22 @@ class SupplementalAttributeAssociationsStore:
         WHERE attribute_uuid = ? AND component_uuid = ?
         LIMIT 1
     """
+    _INSERT_ASSOCIATION_QUERY = f"""
+        INSERT INTO {TABLE_NAME} (
+            id,
+            attribute_uuid,
+            attribute_type,
+            component_uuid,
+            component_type
+        ) VALUES (?, ?, ?, ?, ?)
+    """
 
-    def add(self, component: Component, attribute: SupplementalAttribute) -> None:
+    def add(
+        self,
+        component: Component,
+        attribute: SupplementalAttribute,
+        connection: sqlite3.Connection | None = None,
+    ) -> None:
         """Add association to the database.
 
         Raises
@@ -40,8 +53,9 @@ class SupplementalAttributeAssociationsStore:
         ISAlreadyAttached
             Raised if the time series metadata already stored.
         """
+        con = connection or self._con
         params = (str(attribute.uuid), str(component.uuid))
-        cur = self._con.cursor()
+        cur = con.cursor()
         res = execute(cur, self._ADD_ASSOCIATION_QUERY, params=params).fetchone()
         if res:
             msg = f"An association with {component=} {attribute=} is already stored."
@@ -54,11 +68,9 @@ class SupplementalAttributeAssociationsStore:
             str(component.uuid),
             type(component).__name__,
         )
-
-        placeholder = ",".join(itertools.repeat("?", len(row)))
-        query = f"INSERT INTO {TABLE_NAME} VALUES ({placeholder})"
-        execute(cur, query, params=row)
-        self._con.commit()
+        execute(cur, self._INSERT_ASSOCIATION_QUERY, params=row)
+        if connection is None:
+            self._con.commit()
 
     _HAS_ASSOCIATION_BY_COMPONENT_AND_ATTRIBUTE_QUERY = f"""
         SELECT id FROM {TABLE_NAME}
@@ -148,7 +160,7 @@ class SupplementalAttributeAssociationsStore:
             params = (str(component.uuid),)
         else:
             query = self._LIST_ASSOCIATED_SUPPLEMENTAL_ATTRIBUTE_UUIDS_QUERY2
-            params = (attribute_type, str(component.uuid))  # type: ignore
+            params = (attribute_type, str(component.uuid))
         cur = self._con.cursor()
         rows = execute(cur, query, params=params)
         return [UUID(x[0]) for x in rows]
@@ -156,7 +168,7 @@ class SupplementalAttributeAssociationsStore:
     def remove_association_by_attribute(
         self,
         attribute: SupplementalAttribute,
-        must_exist=True,
+        must_exist: bool = True,
     ) -> None:
         """Remove all associations with the given attribute."""
         where_clause = "WHERE attribute_uuid = ?"
@@ -194,7 +206,7 @@ class SupplementalAttributeAssociationsStore:
         rows = execute(cur, "SELECT CHANGES() AS changes").fetchall()
         assert len(rows) == 1, rows
         row = rows[0]
-        logger.debug("Deleted {} rows from the time series metadata table", row[0])
+        logger.debug("Deleted {} rows from the supplemental attribute associations table", row[0])
         self._con.commit()
         return row[0]
 

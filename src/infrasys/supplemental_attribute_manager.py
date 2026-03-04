@@ -1,7 +1,7 @@
 """Manages supplemental"""
 
 import sqlite3
-from typing import Any, Callable, Generator, Iterable, Optional, Type, TypeVar
+from typing import Any, Callable, Generator, Iterable, Optional, Type, TypeVar, cast
 from uuid import UUID
 
 from loguru import logger
@@ -28,6 +28,7 @@ class SupplementalAttributeManager:
         component: Optional[Component],
         attribute: SupplementalAttribute,
         deserialization_in_progress=False,
+        connection: sqlite3.Connection | None = None,
     ) -> None:
         """Add one or more supplemental attributes to the system.
 
@@ -52,7 +53,17 @@ class SupplementalAttributeManager:
             self._attributes[attr_type][attribute.uuid] = attribute
 
         if component is not None:
-            self._associations.add(component, attribute)
+            self._associations.add(component, attribute, connection=connection)
+
+    def rollback_attribute_addition(self, attribute: SupplementalAttribute) -> None:
+        """Remove an attribute from in-memory cache without modifying DB associations."""
+        attr_type = type(attribute)
+        attrs = self._attributes.get(attr_type)
+        if attrs is None:
+            return
+        attrs.pop(attribute.uuid, None)
+        if not attrs:
+            self._attributes.pop(attr_type, None)
 
     def get_attribute_counts_by_type(self) -> list[dict[str, Any]]:
         """Return a list of dicts of stored attribute counts by type."""
@@ -85,21 +96,20 @@ class SupplementalAttributeManager:
         attribute_type: Optional[Type[T]] = None,
         filter_func: Optional[Callable[[T], bool]] = None,
     ) -> list[T]:
-        type_as_str = None if attribute_type is None else attribute_type.__name__
-        uuids = self._associations.list_associated_supplemental_attribute_uuids(
-            component, attribute_type=type_as_str
+        attribute_type_name = None if attribute_type is None else attribute_type.__name__
+        attribute_uuids = self._associations.list_associated_supplemental_attribute_uuids(
+            component, attribute_type=attribute_type_name
         )
-        attrs = []
-        for uuid in uuids:
-            attr = self.get_by_uuid(uuid)
-            if filter_func is None or filter_func(attr):  # type: ignore
-                attrs.append(attr)
-        return attrs  # type: ignore
+        attributes: list[T] = []
+        for uuid in attribute_uuids:
+            attribute = cast(T, self.get_by_uuid(uuid))
+            if filter_func is None or filter_func(attribute):
+                attributes.append(attribute)
+        return attributes
 
     def has_attribute(self, attribute: SupplementalAttribute) -> bool:
-        if type(attribute) not in self._attributes:
-            return False
-        return attribute.uuid in self._attributes[type(attribute)]
+        attributes = self._attributes.get(type(attribute))
+        return attributes is not None and attribute.uuid in attributes
 
     def has_association(self, component: Component, attribute: SupplementalAttribute) -> bool:
         """Return True if the component and supplemental attribute have an association."""
@@ -137,7 +147,7 @@ class SupplementalAttributeManager:
         self._attributes[attr_type].pop(attribute.uuid)
         if not self._attributes[attr_type]:
             self._attributes.pop(attr_type)
-        logger.debug("Removed supplemental attribute {attribute.label}")
+        logger.debug("Removed supplemental attribute {}", attribute.label)
 
     def remove_attribute_from_component(
         self, component: Component, attribute: SupplementalAttribute
@@ -186,21 +196,12 @@ class SupplementalAttributeManager:
 
     def raise_if_attached(self, attribute: SupplementalAttribute):
         """Raise an exception if this attribute is attached to a system."""
-        attr_type = type(attribute)
-        if attr_type not in self._attributes:
-            return
-
-        if attribute.uuid in self._attributes[attr_type]:
+        if self.has_attribute(attribute):
             msg = f"{attribute.label} is already attached to the system"
             raise ISAlreadyAttached(msg)
 
     def raise_if_not_attached(self, attribute: SupplementalAttribute):
         """Raise an exception if this attribute is not attached to a system."""
-        attr_type = type(attribute)
-        if attr_type not in self._attributes:
-            msg = f"{attribute.label} is not attached to the system"
-            raise ISNotStored(msg)
-
-        if attribute.uuid not in self._attributes[attr_type]:
+        if not self.has_attribute(attribute):
             msg = f"{attribute.label} is not attached to the system"
             raise ISNotStored(msg)
