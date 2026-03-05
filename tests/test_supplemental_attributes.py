@@ -198,6 +198,12 @@ def test_add_supplemental_attribute_with_metadata_context_rolls_back_on_error():
             system.add_supplemental_attribute(bus, attr1)
             system.add_supplemental_attribute(bus, attr1)
 
+    assert not system.get_supplemental_attributes_with_component(bus)
+    assert system.get_num_supplemental_attributes() == 0
+    assert system.get_num_components_with_supplemental_attributes() == 0
+    with pytest.raises(ISNotStored):
+        system.get_supplemental_attribute_by_uuid(attr1.uuid)
+
 
 def test_add_supplemental_attribute_rejects_connection_kwarg():
     bus = SimpleBus(name="test-bus", voltage=1.1)
@@ -231,3 +237,20 @@ def test_supplemental_attribute_manager_metadata_context_rolls_back_on_error():
 
     assert not system.get_supplemental_attributes_with_component(bus)
     assert system.get_num_supplemental_attributes() == 0
+
+
+def test_supplemental_attribute_manager_metadata_context_cannot_nest():
+    system = SimpleSystem(auto_add_composed_components=True)
+
+    with system._supplemental_attr_mgr.open_metadata_store():
+        with pytest.raises(ISOperationNotAllowed):
+            with system._supplemental_attr_mgr.open_metadata_store():
+                pass
+
+
+def test_supplemental_attribute_manager_rejects_none_component_without_deserialization():
+    system = SimpleSystem(auto_add_composed_components=True)
+    attr1 = GeographicInfo.example()
+
+    with pytest.raises(Exception, match="component can only be None"):
+        system._supplemental_attr_mgr.add(None, attr1)

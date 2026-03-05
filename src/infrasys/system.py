@@ -1474,9 +1474,9 @@ class System:
     def open_metadata_store(self) -> Generator[sqlite3.Connection, None, None]:
         """Open a connection to the metadata store.
 
-        This transaction applies to metadata stored in SQLite, including supplemental
-        attribute associations and time series metadata rows. Any failure rolls back
-        the SQLite transaction and in-memory supplemental attribute cache updates.
+        This transaction applies to supplemental attribute metadata stored in SQLite.
+        Any failure rolls back the SQLite transaction and in-memory supplemental
+        attribute cache updates.
 
         Returns
         -------

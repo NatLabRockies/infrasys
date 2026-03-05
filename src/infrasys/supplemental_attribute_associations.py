@@ -51,7 +51,7 @@ class SupplementalAttributeAssociationsStore:
         Raises
         ------
         ISAlreadyAttached
-            Raised if the time series metadata already stored.
+            Raised if the supplemental attribute association is already stored.
         """
         con = connection or self._con
         params = (str(attribute.uuid), str(component.uuid))
