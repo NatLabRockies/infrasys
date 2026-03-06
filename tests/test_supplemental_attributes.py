@@ -254,3 +254,23 @@ def test_supplemental_attribute_manager_rejects_none_component_without_deseriali
 
     with pytest.raises(Exception, match="component can only be None"):
         system._supplemental_attr_mgr.add(None, attr1)
+
+
+def test_remove_supplemental_attribute_in_metadata_context_rolls_back():
+    bus = SimpleBus(name="test-bus", voltage=1.1)
+    gen = SimpleGenerator(name="gen1", active_power=1.0, rating=1.0, bus=bus, available=True)
+    attr1 = GeographicInfo.example()
+    system = SimpleSystem(auto_add_composed_components=True)
+    system.add_component(gen)
+    system.add_supplemental_attribute(bus, attr1)
+
+    with pytest.raises(RuntimeError):
+        with system.open_metadata_store():
+            system.remove_supplemental_attribute(attr1)
+            msg = "boom"
+            raise RuntimeError(msg)
+
+    assert system.get_supplemental_attribute_by_uuid(attr1.uuid) is attr1
+    attrs = system.get_supplemental_attributes_with_component(bus)
+    assert len(attrs) == 1
+    assert attrs[0] is attr1

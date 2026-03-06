@@ -169,11 +169,12 @@ class SupplementalAttributeAssociationsStore:
         self,
         attribute: SupplementalAttribute,
         must_exist: bool = True,
+        connection: sqlite3.Connection | None = None,
     ) -> None:
         """Remove all associations with the given attribute."""
         where_clause = "WHERE attribute_uuid = ?"
         params = (str(attribute.uuid),)
-        num_deleted = self._remove_associations(where_clause, params)
+        num_deleted = self._remove_associations(where_clause, params, connection=connection)
         if must_exist and num_deleted < 1:
             msg = f"Bug: unexpected number of deletions: {num_deleted}. Should have been >= 1."
             raise Exception(msg)
@@ -182,11 +183,12 @@ class SupplementalAttributeAssociationsStore:
         self,
         component: Component,
         attribute: SupplementalAttribute,
+        connection: sqlite3.Connection | None = None,
     ) -> None:
         """Remove the association between the attribute and component."""
         where_clause = "WHERE attribute_uuid = ? AND component_uuid = ?"
         params = (str(attribute.uuid), str(component.uuid))
-        num_deleted = self._remove_associations(where_clause, params)
+        num_deleted = self._remove_associations(where_clause, params, connection=connection)
         if num_deleted != 1:
             msg = f"Bug: unexpected number of deletions: {num_deleted}. Should have been 1."
             raise Exception(msg)
@@ -199,15 +201,22 @@ class SupplementalAttributeAssociationsStore:
     #    num_deleted = self._remove_associations(where_clause, params)
     #    logger.debug("Deleted %s supplemental attribute associations", num_deleted)
 
-    def _remove_associations(self, where_clause: str, params: Sequence[Any]) -> int:
+    def _remove_associations(
+        self,
+        where_clause: str,
+        params: Sequence[Any],
+        connection: sqlite3.Connection | None = None,
+    ) -> int:
         query = f"DELETE FROM {TABLE_NAME} {where_clause}"
-        cur = self._con.cursor()
+        con = connection or self._con
+        cur = con.cursor()
         execute(cur, query, params)
         rows = execute(cur, "SELECT CHANGES() AS changes").fetchall()
         assert len(rows) == 1, rows
         row = rows[0]
         logger.debug("Deleted {} rows from the supplemental attribute associations table", row[0])
-        self._con.commit()
+        if connection is None:
+            self._con.commit()
         return row[0]
 
     _GET_ATTRIBUTE_COUNTS_BY_TYPE_QUERY = f"""

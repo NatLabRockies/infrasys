@@ -26,6 +26,7 @@ class SupplementalAttributeManager:
         self._associations = SupplementalAttributeAssociationsStore(con, initialize=initialize)
         self._context: sqlite3.Connection | None = None
         self._context_new_attributes: list[SupplementalAttribute] = []
+        self._context_removed_attributes: list[SupplementalAttribute] = []
 
     def add(
         self,
@@ -74,21 +75,31 @@ class SupplementalAttributeManager:
 
         self._context = self._con
         self._context_new_attributes = []
+        self._context_removed_attributes = []
         try:
             yield self._con
         except Exception:
             self._con.rollback()
             self._rollback_new_attributes()
+            self._rollback_removed_attributes()
             raise
         else:
             self._con.commit()
         finally:
             self._context = None
             self._context_new_attributes = []
+            self._context_removed_attributes = []
 
     def _rollback_new_attributes(self) -> None:
         for attribute in self._context_new_attributes:
             self.rollback_attribute_addition(attribute)
+
+    def _rollback_removed_attributes(self) -> None:
+        for attribute in self._context_removed_attributes:
+            attr_type = type(attribute)
+            if attr_type not in self._attributes:
+                self._attributes[attr_type] = {}
+            self._attributes[attr_type][attribute.uuid] = attribute
 
     def rollback_attribute_addition(self, attribute: SupplementalAttribute) -> None:
         """Remove an attribute from in-memory cache without modifying DB associations."""
@@ -176,9 +187,13 @@ class SupplementalAttributeManager:
         """
         self.raise_if_not_attached(attribute)
         self._associations.remove_association_by_attribute(
-            attribute, must_exist=association_must_exist
+            attribute,
+            must_exist=association_must_exist,
+            connection=self._context,
         )
         attr_type = type(attribute)
+        if self._context is not None:
+            self._context_removed_attributes.append(attribute)
         self._attributes[attr_type].pop(attribute.uuid)
         if not self._attributes[attr_type]:
             self._attributes.pop(attr_type)
@@ -196,7 +211,7 @@ class SupplementalAttributeManager:
         so that time series is handled.
         """
         self.raise_if_not_attached(attribute)
-        self._associations.remove_association(component, attribute)
+        self._associations.remove_association(component, attribute, connection=self._context)
         if not self._associations.has_association_by_attribute(attribute):
             self.remove(attribute, association_must_exist=False)
 
