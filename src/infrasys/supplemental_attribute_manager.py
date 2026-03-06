@@ -69,6 +69,14 @@ class SupplementalAttributeManager:
 
     @contextmanager
     def open_metadata_store(self) -> Generator[sqlite3.Connection, None, None]:
+        """Open a transactional metadata context for supplemental attributes.
+
+        Notes
+        -----
+        Nested metadata contexts are disallowed. If a nested context attempt raises
+        and the exception escapes this context manager, all metadata updates already
+        performed in this context are rolled back.
+        """
         if self._context is not None:
             msg = "Cannot nest open_metadata_store contexts."
             raise ISOperationNotAllowed(msg)
@@ -95,6 +103,8 @@ class SupplementalAttributeManager:
             self.rollback_attribute_addition(attribute)
 
     def _rollback_removed_attributes(self) -> None:
+        # Database association rows are restored by self._con.rollback() before this
+        # method runs. This only repairs in-memory attribute bookkeeping.
         for attribute in self._context_removed_attributes:
             attr_type = type(attribute)
             if attr_type not in self._attributes:
@@ -159,7 +169,11 @@ class SupplementalAttributeManager:
 
     def has_association(self, component: Component, attribute: SupplementalAttribute) -> bool:
         """Return True if the component and supplemental attribute have an association."""
-        return self._associations.has_association_by_component_and_attribute(component, attribute)
+        return self._associations.has_association_by_component_and_attribute(
+            component,
+            attribute,
+            connection=self._context,
+        )
 
     def has_association_by_type(
         self,
@@ -170,9 +184,14 @@ class SupplementalAttributeManager:
         optionally with the given type.
         """
         if attribute_type is None:
-            return self._associations.has_association_by_component(component)
+            return self._associations.has_association_by_component(
+                component,
+                connection=self._context,
+            )
         return self._associations.has_association_by_component_and_attribute_type(
-            component, attribute_type.__name__
+            component,
+            attribute_type.__name__,
+            connection=self._context,
         )
 
     def remove(
@@ -212,7 +231,10 @@ class SupplementalAttributeManager:
         """
         self.raise_if_not_attached(attribute)
         self._associations.remove_association(component, attribute, connection=self._context)
-        if not self._associations.has_association_by_attribute(attribute):
+        if not self._associations.has_association_by_attribute(
+            attribute,
+            connection=self._context,
+        ):
             self.remove(attribute, association_must_exist=False)
 
     def iter(
