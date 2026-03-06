@@ -25,7 +25,7 @@ class SupplementalAttributeAssociationsStore:
         if initialize:
             create_supplemental_attribute_associations_table(self._con, table_name=TABLE_NAME)
 
-    _ADD_ASSOCIATION_QUERY = f"""
+    _CHECK_EXISTING_ASSOCIATION_QUERY = f"""
         SELECT id FROM {TABLE_NAME}
         WHERE attribute_uuid = ? AND component_uuid = ?
         LIMIT 1
@@ -56,7 +56,7 @@ class SupplementalAttributeAssociationsStore:
         con = connection or self._con
         params = (str(attribute.uuid), str(component.uuid))
         cur = con.cursor()
-        res = execute(cur, self._ADD_ASSOCIATION_QUERY, params=params).fetchone()
+        res = execute(cur, self._CHECK_EXISTING_ASSOCIATION_QUERY, params=params).fetchone()
         if res:
             msg = f"An association with {component=} {attribute=} is already stored."
             raise ISAlreadyAttached(msg)
@@ -82,25 +82,46 @@ class SupplementalAttributeAssociationsStore:
         self,
         component: Component,
         attribute: SupplementalAttribute,
+        connection: sqlite3.Connection | None = None,
     ) -> bool:
         """Return True if the component and supplemental attribute have an association."""
         params = (str(attribute.uuid), str(component.uuid))
-        return self._has_rows(self._HAS_ASSOCIATION_BY_COMPONENT_AND_ATTRIBUTE_QUERY, params)
+        return self._has_rows(
+            self._HAS_ASSOCIATION_BY_COMPONENT_AND_ATTRIBUTE_QUERY,
+            params,
+            connection=connection,
+        )
 
     _HAS_ASSOCIATION_BY_ATTRIBUTE_QUERY = f"SELECT id FROM {TABLE_NAME} WHERE attribute_uuid = ?"
 
-    def has_association_by_attribute(self, attribute: SupplementalAttribute) -> bool:
+    def has_association_by_attribute(
+        self,
+        attribute: SupplementalAttribute,
+        connection: sqlite3.Connection | None = None,
+    ) -> bool:
         """Return true if there is at least one association matching the inputs."""
         # Note: Unlike the other has_association methods, this is not covered by an index.
         params = (str(attribute.uuid),)
-        return self._has_rows(self._HAS_ASSOCIATION_BY_ATTRIBUTE_QUERY, params)
+        return self._has_rows(
+            self._HAS_ASSOCIATION_BY_ATTRIBUTE_QUERY,
+            params,
+            connection=connection,
+        )
 
     _HAS_ASSOCIATION_BY_COMPONENT_QUERY = f"SELECT id FROM {TABLE_NAME} WHERE component_uuid = ?"
 
-    def has_association_by_component(self, component: Component) -> bool:
+    def has_association_by_component(
+        self,
+        component: Component,
+        connection: sqlite3.Connection | None = None,
+    ) -> bool:
         """Return True if there is at least one association with the component."""
         params = (str(component.uuid),)
-        return self._has_rows(self._HAS_ASSOCIATION_BY_COMPONENT_QUERY, params)
+        return self._has_rows(
+            self._HAS_ASSOCIATION_BY_COMPONENT_QUERY,
+            params,
+            connection=connection,
+        )
 
     _HAS_ASSOCIATION_BY_COMPONENT_AND_ATTRIBUTE_TYPE_QUERY = f"""
         SELECT attribute_uuid
@@ -110,16 +131,29 @@ class SupplementalAttributeAssociationsStore:
     """
 
     def has_association_by_component_and_attribute_type(
-        self, component: Component, attribute_type: str
+        self,
+        component: Component,
+        attribute_type: str,
+        connection: sqlite3.Connection | None = None,
     ) -> bool:
         """Return True if the component has an association with a supplemental attribute of the
         given type.
         """
         params = (str(component.uuid), attribute_type)
-        return self._has_rows(self._HAS_ASSOCIATION_BY_COMPONENT_AND_ATTRIBUTE_TYPE_QUERY, params)
+        return self._has_rows(
+            self._HAS_ASSOCIATION_BY_COMPONENT_AND_ATTRIBUTE_TYPE_QUERY,
+            params,
+            connection=connection,
+        )
 
-    def _has_rows(self, query: str, params: Sequence[Any]) -> bool:
-        cur = self._con.cursor()
+    def _has_rows(
+        self,
+        query: str,
+        params: Sequence[Any],
+        connection: sqlite3.Connection | None = None,
+    ) -> bool:
+        con = connection or self._con
+        cur = con.cursor()
         res = execute(cur, query, params=params).fetchone()
         return res is not None
 
