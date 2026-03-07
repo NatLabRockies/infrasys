@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/NatLabRockies/infrasys/compare/v1.0.1...v1.1.0) (2026-03-07)
+
+
+### Features
+
+* Adding connection for supplemental attributes ([#134](https://github.com/NatLabRockies/infrasys/issues/134)) ([d3f7408](https://github.com/NatLabRockies/infrasys/commit/d3f74089729ebd2e050ba9288acdec431c047f3e))
+
 ## [1.0.1](https://github.com/NREL/infrasys/compare/v1.0.0...v1.0.1) (2025-12-18)
 
 
