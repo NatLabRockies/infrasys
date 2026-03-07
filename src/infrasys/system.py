@@ -610,7 +610,9 @@ class System:
         return self._component_mgr.add(*components, **kwargs)
 
     def add_supplemental_attribute(
-        self, component: Component, attribute: SupplementalAttribute
+        self,
+        component: Component,
+        attribute: SupplementalAttribute,
     ) -> None:
         """Attach a supplemental attribute to a component. The attribute will get added to the
         system if it is not already stored.
@@ -634,7 +636,7 @@ class System:
         >>> geo_json = GeographicInfo.example()
         >>> system.add_supplemental_attribute(bus, geo_json)
         """
-        return self._supplemental_attr_mgr.add(component, attribute)
+        self._supplemental_attr_mgr.add(component, attribute)
 
     def change_component_uuid(self, component: Component) -> None:
         """Change the component UUID.
@@ -1467,6 +1469,28 @@ class System:
         """
         with self._time_series_mgr.open_time_series_store(mode=mode) as conn:
             yield conn
+
+    @contextmanager
+    def open_metadata_store(self) -> Generator[sqlite3.Connection, None, None]:
+        """Open a connection to the metadata store.
+
+        This transaction applies to supplemental attribute metadata stored in SQLite.
+        Any failure rolls back the SQLite transaction and in-memory supplemental
+        attribute cache updates.
+
+        Returns
+        -------
+        sqlite3.Connection
+            SQLite connection for metadata operations.
+
+        Examples
+        --------
+        >>> with system.open_metadata_store():
+        ...     system.add_supplemental_attribute(bus, geo1)
+        ...     system.add_supplemental_attribute(bus, geo2)
+        """
+        with self._supplemental_attr_mgr.open_metadata_store() as connection:
+            yield connection
 
     def serialize_system_attributes(self) -> dict[str, Any]:
         """Allows subclasses to serialize attributes at the root level."""
