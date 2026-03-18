@@ -786,6 +786,18 @@ def test_system_info_table_content_accuracy(
     assert "3" in output
 
 
+def test_system_info_with_nonsequential_time_series(
+    simple_system_with_nonsequential_time_series, capsys
+):
+    """Test that info() handles NonSequentialTimeSeries without crashing."""
+    simple_system_with_nonsequential_time_series.info()
+
+    output = capsys.readouterr().out
+    assert "Time Series Summary" in output
+    assert "NonSequen" in output
+    assert "N/A" in output
+
+
 def test_single_attribute_type(simple_system):
     """Test with only one attribute type."""
     from infrasys.location import GeographicInfo

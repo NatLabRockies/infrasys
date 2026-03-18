@@ -1910,8 +1910,10 @@ class SystemInfo:
             time_series_table.add_row(
                 f"{component_type}",
                 f"{time_series_type}",
-                f"{time_series_start_time}",
-                f"{from_iso_8601(time_series_resolution)}",
+                f"{time_series_start_time}" if time_series_start_time is not None else "N/A",
+                f"{from_iso_8601(time_series_resolution)}"
+                if time_series_resolution is not None
+                else "N/A",
                 f"{owner_count}",
                 f"{time_series_count}",
             )
