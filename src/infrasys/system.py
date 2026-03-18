@@ -7,7 +7,6 @@ import zipfile
 from collections import defaultdict
 from contextlib import contextmanager
 from datetime import datetime
-from operator import itemgetter
 from pathlib import Path
 from typing import Any, Callable, Generator, Iterable, Literal, Optional, Type, TypeAlias, TypeVar
 from uuid import UUID, uuid4
@@ -1905,7 +1904,10 @@ class SystemInfo:
             time_series_type,
             time_series_start_time,
             time_series_resolution,
-        ), time_series_count in sorted(time_series_type_count.items(), key=itemgetter(slice(4))):
+        ), time_series_count in sorted(
+            time_series_type_count.items(),
+            key=lambda item: tuple(v if v is not None else "" for v in item[0]),
+        ):
             owner_count = owner_type_count.get(component_type, 0)
             time_series_table.add_row(
                 f"{component_type}",

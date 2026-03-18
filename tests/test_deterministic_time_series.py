@@ -1,3 +1,4 @@
+import json
 import uuid
 from datetime import datetime, timedelta
 from typing import Any
@@ -240,3 +241,25 @@ def test_deterministic_single_time_series_backwards_compatibility(tmp_path: Any)
     assert loaded_metadata.interval == timedelta(hours=4)
     assert loaded_metadata.horizon == timedelta(hours=8)
     assert loaded_metadata.window_count == 5
+
+
+def test_deserialize_metadata_preserves_all_features() -> None:
+    """Test that deserialization preserves all feature key/value pairs."""
+    features = {"scenario": "high", "model_year": "2030", "weather_year": "2012"}
+    # Features are stored as a sorted list of single-key dicts in the DB
+    serialized_features = json.dumps([{k: v} for k, v in sorted(features.items())])
+
+    metadata_dict: dict[str, Any] = {
+        "metadata_uuid": str(uuid.uuid4()),
+        "time_series_uuid": str(uuid.uuid4()),
+        "time_series_type": "SingleTimeSeries",
+        "name": "active_power",
+        "initial_timestamp": datetime(2020, 1, 1),
+        "resolution": "PT1H",
+        "length": 100,
+        "features": serialized_features,
+        "scaling_factor_multiplier": None,
+        "units": None,
+    }
+    metadata = _deserialize_time_series_metadata(metadata_dict)
+    assert metadata.features == features
