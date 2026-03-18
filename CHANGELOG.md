@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.1.0](https://github.com/NatLabRockies/infrasys/compare/v1.0.1...v1.1.0) (2026-03-18)
+
+
+### Features
+
+* Adding connection for supplemental attributes ([#134](https://github.com/NatLabRockies/infrasys/issues/134)) ([d3f7408](https://github.com/NatLabRockies/infrasys/commit/d3f74089729ebd2e050ba9288acdec431c047f3e))
+
+
+### Bug Fixes
+
+* handle sorting crash with mixed time series ([82645e8](https://github.com/NatLabRockies/infrasys/commit/82645e83b7c641532ef39651c4bd97e2c20cdacb))
+* preserve all features in de-serialization ([5dc6da2](https://github.com/NatLabRockies/infrasys/commit/5dc6da2248b722e4abf2003c258a50aea5367b99))
+* rendering of NonSequentialTimeSeries ([17fd366](https://github.com/NatLabRockies/infrasys/commit/17fd366278beef4700fdd98122a1e760109f9904))
+* resolve time series serialization and rendering bugs ([8a190c5](https://github.com/NatLabRockies/infrasys/commit/8a190c5bc1eef3092175ed51f24731b83f6ce357))
+
 ## [1.0.1](https://github.com/NREL/infrasys/compare/v1.0.0...v1.0.1) (2025-12-18)
 
 
