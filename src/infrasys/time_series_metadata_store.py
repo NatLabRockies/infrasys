@@ -526,7 +526,7 @@ def _deserialize_time_series_metadata(data: dict) -> TimeSeriesMetadata:
 
     # Features requires special handling since it is a sorted array with key value pairs.
     if data.get("features"):
-        data["features"] = data["features"][0]
+        data["features"] = {k: v for d in data["features"] for k, v in d.items()}
     else:
         data["features"] = {}
 
