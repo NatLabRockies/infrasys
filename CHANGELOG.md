@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.1](https://github.com/NatLabRockies/infrasys/compare/v1.1.0...v1.1.1) (2026-03-19)
+
+
+### Bug Fixes
+
+* Remove publishing to test-pypi ([eae5aea](https://github.com/NatLabRockies/infrasys/commit/eae5aeae6d8a9d15f5d28b534017931f0d80c2a9))
+* Remove publishing to test-pypi ([ba7b906](https://github.com/NatLabRockies/infrasys/commit/ba7b906dd22b4435e7377b7a95b1b5b162783c11))
+
 ## [1.1.0](https://github.com/NatLabRockies/infrasys/compare/v1.0.1...v1.1.0) (2026-03-18)
 
 
