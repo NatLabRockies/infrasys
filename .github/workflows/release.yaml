@@ -67,28 +67,9 @@ jobs:
           name: python-package-distributions
           path: dist/
 
-  publish-testpypi:
-    runs-on: ubuntu-latest
-    needs: build
-    environment:
-      name: testpypi
-      url: https://test.pypi.org/p/infrasys
-    steps:
-      - name: Download all the dists
-        uses: actions/download-artifact@v8
-        with:
-          name: python-package-distributions
-          path: dist/
-
-      - name: Publish package to TestPyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          repository-url: https://test.pypi.org/legacy/
-
   publish-pypi:
     needs:
       - build
-      - publish-testpypi
     runs-on: ubuntu-latest
     environment:
       name: pypi
