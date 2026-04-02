@@ -76,6 +76,66 @@ def test_migrate_without_columns(legacy_system):
         migrate_legacy_metadata_store(conn)
 
 
+@pytest.fixture(scope="function")
+def legacy_db_non_sequential():
+    legacy_columns = [
+        "id",
+        "time_series_uuid",
+        "time_series_type",
+        "initial_time",
+        "resolution",
+        "variable_name",
+        "component_uuid",
+        "component_type",
+        "user_attributes_hash",
+        "metadata",
+    ]
+    conn = create_in_memory_db()
+    schema_text = ",".join(legacy_columns)
+    cur = conn.cursor()
+    execute(cur, f"CREATE TABLE {TIME_SERIES_METADATA_TABLE}({schema_text})")
+    old_schema_data = (
+        1,
+        "44e58865-gg85-55e9-c390-3fbd025d2e6f",
+        "NonSequentialTimeSeries",
+        None,
+        None,
+        "active_power",
+        "e76gb6c0-b846-5c80-c991-38b6169d644f",
+        "SimpleGenerator",
+        None,
+        '{"variable_name": "active_power", "time_series_uuid": "44e58865-gg85-55e9-c390-3fbd025d2e6f", "user_attributes": {}, "quantity_metadata": {"module": "infrasys.quantities", "quantity_type": "ActivePower", "units": "watt"}, "normalization": null, "type": "NonSequentialTimeSeries", "length": 5, "__metadata__": {"fields": {"module": "infrasys.time_series_models", "type": "NonSequentialTimeSeriesMetadata", "serialized_type": "base"}}}',
+    )
+    placeholders = ", ".join("?" * len(old_schema_data))
+    execute(
+        cur,
+        f"INSERT INTO {TIME_SERIES_METADATA_TABLE} VALUES ({placeholders})",
+        old_schema_data,
+    )
+    conn.commit()
+    yield conn
+    conn.close()
+
+
+def test_migrate_non_sequential_time_series(legacy_db_non_sequential):
+    conn = legacy_db_non_sequential
+    assert metadata_store_needs_migration(conn)
+    assert migrate_legacy_metadata_store(conn)
+    assert not metadata_store_needs_migration(conn)
+
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM time_series_associations")
+    rows = cursor.fetchall()
+    assert len(rows) == 1
+
+    columns = [desc[0] for desc in cursor.description]
+    row = dict(zip(columns, rows[0]))
+    assert row["time_series_type"] == "NonSequentialTimeSeries"
+    assert row["initial_timestamp"] is None
+    assert row["resolution"] is None
+    assert row["length"] == 5
+
+
 def test_migrating_schema_with_no_entires(caplog):
     legacy_columns = [
         "id",
