@@ -12,6 +12,7 @@ from infrasys import (
 )
 from infrasys.time_series_models import (
     DeterministicMetadata,
+    NonSequentialTimeSeriesMetadataBase,
     SingleTimeSeriesMetadataBase,
     TimeSeriesMetadata,
 )
@@ -334,4 +335,10 @@ def get_length(metadata: TimeSeriesMetadata) -> int | None:
 @get_length.register
 def _(metadata: SingleTimeSeriesMetadataBase) -> int:
     """Get length from SingleTimeSeriesMetadataBase."""
+    return metadata.length
+
+
+@get_length.register
+def _(metadata: NonSequentialTimeSeriesMetadataBase) -> int:
+    """Get length from NonSequentialTimeSeriesMetadataBase."""
     return metadata.length
