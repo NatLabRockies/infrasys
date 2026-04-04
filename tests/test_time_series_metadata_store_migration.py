@@ -96,15 +96,15 @@ def legacy_db_non_sequential():
     execute(cur, f"CREATE TABLE {TIME_SERIES_METADATA_TABLE}({schema_text})")
     old_schema_data = (
         1,
-        "44e58865-gg85-55e9-c390-3fbd025d2e6f",
+        "44e58865-aa85-55e9-c390-3fbd025d2e6f",
         "NonSequentialTimeSeries",
         None,
         None,
         "active_power",
-        "e76gb6c0-b846-5c80-c991-38b6169d644f",
+        "e76ab6c0-b846-5c80-c991-38b6169d644f",
         "SimpleGenerator",
         None,
-        '{"variable_name": "active_power", "time_series_uuid": "44e58865-gg85-55e9-c390-3fbd025d2e6f", "user_attributes": {}, "quantity_metadata": {"module": "infrasys.quantities", "quantity_type": "ActivePower", "units": "watt"}, "normalization": null, "type": "NonSequentialTimeSeries", "length": 5, "__metadata__": {"fields": {"module": "infrasys.time_series_models", "type": "NonSequentialTimeSeriesMetadata", "serialized_type": "base"}}}',
+        '{"variable_name": "active_power", "time_series_uuid": "44e58865-aa85-55e9-c390-3fbd025d2e6f", "user_attributes": {}, "quantity_metadata": {"module": "infrasys.quantities", "quantity_type": "ActivePower", "units": "watt"}, "normalization": null, "type": "NonSequentialTimeSeries", "length": 5, "__metadata__": {"fields": {"module": "infrasys.time_series_models", "type": "NonSequentialTimeSeriesMetadata", "serialized_type": "base"}}}',
     )
     placeholders = ", ".join("?" * len(old_schema_data))
     execute(
