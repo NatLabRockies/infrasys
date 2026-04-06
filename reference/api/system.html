@@ -1,0 +1,1555 @@
+<!doctype html>
+<html class="no-js" lang="en" data-content_root="../../">
+  <head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Components" href="components.html"><link rel="prev" title="API" href="index.html">
+
+    <!-- Generated with Sphinx 8.2.3 and Furo 2025.09.25 -->
+        <title>System - Infrastructure Systems Documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=d111a655" />
+    <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=580074bf" />
+    <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../../_static/autodoc_pydantic.css" />
+    <link rel="stylesheet" type="text/css" href="../../_static/styles/furo-extensions.css?v=8dab3a3b" />
+    
+    
+
+
+<style>
+  body {
+    --color-code-background: #f2f2f2;
+  --color-code-foreground: #1e1e1e;
+  
+  }
+  @media not print {
+    body[data-theme="dark"] {
+      --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  
+    }
+    @media (prefers-color-scheme: dark) {
+      body:not([data-theme="light"]) {
+        --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  
+      }
+    }
+  }
+</style></head>
+  <body>
+    
+    <script>
+      document.body.dataset.theme = localStorage.getItem("theme") || "auto";
+    </script>
+    
+
+<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+  <symbol id="svg-toc" viewBox="0 0 24 24">
+    <title>Contents</title>
+    <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+      <path d="M408 442h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8zm-8 204c0 4.4 3.6 8 8 8h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56zm504-486H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm0 632H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zM115.4 518.9L271.7 642c5.8 4.6 14.4.5 14.4-6.9V388.9c0-7.4-8.5-11.5-14.4-6.9L115.4 505.1a8.74 8.74 0 0 0 0 13.8z"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-menu" viewBox="0 0 24 24">
+    <title>Menu</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-menu">
+      <line x1="3" y1="12" x2="21" y2="12"></line>
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-arrow-right" viewBox="0 0 24 24">
+    <title>Expand</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-chevron-right">
+      <polyline points="9 18 15 12 9 6"></polyline>
+    </svg>
+  </symbol>
+  <symbol id="svg-sun" viewBox="0 0 24 24">
+    <title>Light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="feather-sun">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon" viewBox="0 0 24 24">
+    <title>Dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-moon">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z" />
+    </svg>
+  </symbol>
+  <symbol id="svg-sun-with-moon" viewBox="0 0 24 24">
+    <title>Auto light/dark, in light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path style="opacity: 50%" d="M 5.411 14.504 C 5.471 14.504 5.532 14.504 5.591 14.504 C 3.639 16.319 4.383 19.569 6.931 20.352 C 7.693 20.586 8.512 20.551 9.25 20.252 C 8.023 23.207 4.056 23.725 2.11 21.184 C 0.166 18.642 1.702 14.949 4.874 14.536 C 5.051 14.512 5.231 14.5 5.411 14.5 L 5.411 14.504 Z"/>
+      <line x1="14.5" y1="3.25" x2="14.5" y2="1.25"/>
+      <line x1="14.5" y1="15.85" x2="14.5" y2="17.85"/>
+      <line x1="10.044" y1="5.094" x2="8.63" y2="3.68"/>
+      <line x1="19" y1="14.05" x2="20.414" y2="15.464"/>
+      <line x1="8.2" y1="9.55" x2="6.2" y2="9.55"/>
+      <line x1="20.8" y1="9.55" x2="22.8" y2="9.55"/>
+      <line x1="10.044" y1="14.006" x2="8.63" y2="15.42"/>
+      <line x1="19" y1="5.05" x2="20.414" y2="3.636"/>
+      <circle cx="14.5" cy="9.55" r="3.6"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon-with-sun" viewBox="0 0 24 24">
+    <title>Auto light/dark, in dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path d="M 8.282 7.007 C 8.385 7.007 8.494 7.007 8.595 7.007 C 5.18 10.184 6.481 15.869 10.942 17.24 C 12.275 17.648 13.706 17.589 15 17.066 C 12.851 22.236 5.91 23.143 2.505 18.696 C -0.897 14.249 1.791 7.786 7.342 7.063 C 7.652 7.021 7.965 7 8.282 7 L 8.282 7.007 Z"/>
+      <line style="opacity: 50%" x1="18" y1="3.705" x2="18" y2="2.5"/>
+      <line style="opacity: 50%" x1="18" y1="11.295" x2="18" y2="12.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="4.816" x2="14.464" y2="3.964"/>
+      <line style="opacity: 50%" x1="20.711" y1="10.212" x2="21.563" y2="11.063"/>
+      <line style="opacity: 50%" x1="14.205" y1="7.5" x2="13.001" y2="7.5"/>
+      <line style="opacity: 50%" x1="21.795" y1="7.5" x2="23" y2="7.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="10.184" x2="14.464" y2="11.036"/>
+      <line style="opacity: 50%" x1="20.711" y1="4.789" x2="21.563" y2="3.937"/>
+      <circle style="opacity: 50%" cx="18" cy="7.5" r="2.169"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-pencil" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-pencil-code">
+      <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
+      <path d="M13.5 6.5l4 4" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+  <symbol id="svg-eye" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-eye-code">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
+      <path
+        d="M11.11 17.958c-3.209 -.307 -5.91 -2.293 -8.11 -5.958c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6c-.21 .352 -.427 .688 -.647 1.008" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+</svg>
+
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation" aria-label="Toggle site navigation sidebar">
+<input type="checkbox" class="sidebar-toggle" name="__toc" id="__toc" aria-label="Toggle table of contents sidebar">
+<label class="overlay sidebar-overlay" for="__navigation"></label>
+<label class="overlay toc-overlay" for="__toc"></label>
+
+<a class="skip-to-content muted-link" href="#furo-main-content">Skip to content</a>
+
+
+
+<div class="page">
+  <header class="mobile-header">
+    <div class="header-left">
+      <label class="nav-overlay-icon" for="__navigation">
+        <span class="icon"><svg><use href="#svg-menu"></use></svg></span>
+      </label>
+    </div>
+    <div class="header-center">
+      <a href="../../index.html"><div class="brand">Infrastructure Systems Documentation</div></a>
+    </div>
+    <div class="header-right">
+      <div class="theme-toggle-container theme-toggle-header">
+        <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
+          <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+          <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+          <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+          <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+        </button>
+      </div>
+      <label class="toc-overlay-icon toc-header-icon" for="__toc">
+        <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
+      </label>
+    </div>
+  </header>
+  <aside class="sidebar-drawer">
+    <div class="sidebar-container">
+      
+      <div class="sidebar-sticky"><a class="sidebar-brand" href="../../index.html">
+  
+  <span class="sidebar-brand-text">Infrastructure Systems Documentation</span>
+  
+</a><form class="sidebar-search-container" method="get" action="../../search.html" role="search">
+  <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
+  <input type="hidden" name="check_keywords" value="yes">
+  <input type="hidden" name="area" value="default">
+</form>
+<div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
+  <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../how_tos/index.html">How Tos</a><input aria-label="Toggle navigation of How Tos" class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../how_tos/list_time_series.html">How to list existing time series data</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../tutorials/index.html">Tutorials</a><input aria-label="Toggle navigation of Tutorials" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../tutorials/custom_system.html">Custom System</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../tutorials/benchmark.html">How to Benchmark Different Python Implementations with <code class="docutils literal notranslate"><span class="pre">pytest-benchmark</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../tutorials/benchmark.html#id1">How to Benchmark Different Python Implementations with <code class="docutils literal notranslate"><span class="pre">pytest-benchmark</span></code>.</a></li>
+</ul>
+</li>
+<li class="toctree-l1 current has-children"><a class="reference internal" href="../index.html">Reference</a><input aria-label="Toggle navigation of Reference" checked="" class="toctree-checkbox" id="toctree-checkbox-3" name="toctree-checkbox-3" role="switch" type="checkbox"/><label for="toctree-checkbox-3"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul class="current">
+<li class="toctree-l2 current has-children"><a class="reference internal" href="index.html">API</a><input aria-label="Toggle navigation of API" checked="" class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" role="switch" type="checkbox"/><label for="toctree-checkbox-4"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul class="current">
+<li class="toctree-l3 current current-page"><a class="current reference internal" href="#">System</a></li>
+<li class="toctree-l3"><a class="reference internal" href="components.html">Components</a></li>
+<li class="toctree-l3"><a class="reference internal" href="time_series.html">Time Series</a></li>
+<li class="toctree-l3"><a class="reference internal" href="location.html">Location</a></li>
+<li class="toctree-l3"><a class="reference internal" href="quantities.html">Quantities</a></li>
+<li class="toctree-l3"><a class="reference internal" href="function_data.html">Function data</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../system_json.html">Viewing System Data in JSON Format</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../explanation/index.html">Explanation</a><input aria-label="Toggle navigation of Explanation" class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" role="switch" type="checkbox"/><label for="toctree-checkbox-5"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../explanation/system.html">System</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../explanation/components.html">Components</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../explanation/time_series.html">Time Series</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../explanation/location.html">Location</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../explanation/serialization.html">Serialization</a></li>
+</ul>
+</li>
+</ul>
+
+</div>
+</div>
+
+      </div>
+      
+    </div>
+  </aside>
+  <div class="main">
+    <div class="content">
+      <div class="article-container">
+        <a href="#" class="back-to-top muted-link">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+          </svg>
+          <span>Back to top</span>
+        </a>
+        <div class="content-icon-container">
+          <div class="view-this-page">
+  <a class="muted-link" href="../../_sources/reference/api/system.md.txt" title="View this page">
+    <svg><use href="#svg-eye"></use></svg>
+    <span class="visually-hidden">View this page</span>
+  </a>
+</div>
+<div class="theme-toggle-container theme-toggle-content">
+            <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
+              <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+              <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+              <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+              <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+            </button>
+          </div>
+          <label class="toc-overlay-icon toc-content-icon" for="__toc">
+            <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
+          </label>
+        </div>
+        <article role="main" id="furo-main-content">
+          <section id="system">
+<span id="system-api"></span><h1>System<a class="headerlink" href="#system" title="Link to this heading">¶</a></h1>
+<dl class="py class">
+<dt class="sig sig-object py" id="infrasys.system.System">
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">infrasys.system.</span></span><span class="sig-name descname"><span class="pre">System</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">description</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">auto_add_composed_components</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">con</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Connection</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time_series_manager</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">TimeSeriesManager</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">supplemental_attribute_manager</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">SupplementalAttributeManager</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">uuid</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">UUID</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#infrasys.system.System" title="Link to this definition">¶</a></dt>
+<dd><p>Implements behavior for systems</p>
+<p>Constructs a System.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>name</strong> (<em>str</em><em> | </em><em>None</em>) – Optional system name</p></li>
+<li><p><strong>description</strong> (<em>str</em><em> | </em><em>None</em>) – Optional system description</p></li>
+<li><p><strong>auto_add_composed_components</strong> (<em>bool</em>) – Set to True to automatically add composed components to the system in add_components.
+The default behavior is to raise an ISOperationNotAllowed when this condition occurs.
+This handles values that are components, such as generator.bus, and lists of
+components, such as subsystem.generators, but not any other form of nested components.</p></li>
+<li><p><strong>con</strong> (<em>None</em><em> | </em><em>sqlite3.Connection</em>) – Users should not pass this. De-serialization (from_json) will pass a Connection.</p></li>
+<li><p><strong>time_series_manager</strong> (<em>None</em><em> | </em><em>TimeSeriesManager</em>) – Users should not pass this. De-serialization (from_json) will pass a constructed
+manager.</p></li>
+<li><p><strong>kwargs</strong> (<em>Any</em>) – <dl class="simple">
+<dt>Configures time series behaviors:</dt><dd><ul>
+<li><p>time_series_storage_type: Defaults to TimeSeriesStorageType.ARROW.</p></li>
+<li><p>time_series_read_only: Disables add/remove of time series, defaults to False.</p></li>
+<li><p>time_series_directory: Location to store time series files, defaults to the system’s
+tmp directory. Use an alternate location if the space in that directory is limited,
+such as on a compute node with no local storage.</p></li>
+<li><p>chronify_engine_name: Database engine to use with chronify, defaults to “duckdb”.</p></li>
+</ul>
+</dd>
+</dl>
+</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">system</span> <span class="o">=</span> <span class="n">System</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;my_system&quot;</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">system2</span> <span class="o">=</span> <span class="n">System</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;my_system&quot;</span><span class="p">,</span> <span class="n">time_series_directory</span><span class="o">=</span><span class="s2">&quot;/tmp/scratch&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.close">
+<span class="sig-name descname"><span class="pre">close</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#infrasys.system.System.close" title="Link to this definition">¶</a></dt>
+<dd><p>Close open resources such as SQLite connections.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="infrasys.system.System.auto_add_composed_components">
+<em class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">auto_add_composed_components</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">bool</span></em><a class="headerlink" href="#infrasys.system.System.auto_add_composed_components" title="Link to this definition">¶</a></dt>
+<dd><p>Return the setting for auto_add_composed_components.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.to_json">
+<span class="sig-name descname"><span class="pre">to_json</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">filename</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Path</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">overwrite</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">indent</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#infrasys.system.System.to_json" title="Link to this definition">¶</a></dt>
+<dd><p>Write the contents of a system to a JSON file. Time series will be written to a
+directory at the same level as filename.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>filename</strong> (<em>Path</em><em> | </em><em>str</em>) – Filename to write. If the parent directory does not exist, it will be created.</p></li>
+<li><p><strong>overwrite</strong> (<em>bool</em>) – Set to True to overwrite the file if it already exists.</p></li>
+<li><p><strong>indent</strong> (<em>int</em><em> | </em><em>None</em>) – Indentation level in the JSON file. Defaults to no indentation.</p></li>
+<li><p><strong>data</strong> (<em>dict</em><em> | </em><em>None</em>) – This is an override for packages that compose this System inside a parent System
+class. If set, it will be the outer object in the JSON file. It must not set the
+key ‘system’. Packages that derive a custom instance of this class should leave this
+field unset.</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">system</span><span class="o">.</span><span class="n">to_json</span><span class="p">(</span><span class="s2">&quot;systems/system1.json&quot;</span><span class="p">)</span>
+<span class="go">INFO: Wrote system data to systems/system1.json</span>
+<span class="go">INFO: Copied time series data to systems/system1_time_series</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.from_json">
+<em class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">from_json</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">filename</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Path</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">upgrade_handler</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Callable</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#infrasys.system.System" title="infrasys.system.System"><span class="pre">System</span></a></span></span><a class="headerlink" href="#infrasys.system.System.from_json" title="Link to this definition">¶</a></dt>
+<dd><p>Deserialize a System from a JSON file. Refer to System constructor for kwargs.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>filename</strong> (<em>Path</em><em> | </em><em>str</em>) – JSON file containing the system data.</p></li>
+<li><p><strong>upgrade_handler</strong> (<em>Callable</em><em> | </em><em>None</em>) – Optional function to handle data format upgrades. Should only be set when the parent
+package composes this package. If set, it will be called before de-serialization of
+the components.</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">system</span> <span class="o">=</span> <span class="n">System</span><span class="o">.</span><span class="n">from_json</span><span class="p">(</span><span class="s2">&quot;systems/system1.json&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.load">
+<em class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">load</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">zip_path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Path</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time_series_directory</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Path</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">upgrade_handler</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Callable</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#infrasys.system.System" title="infrasys.system.System"><span class="pre">System</span></a></span></span><a class="headerlink" href="#infrasys.system.System.load" title="Link to this definition">¶</a></dt>
+<dd><p>Load a System from a zip archive created by the save() method.</p>
+<p>The zip file will be extracted to a temporary directory, the system will be
+deserialized, and the temporary files will be cleaned up automatically.
+Time series storage files are copied to a permanent location during deserialization.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>zip_path</strong> (<em>Path</em><em> | </em><em>str</em>) – Path to the zip file containing the system.</p></li>
+<li><p><strong>time_series_directory</strong> (<em>Path</em><em> | </em><em>str</em>) – Path to the final time series location</p></li>
+<li><p><strong>upgrade_handler</strong> (<em>Callable</em><em> | </em><em>None</em>) – Optional function to handle data format upgrades. Should only be set when the parent
+package composes this package. If set, it will be called before de-serialization of
+the components.</p></li>
+<li><p><strong>**kwargs</strong> (<em>Any</em>) – Additional arguments passed to the System constructor. Refer to System constructor
+for available options. Use <cite>time_series_directory</cite> to specify where time series
+files should be stored.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The deserialized system.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#infrasys.system.System" title="infrasys.system.System">System</a></p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>ISFileExists</strong> – Raised if the zip file does not exist.</p></li>
+<li><p><strong>ISInvalidParameter</strong> – Raised if the zip file is not a valid zip archive or doesn’t contain a valid system.</p></li>
+<li><p><strong>FileNotFoundError</strong> – Raised if there is no JSON file in the zip folder.</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">system</span> <span class="o">=</span> <span class="n">System</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="s2">&quot;my_system.zip&quot;</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">system2</span> <span class="o">=</span> <span class="n">System</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="s2">&quot;archived_systems/system1.zip&quot;</span><span class="p">))</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="c1"># Specify where time series files should be stored</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">system3</span> <span class="o">=</span> <span class="n">System</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="s2">&quot;my_system.zip&quot;</span><span class="p">,</span> <span class="n">time_series_directory</span><span class="o">=</span><span class="s2">&quot;/path/to/storage&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<div class="admonition seealso">
+<p class="admonition-title">See also</p>
+<dl class="simple">
+<dt><a class="reference internal" href="#infrasys.system.System.save" title="infrasys.system.System.save"><code class="xref py py-obj docutils literal notranslate"><span class="pre">save</span></code></a></dt><dd><p>Save a system to a directory or zip file</p>
+</dd>
+<dt><a class="reference internal" href="#infrasys.system.System.from_json" title="infrasys.system.System.from_json"><code class="xref py py-obj docutils literal notranslate"><span class="pre">from_json</span></code></a></dt><dd><p>Load a system from a JSON file</p>
+</dd>
+</dl>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.to_records">
+<span class="sig-name descname"><span class="pre">to_records</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">component_type</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Type</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><span class="pre">Component</span></a><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">filter_func</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Callable</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Iterable</span><span class="p"><span class="pre">[</span></span><span class="pre">dict</span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#infrasys.system.System.to_records" title="Link to this definition">¶</a></dt>
+<dd><p>Return a list of dictionaries of components (records) with the requested type(s) and
+optionally match filter_func.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>components</strong> – Component types to get as dictionaries</p></li>
+<li><p><strong>filter_func</strong> – A function to filter components. Default is None</p></li>
+<li><p><strong>kwargs</strong> – <dl class="simple">
+<dt>Configures Pydantic model_dump behaviour</dt><dd><ul>
+<li><p>exclude: List or dict of excluded fields.</p></li>
+</ul>
+</dd>
+</dl>
+</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p>If a component type is an abstract type, all matching concrete subtypes will be included in the output.</p>
+<p>It is only recommended to use this function on a single “concrete” types. For example, if
+you have an abstract type called Generator and you create two subtypes called
+ThermalGenerator and RenewableGenerator where some fields are different, if you pass the
+return of System.to_records(Generator) to pandas.DataFrame.from_records, each
+ThermalGenerator row will have NaN values for RenewableGenerator-specific fields.</p>
+<p class="rubric">Examples</p>
+<p>To get a tabular representation of a certain type you can use:
+&gt;&gt;&gt; import pandas as pd
+&gt;&gt;&gt; df = pd.DataFrame.from_records(System.to_records(SimpleGen))</p>
+<p>With polars:
+&gt;&gt;&gt; import polars as pl
+&gt;&gt;&gt; df = pl.DataFrame(System.to_records(SimpleGen))</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.from_dict">
+<em class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">from_dict</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time_series_parent_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Path</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">upgrade_handler</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Callable</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#infrasys.system.System" title="infrasys.system.System"><span class="pre">System</span></a></span></span><a class="headerlink" href="#infrasys.system.System.from_dict" title="Link to this definition">¶</a></dt>
+<dd><p>Deserialize a System from a dictionary.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> (<em>dict</em><em>[</em><em>str</em><em>, </em><em>Any</em><em>]</em>) – System data in serialized form.</p></li>
+<li><p><strong>time_series_parent_dir</strong> (<em>Path</em><em> | </em><em>str</em>) – Directory that contains the system’s time series directory.</p></li>
+<li><p><strong>upgrade_handler</strong> (<em>Callable</em><em> | </em><em>None</em>) – Optional function to handle data format upgrades. Should only be set when the parent
+package composes this package. If set, it will be called before de-serialization of
+the components.</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">system</span> <span class="o">=</span> <span class="n">System</span><span class="o">.</span><span class="n">from_dict</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;systems&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.save">
+<span class="sig-name descname"><span class="pre">save</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fpath</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Path</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">filename</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'system.json'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">zip</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">overwrite</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#infrasys.system.System.save" title="Link to this definition">¶</a></dt>
+<dd><p>Save the contents of a system and the Time series in a single directory.</p>
+<p>By default, this method creates the user specified folder using the
+<cite>to_json</cite> method. If user sets <cite>zip = True</cite>, we create the folder of
+the user (if it does not exists), zip it to the same location specified
+and delete the folder.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>fpath</strong> (<em>Path</em><em> | </em><em>str</em>) – Filepath to write the contents of the system.</p></li>
+<li><p><strong>zip</strong> (<em>bool</em>) – Set to True if you want to archive to a zip file.</p></li>
+<li><p><strong>filename</strong> (<em>str</em>) – Name of the sytem to serialize. Default value: “system.json”.</p></li>
+<li><p><strong>overwrite</strong> (<em>bool</em>) – Overwrites the system if it already exist on the fpath.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>FileExistsError</strong> – Raised if the folder provided exists and the overwrite flag was not provided.</p>
+</dd>
+</dl>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">fpath</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;folder/subfolder/&quot;</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">system</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">fpath</span><span class="p">)</span>
+<span class="go">INFO: Wrote system data to folder/subfolder/system.json</span>
+<span class="go">INFO: Copied time series data to folder/subfolder/system_time_series</span>
+</pre></div>
+</div>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">system_fname</span> <span class="o">=</span> <span class="s2">&quot;my_system.json&quot;</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">fpath</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;folder/subfolder/&quot;</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">system</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">fpath</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="n">system_fname</span><span class="p">,</span> <span class="nb">zip</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="go">INFO: Wrote system data to folder/subfolder/my_system.json</span>
+<span class="go">INFO: Copied time series data to folder/subfolder/my_system_time_series</span>
+<span class="go">INFO: System archived at folder/subfolder/my_system.zip</span>
+</pre></div>
+</div>
+<div class="admonition seealso">
+<p class="admonition-title">See also</p>
+<dl class="simple">
+<dt><a class="reference internal" href="#infrasys.system.System.to_json" title="infrasys.system.System.to_json"><code class="xref py py-obj docutils literal notranslate"><span class="pre">to_json</span></code></a></dt><dd><p>System serialization</p>
+</dd>
+</dl>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.add_component">
+<span class="sig-name descname"><span class="pre">add_component</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">component</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><span class="pre">Component</span></a></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#infrasys.system.System.add_component" title="Link to this definition">¶</a></dt>
+<dd><p>Add one component to the system.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>component</strong> (<a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><em>Component</em></a>) – Component to add to the system.</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>ISAlreadyAttached</strong> – Raised if a component is already attached to a system.</p>
+</dd>
+</dl>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">system</span><span class="o">.</span><span class="n">add_component</span><span class="p">(</span><span class="n">Bus</span><span class="o">.</span><span class="n">example</span><span class="p">())</span>
+</pre></div>
+</div>
+<div class="admonition seealso">
+<p class="admonition-title">See also</p>
+<p><a class="reference internal" href="#infrasys.system.System.add_components" title="infrasys.system.System.add_components"><code class="xref py py-obj docutils literal notranslate"><span class="pre">add_components</span></code></a></p>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.add_components">
+<span class="sig-name descname"><span class="pre">add_components</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">components</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><span class="pre">Component</span></a></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#infrasys.system.System.add_components" title="Link to this definition">¶</a></dt>
+<dd><p>Add one or more components to the system.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>components</strong> (<a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><em>Component</em></a>) – Component(s) to add to the system.</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>ISAlreadyAttached</strong> – Raised if a component is already attached to a system.</p>
+</dd>
+</dl>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">system</span><span class="o">.</span><span class="n">add_components</span><span class="p">(</span><span class="n">Bus</span><span class="o">.</span><span class="n">example</span><span class="p">(),</span> <span class="n">Generator</span><span class="o">.</span><span class="n">example</span><span class="p">())</span>
+</pre></div>
+</div>
+<div class="admonition seealso">
+<p class="admonition-title">See also</p>
+<p><a class="reference internal" href="#infrasys.system.System.add_component" title="infrasys.system.System.add_component"><code class="xref py py-obj docutils literal notranslate"><span class="pre">add_component</span></code></a></p>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.add_supplemental_attribute">
+<span class="sig-name descname"><span class="pre">add_supplemental_attribute</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">component</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><span class="pre">Component</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">attribute</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">SupplementalAttribute</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#infrasys.system.System.add_supplemental_attribute" title="Link to this definition">¶</a></dt>
+<dd><p>Attach a supplemental attribute to a component. The attribute will get added to the
+system if it is not already stored.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>component</strong> – Existing component</p></li>
+<li><p><strong>attribute</strong> – Supplemental attribute to attach to the component</p></li>
+</ul>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>ISAlreadyAttached</strong> – Raised if the component and attribute are already attached.</p>
+</dd>
+</dl>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">bus</span> <span class="o">=</span> <span class="n">Bus</span><span class="o">.</span><span class="n">example</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">system</span><span class="o">.</span><span class="n">add_component</span><span class="p">(</span><span class="n">bus</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">geo_json</span> <span class="o">=</span> <span class="n">GeographicInfo</span><span class="o">.</span><span class="n">example</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">system</span><span class="o">.</span><span class="n">add_supplemental_attribute</span><span class="p">(</span><span class="n">bus</span><span class="p">,</span> <span class="n">geo_json</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.change_component_uuid">
+<span class="sig-name descname"><span class="pre">change_component_uuid</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">component</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><span class="pre">Component</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#infrasys.system.System.change_component_uuid" title="Link to this definition">¶</a></dt>
+<dd><p>Change the component UUID.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>component</strong> (<a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><em>Component</em></a>)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.copy_component">
+<span class="sig-name descname"><span class="pre">copy_component</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">component</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><span class="pre">Component</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">attach</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Any</span></span></span><a class="headerlink" href="#infrasys.system.System.copy_component" title="Link to this definition">¶</a></dt>
+<dd><p>Create a copy of the component. Time series data is excluded.</p>
+<ul class="simple">
+<li><p>The new component will have a different UUID than the original.</p></li>
+<li><p>The copied component will have shared references to any composed components.</p></li>
+</ul>
+<p>The intention of this method is to provide a way to create variants of a component that
+will be added to the same system. Please refer to :<cite>deepcopy_component</cite>: to create
+copies that are suitable for addition to a different system.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>component</strong> (<a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><em>Component</em></a>) – Source component</p></li>
+<li><p><strong>name</strong> (<em>str</em>) – Optional, if None, keep the original name.</p></li>
+<li><p><strong>attach</strong> (<em>bool</em>) – Optional, if True, attach the new component to the system.</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">gen1</span> <span class="o">=</span> <span class="n">system</span><span class="o">.</span><span class="n">get_component</span><span class="p">(</span><span class="n">Generator</span><span class="p">,</span> <span class="s2">&quot;gen1&quot;</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">gen2</span> <span class="o">=</span> <span class="n">system</span><span class="o">.</span><span class="n">copy_component</span><span class="p">(</span><span class="n">gen</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;gen2&quot;</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">gen3</span> <span class="o">=</span> <span class="n">system</span><span class="o">.</span><span class="n">copy_component</span><span class="p">(</span><span class="n">gen</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;gen3&quot;</span><span class="p">,</span> <span class="n">attach</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+<div class="admonition seealso">
+<p class="admonition-title">See also</p>
+<p><a class="reference internal" href="#infrasys.system.System.deepcopy_component" title="infrasys.system.System.deepcopy_component"><code class="xref py py-obj docutils literal notranslate"><span class="pre">deepcopy_component</span></code></a></p>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.deepcopy_component">
+<span class="sig-name descname"><span class="pre">deepcopy_component</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">component</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><span class="pre">Component</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Any</span></span></span><a class="headerlink" href="#infrasys.system.System.deepcopy_component" title="Link to this definition">¶</a></dt>
+<dd><p>Create a deep copy of the component and all composed components. All attributes,
+including names and UUIDs, will be identical to the original. Unlike
+<a class="reference internal" href="#infrasys.system.System.copy_component" title="infrasys.system.System.copy_component"><code class="xref py py-meth docutils literal notranslate"><span class="pre">copy_component()</span></code></a>, there will be no shared references to composed components.</p>
+<p>The intention of this method is to provide a way to create variants of a component that
+will be added to a different system. Please refer to :<cite>copy_component</cite>: to create
+copies that are suitable for addition to the same system.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>component</strong> (<a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><em>Component</em></a>) – Source component</p>
+</dd>
+</dl>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">gen1</span> <span class="o">=</span> <span class="n">system</span><span class="o">.</span><span class="n">get_component</span><span class="p">(</span><span class="n">Generator</span><span class="p">,</span> <span class="s2">&quot;gen1&quot;</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">gen2</span> <span class="o">=</span> <span class="n">system</span><span class="o">.</span><span class="n">deepcopy_component</span><span class="p">(</span><span class="n">gen</span><span class="p">)</span>
+</pre></div>
+</div>
+<div class="admonition seealso">
+<p class="admonition-title">See also</p>
+<p><a class="reference internal" href="#infrasys.system.System.copy_component" title="infrasys.system.System.copy_component"><code class="xref py py-obj docutils literal notranslate"><span class="pre">copy_component</span></code></a></p>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.get_component">
+<span class="sig-name descname"><span class="pre">get_component</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">component_type</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Type</span><span class="p"><span class="pre">[</span></span><span class="pre">T</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">T</span></span></span><a class="headerlink" href="#infrasys.system.System.get_component" title="Link to this definition">¶</a></dt>
+<dd><p>Return the component with the passed type and name.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>component_type</strong> (<em>Type</em><em>[</em><em>T</em><em>]</em>) – Generic component type</p></li>
+<li><p><strong>name</strong> (<em>Type</em>) – Name of component</p></li>
+</ul>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>ISDuplicateNames</strong> – Raised if more than one component match the inputs.</p>
+</dd>
+</dl>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">system</span><span class="o">.</span><span class="n">get_component</span><span class="p">(</span><span class="n">Generator</span><span class="p">,</span> <span class="s2">&quot;gen1&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<div class="admonition seealso">
+<p class="admonition-title">See also</p>
+<p><code class="xref py py-obj docutils literal notranslate"><span class="pre">list_by_name</span></code></p>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.get_component_by_label">
+<span class="sig-name descname"><span class="pre">get_component_by_label</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">label</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Any</span></span></span><a class="headerlink" href="#infrasys.system.System.get_component_by_label" title="Link to this definition">¶</a></dt>
+<dd><p>Return the component with the label.</p>
+<p>Note that this method is slower than <a class="reference internal" href="#infrasys.system.System.get_component" title="infrasys.system.System.get_component"><code class="xref py py-meth docutils literal notranslate"><span class="pre">get_component()</span></code></a> because the
+component type cannot be looked up directly. Code that is looping over components
+repeatedly should not use this method.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>label</strong> (<em>str</em>)</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>ISNotStored</strong> – Raised if the UUID is not stored.</p></li>
+<li><p><strong>ISOperationNotAllowed</strong> – Raised if there is more than one matching component.</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">component</span> <span class="o">=</span> <span class="n">system</span><span class="o">.</span><span class="n">get_component_by_label</span><span class="p">(</span><span class="s2">&quot;Bus.bus1&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.get_component_by_uuid">
+<span class="sig-name descname"><span class="pre">get_component_by_uuid</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">uuid</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">UUID</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Any</span></span></span><a class="headerlink" href="#infrasys.system.System.get_component_by_uuid" title="Link to this definition">¶</a></dt>
+<dd><p>Return the component with the input UUID.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>uuid</strong> (<em>UUID</em>)</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>ISNotStored</strong> – Raised if the UUID is not stored.</p>
+</dd>
+</dl>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">uuid</span> <span class="o">=</span> <span class="n">UUID</span><span class="p">(</span><span class="s2">&quot;714c8311-8dff-4ae2-aa2e-30779a317d42&quot;</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">component</span> <span class="o">=</span> <span class="n">system</span><span class="o">.</span><span class="n">get_component_by_uuid</span><span class="p">(</span><span class="n">uuid</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.get_components">
+<span class="sig-name descname"><span class="pre">get_components</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">component_types</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Type</span><span class="p"><span class="pre">[</span></span><span class="pre">T</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">filter_func</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Callable</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Iterable</span><span class="p"><span class="pre">[</span></span><span class="pre">T</span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#infrasys.system.System.get_components" title="Link to this definition">¶</a></dt>
+<dd><p>Return the components with the passed type(s) and that optionally match filter_func.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>component_type</strong> (<em>Type</em><em>[</em><em>T</em><em>]</em>) – If component_type is an abstract type, all matching subtypes will be returned.
+The function will return all the matching <cite>component_type</cite> passed.</p></li>
+<li><p><strong>filter_func</strong> (<em>Callable</em><em> | </em><em>None</em>) – Optional function to filter the returned values. The function must accept a component
+as a single argument.</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="k">for</span> <span class="n">component</span> <span class="ow">in</span> <span class="n">system</span><span class="o">.</span><span class="n">get_components</span><span class="p">(</span><span class="n">Component</span><span class="p">)</span>
+<span class="go">    print(component.label)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">names</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;bus1&quot;</span><span class="p">,</span> <span class="s2">&quot;bus2&quot;</span><span class="p">,</span> <span class="s2">&quot;gen1&quot;</span><span class="p">,</span> <span class="s2">&quot;gen2&quot;</span><span class="p">}</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">for</span> <span class="n">component</span> <span class="ow">in</span> <span class="n">system</span><span class="o">.</span><span class="n">get_components</span><span class="p">(</span>
+<span class="go">    Component,</span>
+<span class="go">    filter_func=lambda x: x.name in names,</span>
+<span class="go">):</span>
+<span class="go">    print(component.label)</span>
+</pre></div>
+</div>
+<p>To request multiple component types:
+&gt;&gt;&gt; for component in system.get_components(SimpleGenerator, SimpleBus)
+print(component.label)</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.get_component_types">
+<span class="sig-name descname"><span class="pre">get_component_types</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Iterable</span><span class="p"><span class="pre">[</span></span><span class="pre">Type</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><span class="pre">Component</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#infrasys.system.System.get_component_types" title="Link to this definition">¶</a></dt>
+<dd><p>Return an iterable of all component types stored in the system.</p>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="k">for</span> <span class="n">component_type</span> <span class="ow">in</span> <span class="n">system</span><span class="o">.</span><span class="n">get_component_types</span><span class="p">():</span>
+<span class="go">print(component_type)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.get_components_with_supplemental_attribute">
+<span class="sig-name descname"><span class="pre">get_components_with_supplemental_attribute</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">attribute</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">SupplementalAttribute</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><span class="pre">Component</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#infrasys.system.System.get_components_with_supplemental_attribute" title="Link to this definition">¶</a></dt>
+<dd><p>Return all components attached to the given supplemental attribute.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.get_supplemental_attributes_with_component">
+<span class="sig-name descname"><span class="pre">get_supplemental_attributes_with_component</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">component</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><span class="pre">Component</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">supplemental_attribute_type</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Type</span><span class="p"><span class="pre">[</span></span><span class="pre">U</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">filter_func</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Callable</span><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">[</span></span><span class="pre">U</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">bool</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">U</span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#infrasys.system.System.get_supplemental_attributes_with_component" title="Link to this definition">¶</a></dt>
+<dd><p>Return all supplemental attributes attached to the given component and optionally,
+with the given attribute type.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.get_supplemental_attribute_by_uuid">
+<span class="sig-name descname"><span class="pre">get_supplemental_attribute_by_uuid</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">uuid</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">UUID</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">SupplementalAttribute</span></span></span><a class="headerlink" href="#infrasys.system.System.get_supplemental_attribute_by_uuid" title="Link to this definition">¶</a></dt>
+<dd><p>Return the supplemental attribute with the given UUID.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.get_supplemental_attribute_counts_by_type">
+<span class="sig-name descname"><span class="pre">get_supplemental_attribute_counts_by_type</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#infrasys.system.System.get_supplemental_attribute_counts_by_type" title="Link to this definition">¶</a></dt>
+<dd><p>Return a list of dicts of stored supplemental attribute counts by type.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.get_num_supplemental_attributes">
+<span class="sig-name descname"><span class="pre">get_num_supplemental_attributes</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">int</span></span></span><a class="headerlink" href="#infrasys.system.System.get_num_supplemental_attributes" title="Link to this definition">¶</a></dt>
+<dd><p>Return the number of supplemental attributes stored in the system.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.get_num_components_with_supplemental_attributes">
+<span class="sig-name descname"><span class="pre">get_num_components_with_supplemental_attributes</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">int</span></span></span><a class="headerlink" href="#infrasys.system.System.get_num_components_with_supplemental_attributes" title="Link to this definition">¶</a></dt>
+<dd><p>Return the number of supplemental attributes stored in the system.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.has_supplemental_attribute">
+<span class="sig-name descname"><span class="pre">has_supplemental_attribute</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">component</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><span class="pre">Component</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">supplemental_attribute_type</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Type</span><span class="p"><span class="pre">[</span></span><span class="pre">SupplementalAttribute</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">bool</span></span></span><a class="headerlink" href="#infrasys.system.System.has_supplemental_attribute" title="Link to this definition">¶</a></dt>
+<dd><p>Return True if the component has a supplemental attribute, optionally of the given
+type.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.has_supplemental_attribute_association">
+<span class="sig-name descname"><span class="pre">has_supplemental_attribute_association</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">component</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><span class="pre">Component</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">supplemental_attribute</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">SupplementalAttribute</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">bool</span></span></span><a class="headerlink" href="#infrasys.system.System.has_supplemental_attribute_association" title="Link to this definition">¶</a></dt>
+<dd><p>Return True if the component and supplemental attribute have an association.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.has_component">
+<span class="sig-name descname"><span class="pre">has_component</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">component</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">bool</span></span></span><a class="headerlink" href="#infrasys.system.System.has_component" title="Link to this definition">¶</a></dt>
+<dd><p>Return True if the component is attached.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.list_child_components">
+<span class="sig-name descname"><span class="pre">list_child_components</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">component</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><span class="pre">Component</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">component_type</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Type</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><span class="pre">Component</span></a><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><span class="pre">Component</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#infrasys.system.System.list_child_components" title="Link to this definition">¶</a></dt>
+<dd><p>Return a list of all components that this component composes.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>component</strong> (<a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><em>Component</em></a>)</p></li>
+<li><p><strong>component_type</strong> (<em>Optional</em><em>[</em><em>Type</em><em>[</em><a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><em>Component</em></a><em>]</em><em>]</em>) – Filter the returned list to components of this type.
+If the type has subclasses, all subclasses will be included.</p></li>
+</ul>
+</dd>
+</dl>
+<div class="admonition seealso">
+<p class="admonition-title">See also</p>
+<p><a class="reference internal" href="#infrasys.system.System.list_parent_components" title="infrasys.system.System.list_parent_components"><code class="xref py py-obj docutils literal notranslate"><span class="pre">list_parent_components</span></code></a></p>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.list_parent_components">
+<span class="sig-name descname"><span class="pre">list_parent_components</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">component</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><span class="pre">Component</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">component_type</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Type</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><span class="pre">Component</span></a><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><span class="pre">Component</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#infrasys.system.System.list_parent_components" title="Link to this definition">¶</a></dt>
+<dd><p>Return a list of all components that compose this component.</p>
+<p>An example usage is where you need to find all components connected to a bus and the Bus
+class does not contain that information. The system tracks these connections internally
+and can find those components quickly.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>component</strong> (<a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><em>Component</em></a>)</p></li>
+<li><p><strong>component_type</strong> (<em>Optional</em><em>[</em><em>Type</em><em>[</em><a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><em>Component</em></a><em>]</em><em>]</em>) – Filter the returned list to components of this type.
+If the type has subclasses, all subclasses will be included.</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">components</span> <span class="o">=</span> <span class="n">system</span><span class="o">.</span><span class="n">list_parent_components</span><span class="p">(</span><span class="n">bus</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;These components are connected to </span><span class="si">{</span><span class="n">bus</span><span class="o">.</span><span class="n">label</span><span class="si">}</span><span class="s2">: &quot;</span><span class="p">,</span> <span class="s2">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">components</span><span class="p">))</span>
+</pre></div>
+</div>
+<div class="admonition seealso">
+<p class="admonition-title">See also</p>
+<p><a class="reference internal" href="#infrasys.system.System.list_child_components" title="infrasys.system.System.list_child_components"><code class="xref py py-obj docutils literal notranslate"><span class="pre">list_child_components</span></code></a></p>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.list_components_by_name">
+<span class="sig-name descname"><span class="pre">list_components_by_name</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">component_type</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Type</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><span class="pre">Component</span></a><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#infrasys.system.System.list_components_by_name" title="Link to this definition">¶</a></dt>
+<dd><p>Return all components that match component_type and name.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>component_type</strong> (<em>Type</em>)</p></li>
+<li><p><strong>name</strong> (<em>str</em>)</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Examples</p>
+<p>system.list_components_by_name(Generator, “gen1”)</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.iter_all_components">
+<span class="sig-name descname"><span class="pre">iter_all_components</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Iterable</span><span class="p"><span class="pre">[</span></span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#infrasys.system.System.iter_all_components" title="Link to this definition">¶</a></dt>
+<dd><p>Return an iterator over all components.</p>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="k">for</span> <span class="n">component</span> <span class="ow">in</span> <span class="n">system</span><span class="o">.</span><span class="n">iter_all_components</span><span class="p">()</span>
+<span class="go">    print(component.label)</span>
+</pre></div>
+</div>
+<div class="admonition seealso">
+<p class="admonition-title">See also</p>
+<p><a class="reference internal" href="#infrasys.system.System.get_components" title="infrasys.system.System.get_components"><code class="xref py py-obj docutils literal notranslate"><span class="pre">get_components</span></code></a></p>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.rebuild_component_associations">
+<span class="sig-name descname"><span class="pre">rebuild_component_associations</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#infrasys.system.System.rebuild_component_associations" title="Link to this definition">¶</a></dt>
+<dd><p>Clear the component associations and rebuild the table. This may be necessary
+if a user reassigns connected components that are part of a system.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.remove_component">
+<span class="sig-name descname"><span class="pre">remove_component</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">component</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><span class="pre">Component</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">cascade_down</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">force</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#infrasys.system.System.remove_component" title="Link to this definition">¶</a></dt>
+<dd><p>Remove the component from the system.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>component</strong> (<a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><em>Component</em></a>)</p></li>
+<li><p><strong>cascade_down</strong> (<em>bool</em>) – If True, remove all child components if they have no other parents. Defaults to True.
+For example, if a generator has a bus, no other component holds a reference to that
+bus, and you call remove_component on that generator, the bus will get removed as well.</p></li>
+<li><p><strong>force</strong> (<em>bool</em>) – If True, remove the component even if other components hold references to this
+component. Defaults to False.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>ISNotStored</strong> – Raised if the component is not stored in the system.</p></li>
+<li><p><strong>ISOperationNotAllowed</strong> – Raised if the other components hold references to this component and force=False.</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">gen</span> <span class="o">=</span> <span class="n">system</span><span class="o">.</span><span class="n">get_component</span><span class="p">(</span><span class="n">Generator</span><span class="p">,</span> <span class="s2">&quot;gen1&quot;</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">system</span><span class="o">.</span><span class="n">remove_component</span><span class="p">(</span><span class="n">gen</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.remove_component_by_name">
+<span class="sig-name descname"><span class="pre">remove_component_by_name</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">component_type</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Type</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><span class="pre">Component</span></a><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cascade_down</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">force</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#infrasys.system.System.remove_component_by_name" title="Link to this definition">¶</a></dt>
+<dd><p>Remove the component with component_type and name from the system.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>component_type</strong> (<em>Type</em>)</p></li>
+<li><p><strong>name</strong> (<em>str</em>)</p></li>
+<li><p><strong>cascade_down</strong> (<em>bool</em>) – Refer <a class="reference internal" href="#infrasys.system.System.remove_component" title="infrasys.system.System.remove_component"><code class="xref py py-meth docutils literal notranslate"><span class="pre">remove_component()</span></code></a>.</p></li>
+<li><p><strong>force</strong> (<em>bool</em>) – Refer <a class="reference internal" href="#infrasys.system.System.remove_component" title="infrasys.system.System.remove_component"><code class="xref py py-meth docutils literal notranslate"><span class="pre">remove_component()</span></code></a>.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>ISNotStored</strong> – Raised if the inputs do not match any components in the system.</p></li>
+<li><p><strong>ISOperationNotAllowed</strong> – Raised if there is more than one component with component type and name.</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">generators</span> <span class="o">=</span> <span class="n">system</span><span class="o">.</span><span class="n">remove_by_name</span><span class="p">(</span><span class="n">Generator</span><span class="p">,</span> <span class="s2">&quot;gen1&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.remove_component_by_uuid">
+<span class="sig-name descname"><span class="pre">remove_component_by_uuid</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">uuid</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">UUID</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cascade_down</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">force</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#infrasys.system.System.remove_component_by_uuid" title="Link to this definition">¶</a></dt>
+<dd><p>Remove the component with uuid from the system.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>uuid</strong> (<em>UUID</em>)</p></li>
+<li><p><strong>cascade_down</strong> (<em>bool</em>) – Refer <a class="reference internal" href="#infrasys.system.System.remove_component" title="infrasys.system.System.remove_component"><code class="xref py py-meth docutils literal notranslate"><span class="pre">remove_component()</span></code></a>.</p></li>
+<li><p><strong>force</strong> (<em>bool</em>) – Refer <a class="reference internal" href="#infrasys.system.System.remove_component" title="infrasys.system.System.remove_component"><code class="xref py py-meth docutils literal notranslate"><span class="pre">remove_component()</span></code></a>.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>ISNotStored</strong> – Raised if the UUID is not stored in the system.</p>
+</dd>
+</dl>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">uuid</span> <span class="o">=</span> <span class="n">UUID</span><span class="p">(</span><span class="s2">&quot;714c8311-8dff-4ae2-aa2e-30779a317d42&quot;</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">generator</span> <span class="o">=</span> <span class="n">system</span><span class="o">.</span><span class="n">remove_component_by_uuid</span><span class="p">(</span><span class="n">uuid</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.remove_supplemental_attribute">
+<span class="sig-name descname"><span class="pre">remove_supplemental_attribute</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">attribute</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">SupplementalAttribute</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#infrasys.system.System.remove_supplemental_attribute" title="Link to this definition">¶</a></dt>
+<dd><p>Remove the supplemental attribute from the system.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.remove_supplemental_attribute_from_component">
+<span class="sig-name descname"><span class="pre">remove_supplemental_attribute_from_component</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">component</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><span class="pre">Component</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">attribute</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">SupplementalAttribute</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#infrasys.system.System.remove_supplemental_attribute_from_component" title="Link to this definition">¶</a></dt>
+<dd><p>Remove the association between the component and supplemental attribute.
+If the attribute is not attached to any other components, remove it from the system.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.update_components">
+<span class="sig-name descname"><span class="pre">update_components</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">component_type</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Type</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><span class="pre">Component</span></a><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">update_func</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Callable</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">filter_func</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Callable</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#infrasys.system.System.update_components" title="Link to this definition">¶</a></dt>
+<dd><p>Update multiple components of a given type.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>component_type</strong> (<em>Type</em><em>[</em><a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><em>Component</em></a><em>]</em>) – Type of component to update. Can be abstract.</p></li>
+<li><p><strong>update_func</strong> (<em>Callable</em>) – Function to call on each component. Must take a component as a single argument.</p></li>
+<li><p><strong>filter_func</strong> (<em>Callable</em><em> | </em><em>None</em>) – Optional function to filter the components to update. Must take a component as a
+single argument.</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">system</span><span class="o">.</span><span class="n">update_components</span><span class="p">(</span><span class="n">Generator</span><span class="p">,</span> <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="o">.</span><span class="n">active_power</span> <span class="o">*=</span> <span class="mi">10</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.add_time_series">
+<span class="sig-name descname"><span class="pre">add_time_series</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">time_series</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="time_series.html#infrasys.time_series_models.TimeSeriesData" title="infrasys.time_series_models.TimeSeriesData"><span class="pre">TimeSeriesData</span></a></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">owners</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><span class="pre">Component</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">SupplementalAttribute</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">context</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">TimeSeriesStorageContext</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">features</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">TimeSeriesKey</span></span></span><a class="headerlink" href="#infrasys.system.System.add_time_series" title="Link to this definition">¶</a></dt>
+<dd><p>Store a time series array for one or more components or supplemental attributes.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>time_series</strong> (<a class="reference internal" href="time_series.html#infrasys.time_series_models.TimeSeriesData" title="infrasys.time_series_models.TimeSeriesData"><em>TimeSeriesData</em></a>) – Time series data to store.</p></li>
+<li><p><strong>owners</strong> (<a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><em>Component</em></a><em> | </em><em>SupplementalAttribute</em>) – Add the time series to all of these components or supplemental attributes.</p></li>
+<li><p><strong>features</strong> (<em>Any</em>) – Key/value pairs to store with the time series data. Must be JSON-serializable.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Returns a key that can be used to retrieve the time series.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>TimeSeriesKey</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>ISAlreadyAttached</strong> – Raised if the variable name and user attributes match any time series already
+    attached to one of the owners.</p></li>
+<li><p><strong>ISOperationNotAllowed</strong> – Raised if the manager was created in read-only mode.</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">gen1</span> <span class="o">=</span> <span class="n">system</span><span class="o">.</span><span class="n">get_component</span><span class="p">(</span><span class="n">Generator</span><span class="p">,</span> <span class="s2">&quot;gen1&quot;</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">gen2</span> <span class="o">=</span> <span class="n">system</span><span class="o">.</span><span class="n">get_component</span><span class="p">(</span><span class="n">Generator</span><span class="p">,</span> <span class="s2">&quot;gen2&quot;</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">ts</span> <span class="o">=</span> <span class="n">SingleTimeSeries</span><span class="o">.</span><span class="n">from_array</span><span class="p">(</span>
+<span class="go">    data=[0.86, 0.78, 0.81, 0.85, 0.79],</span>
+<span class="go">    name=&quot;active_power&quot;,</span>
+<span class="go">    start_time=datetime(year=2030, month=1, day=1),</span>
+<span class="go">    resolution=timedelta(hours=1),</span>
+<span class="go">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">system</span><span class="o">.</span><span class="n">add_time_series</span><span class="p">(</span><span class="n">ts</span><span class="p">,</span> <span class="n">gen1</span><span class="p">,</span> <span class="n">gen2</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.copy_time_series">
+<span class="sig-name descname"><span class="pre">copy_time_series</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">dst</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><span class="pre">Component</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">SupplementalAttribute</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">src</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><span class="pre">Component</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">SupplementalAttribute</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name_mapping</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#infrasys.system.System.copy_time_series" title="Link to this definition">¶</a></dt>
+<dd><p>Copy all time series from src to dst.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>dst</strong> (<a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><em>Component</em></a>) – Destination component</p></li>
+<li><p><strong>src</strong> (<a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><em>Component</em></a>) – Source component</p></li>
+<li><p><strong>name_mapping</strong> (<em>dict</em><em>[</em><em>str</em><em>, </em><em>str</em><em>]</em>) – Optionally map src names to different dst names.
+If provided and src has a time_series with a name not present in name_mapping, that
+time_series will not copied. If name_mapping is nothing then all time_series will be
+copied with src’s names.</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p>name_mapping is currently not implemented.</p>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">gen1</span> <span class="o">=</span> <span class="n">system</span><span class="o">.</span><span class="n">get_component</span><span class="p">(</span><span class="n">Generator</span><span class="p">,</span> <span class="s2">&quot;gen1&quot;</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">gen2</span> <span class="o">=</span> <span class="n">system</span><span class="o">.</span><span class="n">get_component</span><span class="p">(</span><span class="n">Generator</span><span class="p">,</span> <span class="s2">&quot;gen2&quot;</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">system</span><span class="o">.</span><span class="n">copy_time_series</span><span class="p">(</span><span class="n">gen1</span><span class="p">,</span> <span class="n">gen2</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.get_time_series">
+<span class="sig-name descname"><span class="pre">get_time_series</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">owner</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><span class="pre">Component</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">SupplementalAttribute</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time_series_type</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Type</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="time_series.html#infrasys.time_series_models.TimeSeriesData" title="infrasys.time_series_models.TimeSeriesData"><span class="pre">TimeSeriesData</span></a><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">start_time</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">datetime</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">length</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">context</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">TimeSeriesStorageContext</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">features</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Any</span></span></span><a class="headerlink" href="#infrasys.system.System.get_time_series" title="Link to this definition">¶</a></dt>
+<dd><p>Return a time series array.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>component</strong> (<a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><em>Component</em></a>) – Component to which the time series must be attached.</p></li>
+<li><p><strong>name</strong> (<em>str</em><em> | </em><em>None</em>) – Optional, search for time series with this name.
+Required if the other inputs will match more than one time series.</p></li>
+<li><p><strong>time_series_type</strong> (<em>Type</em><em>[</em><a class="reference internal" href="time_series.html#infrasys.time_series_models.TimeSeriesData" title="infrasys.time_series_models.TimeSeriesData"><em>TimeSeriesData</em></a><em>] </em><em>| </em><em>None</em>) – Optional, search for time series of this type.
+Required if the other inputs will match more than one time series.</p></li>
+<li><p><strong>start_time</strong> (<em>datetime</em><em> | </em><em>None</em>) – If not None, take a slice of the time series starting at this time.</p></li>
+<li><p><strong>length</strong> (<em>int</em><em> | </em><em>None</em>) – If not None, take a slice of the time series with this length.</p></li>
+<li><p><strong>features</strong> (<em>str</em>) – Optional, search for time series with these attributes.</p></li>
+<li><p><strong>context</strong> (<em>TimeSeriesStorageContext</em>) – Optional, connection returned by <a class="reference internal" href="#infrasys.system.System.open_time_series_store" title="infrasys.system.System.open_time_series_store"><code class="xref py py-meth docutils literal notranslate"><span class="pre">open_time_series_store()</span></code></a></p></li>
+</ul>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>ISNotStored</strong> – Raised if no time series matches the inputs.
+    Raised if the inputs match more than one time series.</p></li>
+<li><p><strong>ISOperationNotAllowed</strong> – Raised if the inputs match more than one time series.</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">gen1</span> <span class="o">=</span> <span class="n">system</span><span class="o">.</span><span class="n">get_component</span><span class="p">(</span><span class="n">Generator</span><span class="p">,</span> <span class="s2">&quot;gen1&quot;</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">ts_full</span> <span class="o">=</span> <span class="n">system</span><span class="o">.</span><span class="n">get_time_series</span><span class="p">(</span><span class="n">gen1</span><span class="p">,</span> <span class="s2">&quot;active_power&quot;</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">ts_slice</span> <span class="o">=</span> <span class="n">system</span><span class="o">.</span><span class="n">get_time_series</span><span class="p">(</span>
+<span class="go">    gen1,</span>
+<span class="go">    &quot;active_power&quot;,</span>
+<span class="go">    start_time=datetime(year=2030, month=1, day=1, hour=5),</span>
+<span class="go">    length=5,</span>
+<span class="go">)</span>
+</pre></div>
+</div>
+<div class="admonition seealso">
+<p class="admonition-title">See also</p>
+<p><a class="reference internal" href="#infrasys.system.System.list_time_series" title="infrasys.system.System.list_time_series"><code class="xref py py-obj docutils literal notranslate"><span class="pre">list_time_series</span></code></a></p>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.get_time_series_by_key">
+<span class="sig-name descname"><span class="pre">get_time_series_by_key</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">owner</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><span class="pre">Component</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">SupplementalAttribute</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">key</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">TimeSeriesKey</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Any</span></span></span><a class="headerlink" href="#infrasys.system.System.get_time_series_by_key" title="Link to this definition">¶</a></dt>
+<dd><p>Return a time series array by key.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.has_time_series">
+<span class="sig-name descname"><span class="pre">has_time_series</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">owner:</span> <span class="pre">~infrasys.component.Component</span> <span class="pre">|</span> <span class="pre">~infrasys.supplemental_attribute.SupplementalAttribute</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name:</span> <span class="pre">str</span> <span class="pre">|</span> <span class="pre">None</span> <span class="pre">=</span> <span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time_series_type:</span> <span class="pre">~typing.Type[~infrasys.time_series_models.TimeSeriesData]</span> <span class="pre">=</span> <span class="pre">&lt;class</span> <span class="pre">'infrasys.time_series_models.SingleTimeSeries'&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">**features:</span> <span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">bool</span></span></span><a class="headerlink" href="#infrasys.system.System.has_time_series" title="Link to this definition">¶</a></dt>
+<dd><p>Return True if the component has time series matching the inputs.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>component</strong> (<a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><em>Component</em></a>) – Component to check for matching time series.</p></li>
+<li><p><strong>name</strong> (<em>str</em><em> | </em><em>None</em>) – Optional, search for time series with this name.</p></li>
+<li><p><strong>time_series_type</strong> (<em>Type</em><em>[</em><a class="reference internal" href="time_series.html#infrasys.time_series_models.TimeSeriesData" title="infrasys.time_series_models.TimeSeriesData"><em>TimeSeriesData</em></a><em>]</em>) – Optional, search for time series with this type.</p></li>
+<li><p><strong>features</strong> (<em>str</em>) – Optional, search for time series with these attributes.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.list_time_series">
+<span class="sig-name descname"><span class="pre">list_time_series</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">component:</span> <span class="pre">~infrasys.component.Component</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name:</span> <span class="pre">str</span> <span class="pre">|</span> <span class="pre">None</span> <span class="pre">=</span> <span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time_series_type:</span> <span class="pre">~typing.Type[~infrasys.time_series_models.TimeSeriesData]</span> <span class="pre">=</span> <span class="pre">&lt;class</span> <span class="pre">'infrasys.time_series_models.SingleTimeSeries'&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">start_time:</span> <span class="pre">~datetime.datetime</span> <span class="pre">|</span> <span class="pre">None</span> <span class="pre">=</span> <span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">length:</span> <span class="pre">int</span> <span class="pre">|</span> <span class="pre">None</span> <span class="pre">=</span> <span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">**features:</span> <span class="pre">~typing.Any</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="time_series.html#infrasys.time_series_models.TimeSeriesData" title="infrasys.time_series_models.TimeSeriesData"><span class="pre">TimeSeriesData</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#infrasys.system.System.list_time_series" title="Link to this definition">¶</a></dt>
+<dd><p>Return all time series that match the inputs.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>component</strong> (<a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><em>Component</em></a>) – Component to which the time series must be attached.</p></li>
+<li><p><strong>name</strong> (<em>str</em><em> | </em><em>None</em>) – Optional, search for time series with this name.</p></li>
+<li><p><strong>time_series_type</strong> (<em>Type</em><em>[</em><a class="reference internal" href="time_series.html#infrasys.time_series_models.TimeSeriesData" title="infrasys.time_series_models.TimeSeriesData"><em>TimeSeriesData</em></a><em>] </em><em>| </em><em>None</em>) – Optional, search for time series with this type.</p></li>
+<li><p><strong>start_time</strong> (<em>datetime</em><em> | </em><em>None</em>) – If not None, take a slice of the time series starting at this time.</p></li>
+<li><p><strong>length</strong> (<em>int</em><em> | </em><em>None</em>) – If not None, take a slice of the time series with this length.</p></li>
+<li><p><strong>features</strong> (<em>str</em>) – Optional, search for time series with these attributes.</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">gen1</span> <span class="o">=</span> <span class="n">system</span><span class="o">.</span><span class="n">get_component</span><span class="p">(</span><span class="n">Generator</span><span class="p">,</span> <span class="s2">&quot;gen1&quot;</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">for</span> <span class="n">ts</span> <span class="ow">in</span> <span class="n">system</span><span class="o">.</span><span class="n">list_time_series</span><span class="p">(</span><span class="n">gen1</span><span class="p">):</span>
+<span class="go">    print(ts)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.list_time_series_keys">
+<span class="sig-name descname"><span class="pre">list_time_series_keys</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">owner:</span> <span class="pre">~infrasys.component.Component</span> <span class="pre">|</span> <span class="pre">~infrasys.supplemental_attribute.SupplementalAttribute</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name:</span> <span class="pre">str</span> <span class="pre">|</span> <span class="pre">None</span> <span class="pre">=</span> <span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time_series_type:</span> <span class="pre">~typing.Type[~infrasys.time_series_models.TimeSeriesData]</span> <span class="pre">=</span> <span class="pre">&lt;class</span> <span class="pre">'infrasys.time_series_models.SingleTimeSeries'&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">**features:</span> <span class="pre">~typing.Any</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">TimeSeriesKey</span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#infrasys.system.System.list_time_series_keys" title="Link to this definition">¶</a></dt>
+<dd><p>Return all time series keys that match the inputs.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>owner</strong> (<a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><em>Component</em></a><em> | </em><em>SupplementalAttribute</em>) – Component to which the time series must be attached.</p></li>
+<li><p><strong>name</strong> (<em>str</em><em> | </em><em>None</em>) – Optional, search for time series with this name.</p></li>
+<li><p><strong>time_series_type</strong> (<em>Type</em><em>[</em><a class="reference internal" href="time_series.html#infrasys.time_series_models.TimeSeriesData" title="infrasys.time_series_models.TimeSeriesData"><em>TimeSeriesData</em></a><em>] </em><em>| </em><em>None</em>) – Optional, search for time series with this type.</p></li>
+<li><p><strong>features</strong> (<em>str</em>) – Optional, search for time series with these attributes.</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">gen1</span> <span class="o">=</span> <span class="n">system</span><span class="o">.</span><span class="n">get_component</span><span class="p">(</span><span class="n">Generator</span><span class="p">,</span> <span class="s2">&quot;gen1&quot;</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">system</span><span class="o">.</span><span class="n">list_time_series_keys</span><span class="p">(</span><span class="n">gen1</span><span class="p">):</span>
+<span class="gp">... </span>    <span class="n">time_series</span> <span class="o">=</span> <span class="n">system</span><span class="o">.</span><span class="n">get_time_series_by_key</span><span class="p">(</span><span class="n">gen1</span><span class="p">,</span> <span class="n">key</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.list_time_series_metadata">
+<span class="sig-name descname"><span class="pre">list_time_series_metadata</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">component:</span> <span class="pre">~infrasys.component.Component</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name:</span> <span class="pre">str</span> <span class="pre">|</span> <span class="pre">None</span> <span class="pre">=</span> <span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time_series_type:</span> <span class="pre">~typing.Type[~infrasys.time_series_models.TimeSeriesData]</span> <span class="pre">=</span> <span class="pre">&lt;class</span> <span class="pre">'infrasys.time_series_models.SingleTimeSeries'&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">**features:</span> <span class="pre">~typing.Any</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">TimeSeriesMetadata</span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#infrasys.system.System.list_time_series_metadata" title="Link to this definition">¶</a></dt>
+<dd><p>Return all time series metadata that match the inputs.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>component</strong> (<a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><em>Component</em></a>) – Component to which the time series must be attached.</p></li>
+<li><p><strong>name</strong> (<em>str</em><em> | </em><em>None</em>) – Optional, search for time series with this name.</p></li>
+<li><p><strong>time_series_type</strong> (<em>Type</em><em>[</em><a class="reference internal" href="time_series.html#infrasys.time_series_models.TimeSeriesData" title="infrasys.time_series_models.TimeSeriesData"><em>TimeSeriesData</em></a><em>] </em><em>| </em><em>None</em>) – Optional, search for time series with this type.</p></li>
+<li><p><strong>features</strong> (<em>str</em>) – Optional, search for time series with these attributes.</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">gen1</span> <span class="o">=</span> <span class="n">system</span><span class="o">.</span><span class="n">get_component</span><span class="p">(</span><span class="n">Generator</span><span class="p">,</span> <span class="s2">&quot;gen1&quot;</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">for</span> <span class="n">metadata</span> <span class="ow">in</span> <span class="n">system</span><span class="o">.</span><span class="n">list_time_series_metadata</span><span class="p">(</span><span class="n">gen1</span><span class="p">):</span>
+<span class="go">    print(metadata)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.remove_time_series">
+<span class="sig-name descname"><span class="pre">remove_time_series</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">*owners:</span> <span class="pre">~infrasys.component.Component</span> <span class="pre">|</span> <span class="pre">~infrasys.supplemental_attribute.SupplementalAttribute</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name:</span> <span class="pre">str</span> <span class="pre">|</span> <span class="pre">None</span> <span class="pre">=</span> <span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time_series_type:</span> <span class="pre">~typing.Type[~infrasys.time_series_models.TimeSeriesData]</span> <span class="pre">=</span> <span class="pre">&lt;class</span> <span class="pre">'infrasys.time_series_models.SingleTimeSeries'&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">**features:</span> <span class="pre">~typing.Any</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#infrasys.system.System.remove_time_series" title="Link to this definition">¶</a></dt>
+<dd><p>Remove all time series arrays attached to the components or supplemental attributes
+matching the inputs.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>owners</strong> – Affected components or supplemental attributes</p></li>
+<li><p><strong>name</strong> (<em>str</em><em> | </em><em>None</em>) – Optional, search for time series with this name.</p></li>
+<li><p><strong>time_series_type</strong> (<em>Type</em><em>[</em><a class="reference internal" href="time_series.html#infrasys.time_series_models.TimeSeriesData" title="infrasys.time_series_models.TimeSeriesData"><em>TimeSeriesData</em></a><em>]</em>) – Optional, search for time series with this type.</p></li>
+<li><p><strong>features</strong> (<em>str</em>) – Optional, search for time series with these attributes.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>ISNotStored</strong> – Raised if no time series match the inputs.</p></li>
+<li><p><strong>ISOperationNotAllowed</strong> – Raised if the manager was created in read-only mode.</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">gen1</span> <span class="o">=</span> <span class="n">system</span><span class="o">.</span><span class="n">get_component</span><span class="p">(</span><span class="n">Generator</span><span class="p">,</span> <span class="s2">&quot;gen1&quot;</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">system</span><span class="o">.</span><span class="n">remove_time_series</span><span class="p">(</span><span class="n">gen1</span><span class="p">,</span> <span class="s2">&quot;active_power&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.open_time_series_store">
+<span class="sig-name descname"><span class="pre">open_time_series_store</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">mode</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Literal</span><span class="p"><span class="pre">[</span></span><span class="s"><span class="pre">'r'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'r+'</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="s"><span class="pre">'a'</span></span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'r+'</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Generator</span><span class="p"><span class="pre">[</span></span><span class="pre">TimeSeriesStorageContext</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">None</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">None</span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#infrasys.system.System.open_time_series_store" title="Link to this definition">¶</a></dt>
+<dd><p>Open a connection to the time series store. This can improve performance when
+reading or writing many time series arrays for specific backends (chronify and HDF5).
+It will also rollback any changes if an exception is raised.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>An opaque object specific to the type of store being used. The object should be
+passed to all add_time_series/get_time_series methods.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>Any</p>
+</dd>
+</dl>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="k">with</span> <span class="n">system</span><span class="o">.</span><span class="n">open_time_series_store</span><span class="p">()</span> <span class="k">as</span> <span class="n">conn</span><span class="p">:</span>
+<span class="gp">... </span>    <span class="n">system</span><span class="o">.</span><span class="n">add_time_series</span><span class="p">(</span><span class="n">ts1</span><span class="p">,</span> <span class="n">gen1</span><span class="p">)</span>
+<span class="gp">... </span>    <span class="n">system</span><span class="o">.</span><span class="n">add_time_series</span><span class="p">(</span><span class="n">ts2</span><span class="p">,</span> <span class="n">gen1</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.open_metadata_store">
+<span class="sig-name descname"><span class="pre">open_metadata_store</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Generator</span><span class="p"><span class="pre">[</span></span><span class="pre">Connection</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">None</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">None</span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#infrasys.system.System.open_metadata_store" title="Link to this definition">¶</a></dt>
+<dd><p>Open a connection to the metadata store.</p>
+<p>This transaction applies to supplemental attribute metadata stored in SQLite.
+Any failure rolls back the SQLite transaction and in-memory supplemental
+attribute cache updates.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>SQLite connection for metadata operations.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>sqlite3.Connection</p>
+</dd>
+</dl>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="k">with</span> <span class="n">system</span><span class="o">.</span><span class="n">open_metadata_store</span><span class="p">():</span>
+<span class="gp">... </span>    <span class="n">system</span><span class="o">.</span><span class="n">add_supplemental_attribute</span><span class="p">(</span><span class="n">bus</span><span class="p">,</span> <span class="n">geo1</span><span class="p">)</span>
+<span class="gp">... </span>    <span class="n">system</span><span class="o">.</span><span class="n">add_supplemental_attribute</span><span class="p">(</span><span class="n">bus</span><span class="p">,</span> <span class="n">geo2</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.serialize_system_attributes">
+<span class="sig-name descname"><span class="pre">serialize_system_attributes</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#infrasys.system.System.serialize_system_attributes" title="Link to this definition">¶</a></dt>
+<dd><p>Allows subclasses to serialize attributes at the root level.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.deserialize_system_attributes">
+<span class="sig-name descname"><span class="pre">deserialize_system_attributes</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#infrasys.system.System.deserialize_system_attributes" title="Link to this definition">¶</a></dt>
+<dd><p>Allows subclasses to deserialize attributes stored in the JSON at the root level.</p>
+<p>The method should modify self with its custom attributes in data.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.handle_data_format_upgrade">
+<span class="sig-name descname"><span class="pre">handle_data_format_upgrade</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">from_version</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">to_version</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#infrasys.system.System.handle_data_format_upgrade" title="Link to this definition">¶</a></dt>
+<dd><p>Allows subclasses to upgrade data models.</p>
+<p>The parameter data contains the full contents of the serialized JSON file.
+The method should modify the data models in-place.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.merge_system">
+<span class="sig-name descname"><span class="pre">merge_system</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">other</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#infrasys.system.System" title="infrasys.system.System"><span class="pre">System</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#infrasys.system.System.merge_system" title="Link to this definition">¶</a></dt>
+<dd><p>Merge the contents of another system into this one.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.convert_storage">
+<span class="sig-name descname"><span class="pre">convert_storage</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#infrasys.system.System.convert_storage" title="Link to this definition">¶</a></dt>
+<dd><p>Converts the time series storage medium.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>**kwargs</strong> – <p>The same keys as TIME_SERIES_KWARGS in time_series_manager.py
+{</p>
+<blockquote>
+<div><p>”time_series_storage_type”: TimeSeriesStorageType = TimeSeriesStorageType.ARROW,
+“time_series_read_only”: bool = False,
+“time_series_directory”: Path | None = None,</p>
+</div></blockquote>
+<p>}</p>
+<p>Only arguments that need to be changed from the default TIME_SERIES_KWARGS
+need to be passed</p>
+</p>
+</dd>
+</dl>
+<p class="rubric">Examples</p>
+<p># Initialize the system (defaults to Arrow storage)
+&gt;&gt;&gt; system = infrasys.System(auto_add_composed_components=True)</p>
+<p># Add components and time series data
+&gt;&gt;&gt; generator, bus, load_data = create_some_data()
+&gt;&gt;&gt; system.add_components(generator, bus)
+&gt;&gt;&gt; system.add_time_series(load_data, generator)</p>
+<p># Convert the storage to in_memory
+&gt;&gt;&gt; system.convert_storage(time_series_storage_type=TimeSeriesStorageType.MEMORY)</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="infrasys.system.System.data_format_version">
+<em class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">data_format_version</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></em><a class="headerlink" href="#infrasys.system.System.data_format_version" title="Link to this definition">¶</a></dt>
+<dd><p>Return the data format version of the component models.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="infrasys.system.System.name">
+<em class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">name</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></em><a class="headerlink" href="#infrasys.system.System.name" title="Link to this definition">¶</a></dt>
+<dd><p>Return the name of the system.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="infrasys.system.System.description">
+<em class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">description</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></em><a class="headerlink" href="#infrasys.system.System.description" title="Link to this definition">¶</a></dt>
+<dd><p>Return the description of the system.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="infrasys.system.System.label">
+<em class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">label</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span></em><a class="headerlink" href="#infrasys.system.System.label" title="Link to this definition">¶</a></dt>
+<dd><p>Provides a description of the system.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="infrasys.system.System.time_series">
+<em class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">time_series</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">TimeSeriesManager</span></em><a class="headerlink" href="#infrasys.system.System.time_series" title="Link to this definition">¶</a></dt>
+<dd><p>Return the time series manager.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="infrasys.system.System.uuid">
+<em class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">uuid</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">UUID</span></em><a class="headerlink" href="#infrasys.system.System.uuid" title="Link to this definition">¶</a></dt>
+<dd><p>Return the UUID of the system.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.get_time_series_directory">
+<span class="sig-name descname"><span class="pre">get_time_series_directory</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Path</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span></span><a class="headerlink" href="#infrasys.system.System.get_time_series_directory" title="Link to this definition">¶</a></dt>
+<dd><p>Return the directory containing time series files. Will be none for in-memory time
+series.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="infrasys.system.System.show_components">
+<span class="sig-name descname"><span class="pre">show_components</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">component_type</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Type</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><span class="pre">Component</span></a><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">show_uuid</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">show_time_series</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">show_supplemental</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#infrasys.system.System.show_components" title="Link to this definition">¶</a></dt>
+<dd><p>Display a table of components of the specified type.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>component_type</strong> (<em>Type</em><em>[</em><a class="reference internal" href="components.html#infrasys.component.Component" title="infrasys.component.Component"><em>Component</em></a><em>]</em>) – The type of components to display. If component_type is an abstract type,
+all matching subtypes will be included.</p></li>
+<li><p><strong>show_uuid</strong> (<em>bool</em>) – Whether to include the UUID column in the table. Defaults to False.</p></li>
+<li><p><strong>show_time_series</strong> (<em>bool</em>) – Whether to include the Time Series count column in the table. Defaults to False.</p></li>
+<li><p><strong>show_time_series</strong> – Whether to include the Supplemental Attributes count column in the table. Defaults to False.</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">system</span><span class="o">.</span><span class="n">show_components</span><span class="p">(</span><span class="n">Generator</span><span class="p">)</span>  <span class="c1"># Shows only names</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">system</span><span class="o">.</span><span class="n">show_components</span><span class="p">(</span><span class="n">Bus</span><span class="p">,</span> <span class="n">show_uuid</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">system</span><span class="o">.</span><span class="n">show_components</span><span class="p">(</span><span class="n">Generator</span><span class="p">,</span> <span class="n">show_time_series</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">system</span><span class="o">.</span><span class="n">show_components</span><span class="p">(</span><span class="n">Generator</span><span class="p">,</span> <span class="n">show_supplemental</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+
+        </article>
+      </div>
+      <footer>
+        
+        <div class="related-pages">
+          <a class="next-page" href="components.html">
+              <div class="page-info">
+                <div class="context">
+                  <span>Next</span>
+                </div>
+                <div class="title">Components</div>
+              </div>
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+            </a>
+          <a class="prev-page" href="index.html">
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+              <div class="page-info">
+                <div class="context">
+                  <span>Previous</span>
+                </div>
+                
+                <div class="title">API</div>
+                
+              </div>
+            </a>
+        </div>
+        <div class="bottom-of-page">
+          <div class="left-details">
+            <div class="copyright">
+                Copyright &#169; 2024, NREL
+            </div>
+            Made with <a href="https://www.sphinx-doc.org/">Sphinx</a> and <a class="muted-link" href="https://pradyunsg.me">@pradyunsg</a>'s
+            
+            <a href="https://github.com/pradyunsg/furo">Furo</a>
+            
+          </div>
+          <div class="right-details">
+            
+          </div>
+        </div>
+        
+      </footer>
+    </div>
+    <aside class="toc-drawer">
+      
+      
+      <div class="toc-sticky toc-scroll">
+        <div class="toc-title-container">
+          <span class="toc-title">
+            On this page
+          </span>
+        </div>
+        <div class="toc-tree-container">
+          <div class="toc-tree">
+            <ul>
+<li><a class="reference internal" href="#">System</a><ul>
+<li><a class="reference internal" href="#infrasys.system.System"><code class="docutils literal notranslate"><span class="pre">System</span></code></a><ul>
+<li><a class="reference internal" href="#infrasys.system.System.close"><code class="docutils literal notranslate"><span class="pre">System.close()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.auto_add_composed_components"><code class="docutils literal notranslate"><span class="pre">System.auto_add_composed_components</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.to_json"><code class="docutils literal notranslate"><span class="pre">System.to_json()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.from_json"><code class="docutils literal notranslate"><span class="pre">System.from_json()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.load"><code class="docutils literal notranslate"><span class="pre">System.load()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.to_records"><code class="docutils literal notranslate"><span class="pre">System.to_records()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.from_dict"><code class="docutils literal notranslate"><span class="pre">System.from_dict()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.save"><code class="docutils literal notranslate"><span class="pre">System.save()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.add_component"><code class="docutils literal notranslate"><span class="pre">System.add_component()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.add_components"><code class="docutils literal notranslate"><span class="pre">System.add_components()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.add_supplemental_attribute"><code class="docutils literal notranslate"><span class="pre">System.add_supplemental_attribute()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.change_component_uuid"><code class="docutils literal notranslate"><span class="pre">System.change_component_uuid()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.copy_component"><code class="docutils literal notranslate"><span class="pre">System.copy_component()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.deepcopy_component"><code class="docutils literal notranslate"><span class="pre">System.deepcopy_component()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.get_component"><code class="docutils literal notranslate"><span class="pre">System.get_component()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.get_component_by_label"><code class="docutils literal notranslate"><span class="pre">System.get_component_by_label()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.get_component_by_uuid"><code class="docutils literal notranslate"><span class="pre">System.get_component_by_uuid()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.get_components"><code class="docutils literal notranslate"><span class="pre">System.get_components()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.get_component_types"><code class="docutils literal notranslate"><span class="pre">System.get_component_types()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.get_components_with_supplemental_attribute"><code class="docutils literal notranslate"><span class="pre">System.get_components_with_supplemental_attribute()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.get_supplemental_attributes_with_component"><code class="docutils literal notranslate"><span class="pre">System.get_supplemental_attributes_with_component()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.get_supplemental_attribute_by_uuid"><code class="docutils literal notranslate"><span class="pre">System.get_supplemental_attribute_by_uuid()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.get_supplemental_attribute_counts_by_type"><code class="docutils literal notranslate"><span class="pre">System.get_supplemental_attribute_counts_by_type()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.get_num_supplemental_attributes"><code class="docutils literal notranslate"><span class="pre">System.get_num_supplemental_attributes()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.get_num_components_with_supplemental_attributes"><code class="docutils literal notranslate"><span class="pre">System.get_num_components_with_supplemental_attributes()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.has_supplemental_attribute"><code class="docutils literal notranslate"><span class="pre">System.has_supplemental_attribute()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.has_supplemental_attribute_association"><code class="docutils literal notranslate"><span class="pre">System.has_supplemental_attribute_association()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.has_component"><code class="docutils literal notranslate"><span class="pre">System.has_component()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.list_child_components"><code class="docutils literal notranslate"><span class="pre">System.list_child_components()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.list_parent_components"><code class="docutils literal notranslate"><span class="pre">System.list_parent_components()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.list_components_by_name"><code class="docutils literal notranslate"><span class="pre">System.list_components_by_name()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.iter_all_components"><code class="docutils literal notranslate"><span class="pre">System.iter_all_components()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.rebuild_component_associations"><code class="docutils literal notranslate"><span class="pre">System.rebuild_component_associations()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.remove_component"><code class="docutils literal notranslate"><span class="pre">System.remove_component()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.remove_component_by_name"><code class="docutils literal notranslate"><span class="pre">System.remove_component_by_name()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.remove_component_by_uuid"><code class="docutils literal notranslate"><span class="pre">System.remove_component_by_uuid()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.remove_supplemental_attribute"><code class="docutils literal notranslate"><span class="pre">System.remove_supplemental_attribute()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.remove_supplemental_attribute_from_component"><code class="docutils literal notranslate"><span class="pre">System.remove_supplemental_attribute_from_component()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.update_components"><code class="docutils literal notranslate"><span class="pre">System.update_components()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.add_time_series"><code class="docutils literal notranslate"><span class="pre">System.add_time_series()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.copy_time_series"><code class="docutils literal notranslate"><span class="pre">System.copy_time_series()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.get_time_series"><code class="docutils literal notranslate"><span class="pre">System.get_time_series()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.get_time_series_by_key"><code class="docutils literal notranslate"><span class="pre">System.get_time_series_by_key()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.has_time_series"><code class="docutils literal notranslate"><span class="pre">System.has_time_series()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.list_time_series"><code class="docutils literal notranslate"><span class="pre">System.list_time_series()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.list_time_series_keys"><code class="docutils literal notranslate"><span class="pre">System.list_time_series_keys()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.list_time_series_metadata"><code class="docutils literal notranslate"><span class="pre">System.list_time_series_metadata()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.remove_time_series"><code class="docutils literal notranslate"><span class="pre">System.remove_time_series()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.open_time_series_store"><code class="docutils literal notranslate"><span class="pre">System.open_time_series_store()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.open_metadata_store"><code class="docutils literal notranslate"><span class="pre">System.open_metadata_store()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.serialize_system_attributes"><code class="docutils literal notranslate"><span class="pre">System.serialize_system_attributes()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.deserialize_system_attributes"><code class="docutils literal notranslate"><span class="pre">System.deserialize_system_attributes()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.handle_data_format_upgrade"><code class="docutils literal notranslate"><span class="pre">System.handle_data_format_upgrade()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.merge_system"><code class="docutils literal notranslate"><span class="pre">System.merge_system()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.convert_storage"><code class="docutils literal notranslate"><span class="pre">System.convert_storage()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.data_format_version"><code class="docutils literal notranslate"><span class="pre">System.data_format_version</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.name"><code class="docutils literal notranslate"><span class="pre">System.name</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.description"><code class="docutils literal notranslate"><span class="pre">System.description</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.label"><code class="docutils literal notranslate"><span class="pre">System.label</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.time_series"><code class="docutils literal notranslate"><span class="pre">System.time_series</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.uuid"><code class="docutils literal notranslate"><span class="pre">System.uuid</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.get_time_series_directory"><code class="docutils literal notranslate"><span class="pre">System.get_time_series_directory()</span></code></a></li>
+<li><a class="reference internal" href="#infrasys.system.System.show_components"><code class="docutils literal notranslate"><span class="pre">System.show_components()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+          </div>
+        </div>
+      </div>
+      
+      
+    </aside>
+  </div>
+</div><script src="../../_static/documentation_options.js?v=38b66d78"></script>
+    <script src="../../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/scripts/furo.js?v=46bd48cc"></script>
+    <script src="../../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../../_static/copybutton.js?v=3a0c56fd"></script>
+    </body>
+</html>
