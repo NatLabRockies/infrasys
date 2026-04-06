@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.1.2](https://github.com/NatLabRockies/infrasys/compare/v1.1.1...v1.1.2) (2026-04-06)
+
+
+### Bug Fixes
+
+* handle NonSequentialTimeSeries in legacy metadata migration ([a955fa6](https://github.com/NatLabRockies/infrasys/commit/a955fa6afcdb847066defb136b5906520e0d1cc4))
+* handle NonSequentialTimeSeries in legacy metadata migration ([8368a66](https://github.com/NatLabRockies/infrasys/commit/8368a66576ec0133b9b7ed54f73e7edf4458ef16))
+* register get_length() dispatch for NonSequentialTimeSeriesMetadata ([6a26258](https://github.com/NatLabRockies/infrasys/commit/6a262589b00bdac2f2b2a2634c8b1e2bafeea20f))
+* use valid UUIDs in NonSequentialTimeSeries migration test ([b25c936](https://github.com/NatLabRockies/infrasys/commit/b25c936519f63a9589f9531b671e3f54bd2d9433))
+
 ## [1.1.1](https://github.com/NatLabRockies/infrasys/compare/v1.1.0...v1.1.1) (2026-03-19)
 
 
