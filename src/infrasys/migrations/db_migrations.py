@@ -149,10 +149,12 @@ def migrate_legacy_metadata_store(conn: sqlite3.Connection) -> bool:
         length = metadata.get("length", 0)
 
         # Old resolution was in timedelta format.
-        resolution = str_timedelta_to_iso_8601(resolution)
+        if resolution is not None:
+            resolution = str_timedelta_to_iso_8601(resolution)
 
         # Fix for timestamp from: 2020-01-01 00:00 -> 2020-01-01T00:00
-        initial_timestamp = initial_timestamp.replace(" ", "T")
+        if initial_timestamp is not None:
+            initial_timestamp = initial_timestamp.replace(" ", "T")
         sql_data_to_insert.append(
             {
                 "time_series_uuid": time_series_uuid,
