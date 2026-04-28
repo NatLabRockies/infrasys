@@ -16,6 +16,7 @@ SUPPLEMENTAL_ATTRIBUTE_ASSOCIATIONS_TABLE = "supplemental_attribute_associations
 
 from .base_quantity import BaseQuantity
 from .component import Component
+from .device_parameter import DeviceParameter
 from .location import GeographicInfo, Location
 from .normalization import NormalizationModel
 from .supplemental_attribute import SupplementalAttribute
@@ -33,6 +34,7 @@ __all__ = (
     "BaseQuantity",
     "Component",
     "Deterministic",
+    "DeviceParameter",
     "GeographicInfo",
     "Location",
     "NonSequentialTimeSeries",

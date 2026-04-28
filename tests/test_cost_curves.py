@@ -1,5 +1,13 @@
 from infrasys import Component
-from infrasys.cost_curves import CostCurve, FuelCurve, ProductionVariableCostCurve, UnitSystem
+from infrasys.cost_curves import (
+    CostCurve,
+    FuelCurve,
+    OfferCurveCost,
+    OperationalCost,
+    ProductionVariableCostCurve,
+    UnitSystem,
+)
+from infrasys.device_parameter import DeviceParameter
 from infrasys.function_data import LinearFunctionData
 from infrasys.value_curves import InputOutputCurve, LinearCurve
 
@@ -57,6 +65,11 @@ def test_fuel_curve():
     assert isinstance(fuel_curve.startup_fuel_offtake.function_data, LinearFunctionData)
     assert fuel_curve.startup_fuel_offtake.function_data.proportional_term == 3.0
     assert fuel_curve.fuel_cost == 2.5
+
+
+def test_operational_cost_hierarchy():
+    assert issubclass(OperationalCost, DeviceParameter)
+    assert issubclass(OfferCurveCost, OperationalCost)
 
 
 def test_value_curve_custom_serialization():
