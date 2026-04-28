@@ -9,6 +9,7 @@ from infrasys.value_curves import (
     IncrementalCurve,
     AverageRateCurve,
     LinearCurve,
+    PiecewiseIncrementalCurve,
 )
 from infrasys import Component
 from infrasys.exceptions import ISOperationNotAllowed
@@ -70,6 +71,23 @@ def test_linear_curve():
     assert getattr(linear, "function_data")
     assert getattr(linear.function_data, "proportional_term") == m
     assert getattr(linear.function_data, "constant_term") == b
+
+
+def test_piecewise_incremental_curve_alias():
+    curve = PiecewiseIncrementalCurve(10.0, [0.0, 100.0, 200.0], [25.0, 30.0])
+    assert isinstance(curve, IncrementalCurve)
+    assert isinstance(curve.function_data, PiecewiseStepData)
+    assert curve.initial_input == 10.0
+    assert curve.input_at_zero is None
+    assert curve.function_data.x_coords == [0.0, 100.0, 200.0]
+    assert curve.function_data.y_coords == [25.0, 30.0]
+
+    curve = PiecewiseIncrementalCurve(0.0, 10.0, [0.0, 100.0], [25.0])
+    assert curve.input_at_zero == 0.0
+    assert curve.initial_input == 10.0
+
+    with pytest.raises(TypeError, match="PiecewiseIncrementalCurve expects"):
+        _ = PiecewiseIncrementalCurve(10.0, [0.0, 100.0])  # type: ignore[call-overload]
 
 
 def test_average_rate_conversion():
