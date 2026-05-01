@@ -1,8 +1,10 @@
+from abc import ABC
 from enum import StrEnum
 
 from pydantic import Field
 from typing_extensions import Annotated
 
+from infrasys.device_parameter import DeviceParameter
 from infrasys.models import InfraSysBaseModel
 from infrasys.value_curves import AverageRateCurve, IncrementalCurve, InputOutputCurve, LinearCurve
 
@@ -61,3 +63,11 @@ class FuelCurve(ProductionVariableCostCurve):
             description="Fuel consumption at the unit startup procedure. Additional cost to the startup costs and related only to the initial fuel required to start the unit."
         ),
     ] = LinearCurve(0.0)
+
+
+class OperationalCost(DeviceParameter, ABC):
+    """Abstract supertype for operational cost representations."""
+
+
+class OfferCurveCost(OperationalCost, ABC):
+    """Abstract base type for market offer-curve operational costs."""
