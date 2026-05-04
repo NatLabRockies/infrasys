@@ -1,6 +1,6 @@
 """Defines classes for value curves using cost functions"""
 
-from typing import Generic
+from typing import Generic, overload
 
 import numpy as np
 from pydantic import Field
@@ -273,4 +273,52 @@ def LinearCurve(
         function_data=LinearFunctionData(
             proportional_term=proportional_term, constant_term=constant_term
         )
+    )
+
+
+@overload
+def PiecewiseIncrementalCurve(
+    initial_input: float | None,
+    x_coords: list[float],
+    slopes: list[float],
+    /,
+) -> IncrementalCurve[PiecewiseStepData]: ...
+
+
+@overload
+def PiecewiseIncrementalCurve(
+    input_at_zero: float | None,
+    initial_input: float | None,
+    x_coords: list[float],
+    slopes: list[float],
+    /,
+) -> IncrementalCurve[PiecewiseStepData]: ...
+
+
+def PiecewiseIncrementalCurve(*args) -> IncrementalCurve[PiecewiseStepData]:
+    """Create a piecewise incremental curve with Sienna-compatible call patterns.
+
+    Supported call forms
+    --------------------
+    PiecewiseIncrementalCurve(initial_input, x_coords, slopes)
+    PiecewiseIncrementalCurve(input_at_zero, initial_input, x_coords, slopes)
+    """
+
+    if len(args) == 3:
+        initial_input, x_coords, slopes = args
+        input_at_zero = None
+    elif len(args) == 4:
+        input_at_zero, initial_input, x_coords, slopes = args
+    else:
+        msg = (
+            "PiecewiseIncrementalCurve expects either "
+            "(initial_input, x_coords, slopes) or "
+            "(input_at_zero, initial_input, x_coords, slopes)."
+        )
+        raise TypeError(msg)
+
+    return IncrementalCurve(
+        function_data=PiecewiseStepData(x_coords=x_coords, y_coords=slopes),
+        initial_input=initial_input,
+        input_at_zero=input_at_zero,
     )
