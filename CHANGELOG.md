@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.0](https://github.com/NatLabRockies/infrasys/compare/v1.1.2...v1.2.0) (2026-05-04)
+
+
+### Features
+
+* add device parameter base abstraction ([#150](https://github.com/NatLabRockies/infrasys/issues/150)) ([9db0523](https://github.com/NatLabRockies/infrasys/commit/9db052374f3aefa6b4d86716a2051c204b52c195))
+* add PiecewiseIncrementalCurve helper ([#151](https://github.com/NatLabRockies/infrasys/issues/151)) ([1971984](https://github.com/NatLabRockies/infrasys/commit/197198466d729756bdbead92c3f6acedd003c92c))
+
 ## [1.1.2](https://github.com/NatLabRockies/infrasys/compare/v1.1.1...v1.1.2) (2026-04-06)
 
 
