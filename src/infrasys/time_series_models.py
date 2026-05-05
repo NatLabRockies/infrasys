@@ -370,6 +370,7 @@ class TimeSeriesMetadata(InfraSysBaseModelWithIdentifers, abc.ABC):
     name: str
     time_series_uuid: UUID
     features: dict[str, Any] = {}
+    scaling_factor_multiplier: dict[str, Any] | None = None
     units: Optional[QuantityMetadata] = None
     normalization: NormalizationModel = None
     type: Literal[
