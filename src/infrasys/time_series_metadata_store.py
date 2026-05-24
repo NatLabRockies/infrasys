@@ -73,19 +73,23 @@ class TimeSeriesMetadataStore:
             self._cache_metadata[metadata.uuid] = metadata
         # Advance ID managers past any IDs already present in the database
         # so that newly added metadata gets fresh IDs.
-        max_ids = cursor.execute(
-            f"""
-            SELECT
-                COALESCE(MAX(metadata_id), 0),
-                COALESCE(MAX(time_series_id), 0),
-                COALESCE(MAX(owner_id), 0)
-            FROM {TIME_SERIES_ASSOCIATIONS_TABLE}
-            """
-        ).fetchone()
-        if max_ids:
-            self._metadata_id_manager.advance_past(max_ids[0])
-            self._time_series_id_manager.advance_past(max_ids[1])
-            self._owner_id_manager.advance_past(max_ids[2])
+        columns = {row[1] for row in cursor.execute(
+            f"PRAGMA table_info({TIME_SERIES_ASSOCIATIONS_TABLE})"
+        ).fetchall()}
+        if "metadata_id" in columns:
+            max_ids = cursor.execute(
+                f"""
+                SELECT
+                    COALESCE(MAX(metadata_id), 0),
+                    COALESCE(MAX(time_series_id), 0),
+                    COALESCE(MAX(owner_id), 0)
+                FROM {TIME_SERIES_ASSOCIATIONS_TABLE}
+                """
+            ).fetchone()
+            if max_ids:
+                self._metadata_id_manager.advance_past(max_ids[0])
+                self._time_series_id_manager.advance_past(max_ids[1])
+                self._owner_id_manager.advance_past(max_ids[2])
         return
 
     def add(
@@ -404,7 +408,7 @@ class TimeSeriesMetadataStore:
         else:
             return metadata
 
-    def sql(self, query: str, params: Sequence[str] = ()) -> list[tuple]:
+    def sql(self, query: str, params: Sequence[Any] = ()) -> list[tuple]:
         """Run a SQL query on the time series metadata table."""
         cur = self._con.cursor()
         return execute(cur, query, params=params).fetchall()

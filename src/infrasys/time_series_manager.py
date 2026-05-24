@@ -521,11 +521,16 @@ class TimeSeriesManager:
         # Load metadata and handle storage conversion if requested
         mgr.metadata_store._load_metadata_into_memory()
         # Advance the time series ID manager so new time series get fresh IDs.
-        max_ts_id = execute(
-            mgr.metadata_store._con.cursor(),
-            f"SELECT COALESCE(MAX(time_series_id), 0) FROM {TIME_SERIES_ASSOCIATIONS_TABLE}",
-        ).fetchone()[0]
-        mgr._id_manager.advance_past(max_ts_id)
+        # Guard against legacy databases that haven't been migrated yet.
+        columns = {row[1] for row in mgr.metadata_store._con.execute(
+            f"PRAGMA table_info({TIME_SERIES_ASSOCIATIONS_TABLE})"
+        ).fetchall()}
+        if "time_series_id" in columns:
+            max_ts_id = execute(
+                mgr.metadata_store._con.cursor(),
+                f"SELECT COALESCE(MAX(time_series_id), 0) FROM {TIME_SERIES_ASSOCIATIONS_TABLE}",
+            ).fetchone()[0]
+            mgr._id_manager.advance_past(max_ts_id)
         if (
             "time_series_storage_type" in kwargs
             and _process_time_series_kwarg("time_series_storage_type", **kwargs) != ts_type

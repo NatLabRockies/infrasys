@@ -1019,14 +1019,15 @@ class System:
         """
         self._component_mgr.raise_if_not_attached(component)
         if self.has_time_series(component):
+            metadata_list = list(self._time_series_mgr.list_time_series_metadata(component))
             logger.warning(
                 "Removing component {} which has {} time series(s). "
                 "Time series must be removed before the component to avoid "
                 "silent CASCADE deletion in the metadata database.",
                 component.label,
-                len(list(self._time_series_mgr.list_time_series_metadata(component))),
+                len(metadata_list),
             )
-            for metadata in self._time_series_mgr.list_time_series_metadata(component):
+            for metadata in metadata_list:
                 self.remove_time_series(
                     component,
                     time_series_type=metadata.get_time_series_data_type(),

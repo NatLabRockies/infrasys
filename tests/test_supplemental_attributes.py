@@ -338,3 +338,165 @@ def test_supplemental_attribute_manager_raise_if_attached():
 
     with pytest.raises(ISAlreadyAttached, match="already attached"):
         system._supplemental_attr_mgr.raise_if_attached(attr1)
+
+
+def test_list_associated_component_ids():
+    """Test list_associated_component_ids returns correct component IDs."""
+    bus = SimpleBus(name="test-bus", voltage=1.1)
+    gen = SimpleGenerator(name="gen1", active_power=1.0, rating=1.0, bus=bus, available=True)
+    attr1 = GeographicInfo.example()
+    system = SimpleSystem(auto_add_composed_components=True)
+    system.add_component(gen)
+    system.add_supplemental_attribute(bus, attr1)
+    system.add_supplemental_attribute(gen, attr1)
+
+    ids = system._supplemental_attr_mgr._associations.list_associated_component_ids(attr1)
+    assert len(ids) == 2
+    assert bus.id in ids
+    assert gen.id in ids
+
+
+def test_list_associated_supplemental_attribute_ids_with_type_filter():
+    """Test list_associated_supplemental_attribute_ids with attribute_type filter."""
+    bus = SimpleBus(name="test-bus", voltage=1.1)
+    gen = SimpleGenerator(name="gen1", active_power=1.0, rating=1.0, bus=bus, available=True)
+    attr1 = GeographicInfo.example()
+    attr2 = Attribute(energy=Energy(10.0, "kWh"))
+    system = SimpleSystem(auto_add_composed_components=True)
+    system.add_component(gen)
+    system.add_supplemental_attribute(bus, attr1)
+    system.add_supplemental_attribute(bus, attr2)
+
+    assoc = system._supplemental_attr_mgr._associations
+    # Without type filter — both attributes
+    ids = assoc.list_associated_supplemental_attribute_ids(bus)
+    assert len(ids) == 2
+    assert attr1.id in ids
+    assert attr2.id in ids
+
+    # With type filter — only GeographicInfo
+    ids = assoc.list_associated_supplemental_attribute_ids(bus, attribute_type="GeographicInfo")
+    assert ids == [attr1.id]
+
+
+def test_get_supplemental_attribute_counts():
+    """Test get_num_attributes and get_num_components_with_attributes."""
+    bus = SimpleBus(name="bus1", voltage=1.1)
+    bus2 = SimpleBus(name="bus2", voltage=1.1)
+    gen = SimpleGenerator(name="gen1", active_power=1.0, rating=1.0, bus=bus, available=True)
+    attr1 = GeographicInfo.example()
+    system = SimpleSystem(auto_add_composed_components=True)
+    system.add_component(gen)
+    system.add_component(bus2)
+    system.add_supplemental_attribute(bus, attr1)
+    system.add_supplemental_attribute(bus2, attr1)
+
+    assert system.get_num_supplemental_attributes() == 1
+    assert system.get_num_components_with_supplemental_attributes() == 2
+
+
+def test_supplemental_attribute_by_id():
+    """Test get_supplemental_attribute_by_id."""
+    bus = SimpleBus(name="test-bus", voltage=1.1)
+    gen = SimpleGenerator(name="gen1", active_power=1.0, rating=1.0, bus=bus, available=True)
+    attr1 = GeographicInfo.example()
+    system = SimpleSystem(auto_add_composed_components=True)
+    system.add_component(gen)
+    system.add_supplemental_attribute(bus, attr1)
+    assert attr1.id is not None
+    assert system.get_supplemental_attribute_by_id(attr1.id) is attr1
+
+
+def test_migrate_supplemental_attribute_associations():
+    """Test that migrate_legacy_uuid_table converts UUID-based associations to integer IDs."""
+    import uuid as uuid_mod
+    from infrasys.utils.sqlite import create_in_memory_db, execute
+
+    con = create_in_memory_db()
+
+    # Create a legacy UUID-based table
+    legacy_schema = [
+        "id INTEGER PRIMARY KEY",
+        "attribute_uuid TEXT NOT NULL",
+        "attribute_type TEXT NOT NULL",
+        "component_uuid TEXT NOT NULL",
+        "component_type TEXT NOT NULL",
+    ]
+    table = "supplemental_attribute_associations"
+    con.execute(f"CREATE TABLE {table}({','.join(legacy_schema)})")
+    con.commit()
+
+    # Insert a legacy association
+    comp_uuid = str(uuid_mod.uuid4())
+    attr_uuid = str(uuid_mod.uuid4())
+    con.execute(
+        f"INSERT INTO {table} VALUES(?,?,?,?,?)",
+        (None, attr_uuid, "GeographicInfo", comp_uuid, "SimpleBus"),
+    )
+    con.commit()
+
+    # Create components and attributes with IDs
+    bus = SimpleBus(name="test-bus", voltage=1.1)
+    bus.id = 42
+    bus.legacy_uuid = uuid_mod.UUID(comp_uuid)
+    attr1 = GeographicInfo.example()
+    attr1.id = 99
+    attr1.legacy_uuid = uuid_mod.UUID(attr_uuid)
+
+    from infrasys.supplemental_attribute_associations import SupplementalAttributeAssociationsStore
+    store = SupplementalAttributeAssociationsStore(con, initialize=False)
+    store.migrate_legacy_uuid_table(components=[bus], attributes=[attr1])
+
+    # Verify migration succeeded
+    columns = {row[1] for row in con.execute(f"PRAGMA table_info({table})")}
+    assert "attribute_id" in columns
+    assert "component_id" in columns
+    assert "attribute_uuid" not in columns
+
+    rows = con.execute(f"SELECT * FROM {table}").fetchall()
+    assert len(rows) == 1
+    assert rows[0][1] == 99  # attribute_id
+    assert rows[0][3] == 42  # component_id
+
+
+def test_normalize_insert_rows():
+    """Test _normalize_insert_rows converts legacy UUID fields to integer IDs."""
+    import uuid as uuid_mod
+    from infrasys.time_series_metadata_store import TimeSeriesMetadataStore
+    from infrasys.utils.sqlite import create_in_memory_db
+    store = TimeSeriesMetadataStore(create_in_memory_db())
+
+    ts_uuid = str(uuid_mod.uuid4())
+    md_uuid = str(uuid_mod.uuid4())
+    rows = [
+        {
+            "time_series_uuid": ts_uuid,
+            "time_series_type": "SingleTimeSeries",
+            "initial_timestamp": datetime(2020, 1, 1),
+            "resolution": "PT1H",
+            "horizon": None,
+            "interval": None,
+            "window_count": None,
+            "length": 100,
+            "name": "active_power",
+            "owner_uuid": str(uuid_mod.uuid4()),
+            "owner_type": "SimpleGenerator",
+            "owner_category": "Component",
+            "features": "[]",
+            "units": None,
+            "metadata_uuid": md_uuid,
+        },
+    ]
+    normalized = store._normalize_insert_rows(rows)
+    assert len(normalized) == 1
+    row = normalized[0]
+    # UUID fields should be renamed to storage_key variants
+    assert "time_series_uuid" not in row
+    assert row["time_series_storage_key"] == ts_uuid
+    assert "metadata_uuid" not in row
+    assert row["metadata_storage_key"] == md_uuid
+    assert "owner_uuid" not in row
+    # Integer IDs should be auto-generated
+    assert isinstance(row["time_series_id"], int)
+    assert isinstance(row["metadata_id"], int)
+    assert isinstance(row["owner_id"], int)
