@@ -952,6 +952,62 @@ def test_bulk_add_time_series_with_rollback(storage_type: TimeSeriesStorageType)
     assert not system.has_time_series(gen, name=ts_name)
 
 
+def test_component_associations_clear():
+    """Test that clearing component associations works correctly."""
+    system = SimpleSystem()
+    bus = SimpleBus(name="bus1", voltage=1.1)
+    gen = SimpleGenerator(name="gen1", active_power=1.0, rating=1.0, bus=bus, available=True)
+    system.add_components(bus, gen)
+
+    # Verify associations exist — generator composes bus
+    children = system._component_mgr._associations.list_child_components(gen)
+    assert len(children) > 0
+    assert bus.id in children
+
+    # Clear all associations
+    system._component_mgr._associations.clear()
+    children = system._component_mgr._associations.list_child_components(gen)
+    assert len(children) == 0
+
+
+def test_component_associations_list_with_type_filter():
+    """Test list_child_components and list_parent_components with type filter."""
+    from infrasys.component import Component
+
+    system = SimpleSystem()
+    bus = SimpleBus(name="bus2", voltage=1.1)
+    gen = SimpleGenerator(name="gen2", active_power=1.0, rating=1.0, bus=bus, available=True)
+    system.add_components(bus, gen)
+
+    # list_child_components with matching type filter — generator composes bus
+    children = system._component_mgr._associations.list_child_components(
+        gen, component_type=Component
+    )
+    assert len(children) >= 1
+    assert bus.id in children
+
+    # list_parent_components with matching type filter — gen's parent
+    parents = system._component_mgr._associations.list_parent_components(
+        bus, component_type=Component
+    )
+    assert len(parents) >= 1
+    assert gen.id in parents
+
+
+def test_get_by_label_with_uuid():
+    """Test that get_by_label works with UUID-based labels."""
+    system = SimpleSystem(auto_add_composed_components=True)
+    bus = SimpleBus(name="uuid-bus", voltage=1.1)
+    system.add_component(bus)
+
+    # Lookup by uuid (via label constructed from uuid)
+    from infrasys.models import make_label
+
+    label = make_label("SimpleBus", str(bus.uuid))
+    found = system.get_component_by_label(label)
+    assert found.id == bus.id
+
+
 def test_remove_component_cleans_up_indexes():
     """Test that removing a component cleans up ID/UUID indexes even when other
     components share the same type/name key (multi-component container)."""

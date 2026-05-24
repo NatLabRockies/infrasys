@@ -539,6 +539,47 @@ def test_convert_chronify_storage_permanent(tmp_path):
     assert (tmp_path / "time_series_data.db").exists()
 
 
+def test_serialized_component_reference_uuid_property_raises():
+    """Test that SerializedComponentReference.uuid raises when legacy_uuid is None."""
+    from infrasys.serialization import SerializedComponentReference
+
+    ref = SerializedComponentReference(id=1, module="test", type="TestType")
+    with pytest.raises(AttributeError, match="does not contain a legacy UUID"):
+        _ = ref.uuid  # noqa
+
+
+def test_serialized_component_reference_uuid_property_returns_value():
+    """Test that SerializedComponentReference.uuid returns the legacy UUID."""
+    from uuid import UUID
+    from infrasys.serialization import SerializedComponentReference
+
+    uuid_val = UUID("a1b2c3d4-0000-0000-0000-000000000001")
+    ref = SerializedComponentReference(id=1, legacy_uuid=uuid_val, module="test", type="TestType")
+    assert ref.uuid == uuid_val
+
+
+def test_get_class_and_name_from_label_with_uuid():
+    """Test that get_class_and_name_from_label parses UUID labels correctly."""
+    from infrasys.models import get_class_and_name_from_label
+    from uuid import UUID
+
+    uuid_str = "a1b2c3d4-0000-0000-0000-000000000001"
+    class_name, name = get_class_and_name_from_label(f"SimpleBus.{uuid_str}")
+    assert class_name == "SimpleBus"
+    assert isinstance(name, UUID)
+    assert str(name) == uuid_str
+
+
+def test_get_class_and_name_from_label_with_unknown_string():
+    """Test that get_class_and_name_from_label falls back to string for unknown formats."""
+    from infrasys.models import get_class_and_name_from_label
+
+    class_name, name = get_class_and_name_from_label("Type.my-component")
+    assert class_name == "Type"
+    assert isinstance(name, str)
+    assert name == "my-component"
+
+
 def test_upgrade_legacy_component_ids_migration():
     """Test that upgrade_legacy_component_ids correctly upgrades a legacy UUID-based JSON."""
     from infrasys.utils.migrations import upgrade_legacy_component_ids
