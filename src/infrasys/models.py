@@ -87,17 +87,14 @@ def make_label(class_name: str, name: str) -> str:
     return f"{class_name}.{name}"
 
 
-def get_class_and_name_from_label(label: str) -> tuple[str, str | int | UUID]:
+def get_class_and_name_from_label(label: str) -> tuple[str, str | UUID]:
     """Return the class and name from a label.
     If the name is a stringified UUID, it will be converted to a UUID.
+    Numeric names are returned as strings so that callers can attempt a name-based
+    lookup first and fall back to an ID-based lookup only when the name is not found.
     """
     class_name, name = label.split(".", maxsplit=1)
-    name_or_uuid: str | int | UUID = name
-    try:
-        name_or_uuid = int(name)
-        return class_name, name_or_uuid
-    except ValueError:
-        pass
+    name_or_uuid: str | UUID = name
     try:
         name_or_uuid = UUID(name)
     except ValueError:

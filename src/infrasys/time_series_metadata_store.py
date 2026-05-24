@@ -240,7 +240,7 @@ class TimeSeriesMetadataStore:
         cur = self._con.cursor()
         query = f"SELECT 1 FROM {TIME_SERIES_ASSOCIATIONS_TABLE} WHERE time_series_storage_key = ?"
         row = execute(cur, query, params=(str(time_series_uuid),)).fetchone()
-        return row
+        return row is not None
 
     def has_time_series_metadata(
         self,
@@ -443,7 +443,9 @@ class TimeSeriesMetadataStore:
         )
 
         for owner in owners:
-            assert owner.id is not None
+            if owner.id is None:
+                msg = f"{owner.label} does not have an id assigned."
+                raise ISOperationNotAllowed(msg)
             params.append(owner.id)
             params.append(_get_owner_category(owner))
 

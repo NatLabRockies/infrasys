@@ -6,7 +6,7 @@ from typing import Any, Optional, Sequence
 from loguru import logger
 
 from infrasys import Component, SUPPLEMENTAL_ATTRIBUTE_ASSOCIATIONS_TABLE
-from infrasys.exceptions import ISAlreadyAttached
+from infrasys.exceptions import ISAlreadyAttached, ISOperationNotAllowed
 from infrasys.supplemental_attribute import SupplementalAttribute
 from infrasys.utils.sqlite import execute
 from infrasys.utils.metadata_utils import (
@@ -53,8 +53,12 @@ class SupplementalAttributeAssociationsStore:
             Raised if the supplemental attribute association is already stored.
         """
         con = connection or self._con
-        assert attribute.id is not None
-        assert component.id is not None
+        if attribute.id is None:
+            msg = f"{attribute.label} does not have an id assigned."
+            raise ISOperationNotAllowed(msg)
+        if component.id is None:
+            msg = f"{component.label} does not have an id assigned."
+            raise ISOperationNotAllowed(msg)
         params = (attribute.id, component.id)
         cur = con.cursor()
         res = execute(cur, self._CHECK_EXISTING_ASSOCIATION_QUERY, params=params).fetchone()
@@ -87,8 +91,12 @@ class SupplementalAttributeAssociationsStore:
         connection: sqlite3.Connection | None = None,
     ) -> bool:
         """Return True if the component and supplemental attribute have an association."""
-        assert attribute.id is not None
-        assert component.id is not None
+        if attribute.id is None:
+            msg = f"{attribute.label} does not have an id assigned."
+            raise ISOperationNotAllowed(msg)
+        if component.id is None:
+            msg = f"{component.label} does not have an id assigned."
+            raise ISOperationNotAllowed(msg)
         params = (attribute.id, component.id)
         return self._has_rows(
             self._HAS_ASSOCIATION_BY_COMPONENT_AND_ATTRIBUTE_QUERY,
@@ -105,7 +113,9 @@ class SupplementalAttributeAssociationsStore:
     ) -> bool:
         """Return true if there is at least one association matching the inputs."""
         # Note: Unlike the other has_association methods, this is not covered by an index.
-        assert attribute.id is not None
+        if attribute.id is None:
+            msg = f"{attribute.label} does not have an id assigned."
+            raise ISOperationNotAllowed(msg)
         params = (attribute.id,)
         return self._has_rows(
             self._HAS_ASSOCIATION_BY_ATTRIBUTE_QUERY,
@@ -121,7 +131,9 @@ class SupplementalAttributeAssociationsStore:
         connection: sqlite3.Connection | None = None,
     ) -> bool:
         """Return True if there is at least one association with the component."""
-        assert component.id is not None
+        if component.id is None:
+            msg = f"{component.label} does not have an id assigned."
+            raise ISOperationNotAllowed(msg)
         params = (component.id,)
         return self._has_rows(
             self._HAS_ASSOCIATION_BY_COMPONENT_QUERY,
@@ -145,7 +157,9 @@ class SupplementalAttributeAssociationsStore:
         """Return True if the component has an association with a supplemental attribute of the
         given type.
         """
-        assert component.id is not None
+        if component.id is None:
+            msg = f"{component.label} does not have an id assigned."
+            raise ISOperationNotAllowed(msg)
         params = (component.id, attribute_type)
         return self._has_rows(
             self._HAS_ASSOCIATION_BY_COMPONENT_AND_ATTRIBUTE_TYPE_QUERY,
@@ -172,7 +186,9 @@ class SupplementalAttributeAssociationsStore:
 
     def list_associated_component_ids(self, attribute: SupplementalAttribute) -> list[int]:
         """Return the component IDs associated with the attribute."""
-        assert attribute.id is not None
+        if attribute.id is None:
+            msg = f"{attribute.label} does not have an id assigned."
+            raise ISOperationNotAllowed(msg)
         params = (attribute.id,)
         cur = self._con.cursor()
         rows = execute(cur, self._LIST_ASSOCIATED_COMPONENT_IDS_QUERY, params=params)
@@ -191,7 +207,9 @@ class SupplementalAttributeAssociationsStore:
         attribute_type: Optional[str] = None,
     ) -> list[int]:
         """Return the supplemental attribute IDs associated with the component and attribute type."""
-        assert component.id is not None
+        if component.id is None:
+            msg = f"{component.label} does not have an id assigned."
+            raise ISOperationNotAllowed(msg)
         base = self._build_associated_attribute_ids_query()
         if attribute_type is None:
             query = f"{base} WHERE component_id = ?"
@@ -210,7 +228,9 @@ class SupplementalAttributeAssociationsStore:
         connection: sqlite3.Connection | None = None,
     ) -> None:
         """Remove all associations with the given attribute."""
-        assert attribute.id is not None
+        if attribute.id is None:
+            msg = f"{attribute.label} does not have an id assigned."
+            raise ISOperationNotAllowed(msg)
         where_clause = "WHERE attribute_id = ?"
         params = (attribute.id,)
         num_deleted = self._remove_associations(where_clause, params, connection=connection)
@@ -225,8 +245,12 @@ class SupplementalAttributeAssociationsStore:
         connection: sqlite3.Connection | None = None,
     ) -> None:
         """Remove the association between the attribute and component."""
-        assert attribute.id is not None
-        assert component.id is not None
+        if attribute.id is None:
+            msg = f"{attribute.label} does not have an id assigned."
+            raise ISOperationNotAllowed(msg)
+        if component.id is None:
+            msg = f"{component.label} does not have an id assigned."
+            raise ISOperationNotAllowed(msg)
         where_clause = "WHERE attribute_id = ? AND component_id = ?"
         params = (attribute.id, component.id)
         num_deleted = self._remove_associations(where_clause, params, connection=connection)
