@@ -278,7 +278,7 @@ class ComponentManager:
         self._check_parent_components_for_remove(component, force)
         container = self._components[component_type][key]
         for i, comp in enumerate(container):
-            if comp.uuid == component.uuid:
+            if _component_matches(comp, component):
                 container.pop(i)
                 # Always clean up ID/UUID indexes for the removed component,
                 # regardless of whether other components remain under the same key.
@@ -480,3 +480,14 @@ class ComponentManager:
         if component.id is None or component.id not in self._components_by_id:
             msg = f"{component.label} is not attached to the system"
             raise ISNotStored(msg)
+
+
+def _component_matches(a: Component, b: Component) -> bool:
+    """Return True if two component references match the same stored component.
+
+    Prefers matching by integer ``id``; falls back to ``uuid`` when ``id`` is
+    not available on either reference.
+    """
+    if a.id is not None and b.id is not None:
+        return a.id == b.id
+    return a.uuid == b.uuid

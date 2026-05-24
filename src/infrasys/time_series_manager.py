@@ -16,6 +16,7 @@ from loguru import logger
 
 from . import TIME_SERIES_ASSOCIATIONS_TABLE
 from .arrow_storage import ArrowTimeSeriesStorage
+from .utils.sqlite import execute
 from .component import Component
 from .exceptions import ISInvalidParameter, ISOperationNotAllowed
 from .h5_time_series_storage import HDF5TimeSeriesStorage
@@ -519,6 +520,12 @@ class TimeSeriesManager:
 
         # Load metadata and handle storage conversion if requested
         mgr.metadata_store._load_metadata_into_memory()
+        # Advance the time series ID manager so new time series get fresh IDs.
+        max_ts_id = execute(
+            mgr.metadata_store._con.cursor(),
+            f"SELECT COALESCE(MAX(time_series_id), 0) FROM {TIME_SERIES_ASSOCIATIONS_TABLE}",
+        ).fetchone()[0]
+        mgr._id_manager.advance_past(max_ts_id)
         if (
             "time_series_storage_type" in kwargs
             and _process_time_series_kwarg("time_series_storage_type", **kwargs) != ts_type

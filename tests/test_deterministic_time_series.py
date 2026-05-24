@@ -227,7 +227,7 @@ def test_deterministic_single_time_series_backwards_compatibility(tmp_path: Any)
         }
     ]
 
-    metadata_store._insert_rows(rows, cursor)  # type: ignore[arg-type]
+    metadata_store.insert_rows(rows, cursor)  # type: ignore[arg-type]
     conn.commit()
 
     metadata_store._load_metadata_into_memory()  # type: ignore[misc]

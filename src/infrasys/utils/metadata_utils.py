@@ -210,7 +210,7 @@ def create_associations_table(
         "FOREIGN KEY(metadata_id) REFERENCES time_series_metadata(id) ON DELETE CASCADE",
     ]
     schema_text = ",".join(schema)
-    execute(cur, f"CREATE TABLE {table_name}({schema_text})")
+    execute(cur, f"CREATE TABLE IF NOT EXISTS {table_name}({schema_text})")
     logger.debug("Created time series associations table")
     if with_index:
         create_indexes(connection, table_name)

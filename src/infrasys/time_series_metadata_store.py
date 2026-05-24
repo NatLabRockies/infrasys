@@ -71,6 +71,21 @@ class TimeSeriesMetadataStore:
             )
             metadata = _deserialize_time_series_metadata(row)
             self._cache_metadata[metadata.uuid] = metadata
+        # Advance ID managers past any IDs already present in the database
+        # so that newly added metadata gets fresh IDs.
+        max_ids = cursor.execute(
+            f"""
+            SELECT
+                COALESCE(MAX(metadata_id), 0),
+                COALESCE(MAX(time_series_id), 0),
+                COALESCE(MAX(owner_id), 0)
+            FROM {TIME_SERIES_ASSOCIATIONS_TABLE}
+            """
+        ).fetchone()
+        if max_ids:
+            self._metadata_id_manager.advance_past(max_ids[0])
+            self._time_series_id_manager.advance_past(max_ids[1])
+            self._owner_id_manager.advance_past(max_ids[2])
         return
 
     def add(
@@ -144,7 +159,7 @@ class TimeSeriesMetadataStore:
             }
             for owner in owners
         ]
-        self._insert_rows(rows, cur)
+        self.insert_rows(rows, cur)
         if connection is None:
             self._con.commit()
 
@@ -394,7 +409,7 @@ class TimeSeriesMetadataStore:
         cur = self._con.cursor()
         return execute(cur, query, params=params).fetchall()
 
-    def _insert_rows(self, rows: list[dict], cur: sqlite3.Cursor) -> None:
+    def insert_rows(self, rows: list[dict], cur: sqlite3.Cursor) -> None:
         query = f"""
         INSERT INTO {TIME_SERIES_ASSOCIATIONS_TABLE} (
             time_series_id, time_series_storage_key, time_series_type, initial_timestamp,
@@ -413,17 +428,20 @@ class TimeSeriesMetadataStore:
         cur.executemany(query, rows)
 
     def _make_components_str(
-        self, params: list[str], *owners: Component | SupplementalAttribute
+        self, params: list, *owners: Component | SupplementalAttribute
     ) -> str:
         if not owners:
             msg = "At least one component must be passed."
             raise ISOperationNotAllowed(msg)
 
-        or_clause = "OR ".join((itertools.repeat("owner_id = ? ", len(owners))))
+        or_clause = "OR ".join(
+            (itertools.repeat("(owner_id = ? AND owner_category = ?) ", len(owners)))
+        )
 
         for owner in owners:
             assert owner.id is not None
             params.append(owner.id)
+            params.append(_get_owner_category(owner))
 
         return f"({or_clause})"
 
@@ -433,8 +451,8 @@ class TimeSeriesMetadataStore:
         name: str | None,
         time_series_type: str | None,
         **features: str,
-    ) -> tuple[str, list[str]]:
-        params: list[str] = []
+    ) -> tuple[str, list]:
+        params: list = []
         component_str = self._make_components_str(params, *owners)
 
         if name is None:
@@ -570,7 +588,7 @@ class TimeSeriesMetadataStore:
                 }
             )
         if migrated:
-            self._insert_rows(migrated, cur)
+            self.insert_rows(migrated, cur)
         execute(cur, f"DROP TABLE {TIME_SERIES_ASSOCIATIONS_TABLE}_legacy_uuid")
         self._con.commit()
         self._cache_metadata.clear()

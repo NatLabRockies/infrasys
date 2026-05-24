@@ -190,7 +190,7 @@ def migrate_legacy_metadata_store(conn: sqlite3.Connection) -> bool:
         f"Inserting {len(sql_data_to_insert)} records into {TIME_SERIES_ASSOCIATIONS_TABLE}."
     )
     metadata_store = TimeSeriesMetadataStore(conn, initialize=False)
-    metadata_store._insert_rows(  # type: ignore[attr-defined]
+    metadata_store.insert_rows(
         [
             {
                 **row,
