@@ -107,25 +107,33 @@ class ComponentManager:
             Raised if there is more than one matching component.
         """
         class_name, name_or_uuid = get_class_and_name_from_label(label)
+        if isinstance(name_or_uuid, UUID):
+            return self.get_by_uuid(name_or_uuid)
+
+        # Try name-based lookup first (handles numeric component names like "123").
+        # Only falls through to ID-based lookup when no name match is found.
+        if isinstance(name_or_uuid, str):
+            for component_type, components_by_name in self._components.items():
+                if component_type.__name__ == class_name:
+                    components = components_by_name.get(name_or_uuid)
+                    if components is not None:
+                        if len(components) > 1:
+                            msg = f"There is more than one component with {label=}."
+                            raise ISOperationNotAllowed(msg)
+                        return components[0]
+            # Name not found; try to parse as integer ID
+            try:
+                name_or_uuid = int(name_or_uuid)
+            except ValueError:
+                msg = f"No component with {label=} is stored."
+                raise ISNotStored(msg)
+
         if isinstance(name_or_uuid, int):
             component = self.get_by_id(name_or_uuid)
             if type(component).__name__ == class_name:
                 return component
             msg = f"No component with {label=} is stored."
             raise ISNotStored(msg)
-        if isinstance(name_or_uuid, UUID):
-            return self.get_by_uuid(name_or_uuid)
-
-        for component_type, components_by_name in self._components.items():
-            if component_type.__name__ == class_name:
-                components = components_by_name.get(name_or_uuid)
-                if components is None:
-                    msg = f"No component with {label=} is stored."
-                    raise ISNotStored(msg)
-                if len(components) > 1:
-                    msg = f"There is more than one component with {label=}."
-                    raise ISOperationNotAllowed(msg)
-                return components[0]
 
         msg = f"No component with {label=} is stored."
         raise ISNotStored(msg)
@@ -272,11 +280,13 @@ class ComponentManager:
         for i, comp in enumerate(container):
             if comp.uuid == component.uuid:
                 container.pop(i)
+                # Always clean up ID/UUID indexes for the removed component,
+                # regardless of whether other components remain under the same key.
+                if component.id is not None:
+                    self._components_by_id.pop(component.id, None)
+                self._components_by_uuid.pop(component.uuid, None)
                 if not self._components[component_type][key]:
                     self._components[component_type].pop(key)
-                    if component.id is not None:
-                        self._components_by_id.pop(component.id)
-                    self._components_by_uuid.pop(component.uuid)
                 if not self._components[component_type]:
                     self._components.pop(component_type)
                 logger.debug("Removed component {}", component.label)

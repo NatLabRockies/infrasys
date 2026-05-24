@@ -178,16 +178,12 @@ class SupplementalAttributeAssociationsStore:
         rows = execute(cur, self._LIST_ASSOCIATED_COMPONENT_IDS_QUERY, params=params)
         return [x[0] for x in rows]
 
-    _LIST_ASSOCIATED_SUPPLEMENTAL_ATTRIBUTE_IDS_QUERY1 = f"""
-        SELECT attribute_id
-        FROM {TABLE_NAME}
-        WHERE component_id = ?
-    """
-    _LIST_ASSOCIATED_SUPPLEMENTAL_ATTRIBUTE_IDS_QUERY2 = f"""
-        SELECT attribute_id
-        FROM {TABLE_NAME}
-        WHERE attribute_type = ? AND component_id = ?
-    """
+    def _build_associated_attribute_ids_query(self) -> str:
+        """Return the base query for listing supplemental attribute IDs."""
+        return f"""
+            SELECT attribute_id
+            FROM {TABLE_NAME}
+        """
 
     def list_associated_supplemental_attribute_ids(
         self,
@@ -196,11 +192,12 @@ class SupplementalAttributeAssociationsStore:
     ) -> list[int]:
         """Return the supplemental attribute IDs associated with the component and attribute type."""
         assert component.id is not None
+        base = self._build_associated_attribute_ids_query()
         if attribute_type is None:
-            query = self._LIST_ASSOCIATED_SUPPLEMENTAL_ATTRIBUTE_IDS_QUERY1
+            query = f"{base} WHERE component_id = ?"
             params = (component.id,)
         else:
-            query = self._LIST_ASSOCIATED_SUPPLEMENTAL_ATTRIBUTE_IDS_QUERY2
+            query = f"{base} WHERE attribute_type = ? AND component_id = ?"
             params = (attribute_type, component.id)
         cur = self._con.cursor()
         rows = execute(cur, query, params=params)

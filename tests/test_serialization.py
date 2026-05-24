@@ -537,3 +537,64 @@ def test_convert_chronify_storage_permanent(tmp_path):
         permanent=True,
     )
     assert (tmp_path / "time_series_data.db").exists()
+
+
+def test_upgrade_legacy_component_ids_migration():
+    """Test that upgrade_legacy_component_ids correctly upgrades a legacy UUID-based JSON."""
+    from infrasys.utils.migrations import upgrade_legacy_component_ids
+
+    # Simulate data after migrate_component_metadata has flattened __metadata__
+    # (modern flat format: serialized_type at top level of metadata)
+    system_data = {
+        "components": [
+            {
+                "uuid": "a1b2c3d4-0000-0000-0000-000000000001",
+                "name": "bus1",
+                "voltage": 1.1,
+                "__metadata__": {
+                    "module": "tests.models.simple_system",
+                    "type": "SimpleBus",
+                    "serialized_type": "base",
+                },
+            },
+            {
+                "uuid": "a1b2c3d4-0000-0000-0000-000000000002",
+                "name": "gen1",
+                "active_power": 1.0,
+                "__metadata__": {
+                    "module": "tests.models.simple_system",
+                    "type": "SimpleGenerator",
+                    "serialized_type": "base",
+                },
+                "bus": {
+                    "__metadata__": {
+                        "module": "tests.models.simple_system",
+                        "type": "SimpleBus",
+                        "serialized_type": "composed_component",
+                        "uuid": "a1b2c3d4-0000-0000-0000-000000000001",
+                    }
+                },
+            },
+        ],
+        "supplemental_attributes": [],
+    }
+
+    upgrade_legacy_component_ids(system_data)
+
+    # All components should have integer IDs
+    components = system_data["components"]
+    assert all(isinstance(c["id"], int) for c in components)
+    assert components[0]["id"] == 1
+    assert components[1]["id"] == 2
+
+    # UUID field should be replaced by legacy_uuid
+    assert "uuid" not in components[0]
+    assert components[0]["legacy_uuid"] == "a1b2c3d4-0000-0000-0000-000000000001"
+    assert "uuid" not in components[1]
+    assert components[1]["legacy_uuid"] == "a1b2c3d4-0000-0000-0000-000000000002"
+
+    # Composed component reference should have integer ID instead of UUID
+    bus_metadata = components[1]["bus"]["__metadata__"]
+    assert bus_metadata["id"] == 1
+    assert "uuid" not in bus_metadata
+    assert bus_metadata["legacy_uuid"] == "a1b2c3d4-0000-0000-0000-000000000001"

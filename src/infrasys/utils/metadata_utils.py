@@ -270,7 +270,7 @@ def create_indexes(
     execute(
         cur,
         f"CREATE UNIQUE INDEX IF NOT EXISTS by_c_vn_tst_hash ON {table_name} "
-        f"(owner_id, time_series_type, name, resolution, features)",
+        f"(owner_category, owner_id, time_series_type, name, resolution, features)",
     )
     execute(
         cur,

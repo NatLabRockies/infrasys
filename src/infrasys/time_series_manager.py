@@ -530,7 +530,11 @@ class TimeSeriesManager:
         self,
         owners: list[Component | SupplementalAttribute],
     ) -> None:
-        """Migrate legacy UUID-based metadata rows to integer IDs after owners exist."""
+        """Migrate legacy UUID-based metadata rows to integer IDs after owners exist.
+
+        Delegates to :meth:`TimeSeriesMetadataStore.migrate_legacy_uuid_table`.
+        See also :func:`infrasys.utils.migrations.upgrade_legacy_component_ids`.
+        """
         self._metadata_store.migrate_legacy_uuid_table(owners)
 
     @contextmanager

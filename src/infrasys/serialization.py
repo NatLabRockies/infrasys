@@ -36,14 +36,28 @@ class SerializedBaseType(SerializedTypeBase):
 
 
 class SerializedComponentReference(SerializedTypeBase):
-    """Reference information for a component serialized inside another component."""
+    """Reference information for a component serialized inside another component.
 
-    serialized_type: Literal[SerializedType.COMPOSED_COMPONENT] = SerializedType.COMPOSED_COMPONENT
-    id: int = Field(ge=1, validation_alias=AliasChoices("id"))
+    Integer IDs are the primary key. Legacy UUIDs are preserved for backward
+    compatibility during deserialization but are excluded from serialized output.
+    """
+
+    serialized_type: Literal[SerializedType.COMPOSED_COMPONENT] = (
+        SerializedType.COMPOSED_COMPONENT
+    )
+    id: int = Field(
+        ge=1,
+        validation_alias=AliasChoices("id"),
+        description="Integer ID referencing the serialized component",
+    )
     legacy_uuid: SkipJsonSchema[UUID | None] = Field(
         default=None,
         exclude=True,
         validation_alias=AliasChoices("legacy_uuid", "uuid"),
+        description=(
+            "Legacy UUID reference accepted during deserialization for backward "
+            "compatibility; never included in serialized output"
+        ),
     )
 
     @property

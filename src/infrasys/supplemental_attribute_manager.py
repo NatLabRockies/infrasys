@@ -156,10 +156,18 @@ class SupplementalAttributeManager:
         raise ISNotStored(msg)
 
     def get_component_uuids_with_attribute(self, attribute: SupplementalAttribute) -> list[UUID]:
-        """Return all component UUIDs attached to the given attribute."""
-        msg = "get_component_uuids_with_attribute is deprecated; use get_component_ids_with_attribute"
-        logger.warning(msg)
-        return []
+        """Return all component UUIDs attached to the given attribute.
+
+        .. deprecated::
+            Use :meth:`get_component_ids_with_attribute` instead. This method
+            now raises :exc:`NotImplementedError` because UUID-based lookup is
+            no longer supported.
+        """
+        msg = (
+            "get_component_uuids_with_attribute is deprecated; "
+            "use get_component_ids_with_attribute instead"
+        )
+        raise NotImplementedError(msg)
 
     def get_component_ids_with_attribute(self, attribute: SupplementalAttribute) -> list[int]:
         """Return all component IDs attached to the given attribute."""

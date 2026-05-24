@@ -950,3 +950,38 @@ def test_bulk_add_time_series_with_rollback(storage_type: TimeSeriesStorageType)
             system.add_time_series(ts, gen, context=conn)
 
     assert not system.has_time_series(gen, name=ts_name)
+
+
+def test_remove_component_cleans_up_indexes():
+    """Test that removing a component cleans up ID/UUID indexes even when other
+    components share the same type/name key (multi-component container)."""
+    system = SimpleSystem(auto_add_composed_components=True)
+
+    # Create two generators with the SAME name to exercise the list-container
+    # code path in ComponentManager.remove.
+    bus = SimpleBus(name="shared-bus", voltage=1.1)
+    gen1 = SimpleGenerator(name="gen", active_power=1.0, rating=1.0, bus=bus, available=True)
+    gen2 = SimpleGenerator(name="gen", active_power=2.0, rating=2.0, bus=bus, available=True)
+    system.add_components(bus, gen1, gen2)
+
+    assert gen1.id is not None
+    assert gen2.id is not None
+
+    # Both should be findable by ID
+    assert system.get_component_by_id(gen1.id) is not None
+    assert system.get_component_by_id(gen2.id) is not None
+
+    # Remove gen1
+    system.remove_component(gen1, cascade_down=False)
+
+    # gen1 should no longer be findable by ID
+    with pytest.raises(ISNotStored):
+        system.get_component_by_id(gen1.id)
+
+    # gen2 should still be findable
+    assert system.get_component_by_id(gen2.id) is not None
+
+    # Remove gen2
+    system.remove_component(gen2, cascade_down=False)
+    with pytest.raises(ISNotStored):
+        system.get_component_by_id(gen2.id)
