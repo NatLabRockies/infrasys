@@ -10,7 +10,6 @@ TS_METADATA_FORMAT_VERSION = "1.0.0"
 TIME_SERIES_ASSOCIATIONS_TABLE = "time_series_associations"
 TIME_SERIES_METADATA_TABLE = "time_series_metadata"
 KEY_VALUE_STORE_TABLE = "key_value_store"
-SUPPLEMENTAL_ATTRIBUTE_ASSOCIATIONS_TABLE = "supplemental_attribute_associations"
 COMPONENT_ASSOCIATIONS_TABLE = "component_associations"
 SUPPLEMENTAL_ATTRIBUTE_ASSOCIATIONS_TABLE = "supplemental_attribute_associations"
 

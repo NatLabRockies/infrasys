@@ -368,6 +368,7 @@ class TimeSeriesMetadata(InfraSysBaseModelWithIdentifers, abc.ABC):
     """Defines common metadata for all time series."""
 
     name: str
+    time_series_id: int | None = None
     time_series_uuid: UUID
     features: dict[str, Any] = {}
     units: Optional[QuantityMetadata] = None
@@ -425,6 +426,7 @@ class SingleTimeSeriesMetadataBase(TimeSeriesMetadata, abc.ABC):
             resolution=time_series.resolution,
             initial_timestamp=time_series.initial_timestamp,
             length=time_series.length,  # type: ignore
+            time_series_id=time_series.id,
             time_series_uuid=time_series.uuid,
             features=features,
             units=units,
@@ -541,6 +543,7 @@ class DeterministicMetadata(TimeSeriesMetadata):
             interval=time_series.interval,
             horizon=time_series.horizon,
             window_count=time_series.window_count,
+            time_series_id=time_series.id,
             time_series_uuid=time_series.uuid,
             features=features,
             units=units,
@@ -757,6 +760,7 @@ class NonSequentialTimeSeriesMetadataBase(TimeSeriesMetadata, abc.ABC):
         return cls(
             name=time_series.name,
             length=time_series.length,  # type: ignore
+            time_series_id=time_series.id,
             time_series_uuid=time_series.uuid,
             features=features,
             units=units,

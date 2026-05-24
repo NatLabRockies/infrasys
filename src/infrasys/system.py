@@ -490,8 +490,12 @@ class System:
 
         if component_needs_metadata_migration(system_data["components"][0]):
             system_data["components"] = migrate_component_metadata(system_data["components"])
+        _upgrade_legacy_component_ids(system_data)
         system._deserialize_components(system_data["components"])
         system._deserialize_supplemental_attributes(system_data["supplemental_attributes"])
+        system._time_series_mgr.migrate_metadata_schema(
+            [*system._component_mgr.iter_all(), *system._supplemental_attr_mgr.iter_all()]
+        )
         logger.info("Deserialized system {}", system.label)
         return system
 
@@ -775,6 +779,10 @@ class System:
         """
         return self._component_mgr.get_by_uuid(uuid)
 
+    def get_component_by_id(self, id_: int) -> Any:
+        """Return the component with the input integer ID."""
+        return self._component_mgr.get_by_id(id_)
+
     def get_components(
         self, *component_types: Type[T], filter_func: Callable | None = None
     ) -> Iterable[T]:
@@ -822,8 +830,8 @@ class System:
     ) -> list[Component]:
         """Return all components attached to the given supplemental attribute."""
         return [
-            self._component_mgr.get_by_uuid(x)
-            for x in self._supplemental_attr_mgr.get_component_uuids_with_attribute(attribute)
+            self._component_mgr.get_by_id(x)
+            for x in self._supplemental_attr_mgr.get_component_ids_with_attribute(attribute)
         ]
 
     def get_supplemental_attributes_with_component(
@@ -853,6 +861,10 @@ class System:
     def get_supplemental_attribute_by_uuid(self, uuid: UUID) -> SupplementalAttribute:
         """Return the supplemental attribute with the given UUID."""
         return self._supplemental_attr_mgr.get_by_uuid(uuid)
+
+    def get_supplemental_attribute_by_id(self, id_: int) -> SupplementalAttribute:
+        """Return the supplemental attribute with the given integer ID."""
+        return self._supplemental_attr_mgr.get_by_id(id_)
 
     def get_supplemental_attributes(
         self,
@@ -1714,7 +1726,7 @@ class System:
     ) -> Any:
         component_type = cached_types.get_type(metadata)
         if cached_types.allowed_to_deserialize(component_type):
-            return self._components.get_by_uuid(metadata.uuid)
+            return self._components.get_by_id(metadata.id)
         return None
 
     def _deserialize_composed_list(
@@ -1726,7 +1738,7 @@ class System:
             assert isinstance(metadata, SerializedComponentReference)
             component_type = cached_types.get_type(metadata)
             if cached_types.allowed_to_deserialize(component_type):
-                deserialized_components.append(self._components.get_by_uuid(metadata.uuid))
+                deserialized_components.append(self._components.get_by_id(metadata.id))
             else:
                 return None
         return deserialized_components
@@ -1743,6 +1755,9 @@ class System:
             attr = supplemental_attribute_type(**values)
             self._supplemental_attr_mgr.add(None, attr, deserialization_in_progress=True)
             cached_types.add_deserialized_type(supplemental_attribute_type)
+        self._supplemental_attr_mgr.migrate_legacy_association_schema(
+            list(self._component_mgr.iter_all())
+        )
 
     @staticmethod
     def _make_time_series_directory(filename: Path) -> Path:
@@ -1818,6 +1833,65 @@ class System:
     def info(self):
         info = SystemInfo(system=self)
         info.render()
+
+
+def _upgrade_legacy_component_ids(system_data: dict[str, Any]) -> None:
+    """Upgrade legacy serialized component references from UUIDs to integer IDs in-place.
+
+    .. warning::
+        This function mutates *system_data* and all nested component dicts in-place.
+        Callers that need to preserve the original serialized data should pass a deep
+        copy or save a snapshot before calling this function.
+    """
+    components = system_data.get("components", [])
+    supplemental_attributes = system_data.get("supplemental_attributes", [])
+    uuid_to_id: dict[str, int] = {}
+    next_id = 1
+
+    for item in [*components, *supplemental_attributes]:
+        existing_id = item.get("id")
+        if existing_id is None:
+            existing_id = next_id
+            item["id"] = existing_id
+        next_id = max(next_id, int(existing_id) + 1)
+
+        legacy_uuid = item.get("legacy_uuid") or item.get("uuid")
+        if legacy_uuid is not None:
+            item["legacy_uuid"] = legacy_uuid
+            uuid_to_id[str(legacy_uuid)] = int(existing_id)
+            item.pop("uuid", None)
+
+    for component in components:
+        _upgrade_component_reference_ids(component, uuid_to_id)
+
+
+def _upgrade_component_reference_ids(data: Any, uuid_to_id: dict[str, int]) -> None:
+    """Upgrade legacy UUID component references to integer IDs using an explicit stack.
+
+    Mutates *data* in-place. Uses an iterative stack rather than recursion
+    to avoid hitting Python's recursion limit on deeply nested structures.
+    """
+    stack = [data]
+    while stack:
+        current = stack.pop()
+        if isinstance(current, dict):
+            metadata = current.get(TYPE_METADATA)
+            if (
+                isinstance(metadata, dict)
+                and metadata.get("serialized_type") == SerializedType.COMPOSED_COMPONENT.value
+            ):
+                if "id" not in metadata:
+                    legacy_uuid = metadata.get("legacy_uuid") or metadata.get("uuid")
+                    if legacy_uuid is not None and str(legacy_uuid) in uuid_to_id:
+                        metadata["id"] = uuid_to_id[str(legacy_uuid)]
+                if "uuid" in metadata:
+                    metadata["legacy_uuid"] = metadata.pop("uuid")
+                continue
+
+            for value in current.values():
+                stack.append(value)
+        elif isinstance(current, list):
+            stack.extend(current)
 
 
 class SystemInfo:

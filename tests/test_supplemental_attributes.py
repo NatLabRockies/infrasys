@@ -45,8 +45,8 @@ def test_supplemental_attribute_manager(tmp_path):
 
     def check_attrs(attrs):
         assert len(attrs) == 2
-        assert attrs[0] == attr1 or attrs[0] == attr2
-        assert attrs[1] == attr1 or attrs[1] == attr2
+        coordinates = {tuple(x.geo_json["geometry"]["coordinates"]) for x in attrs}
+        assert coordinates == {(125.6, 10.1), (1.0, 2.0)}
 
     for attr_type in (GeographicInfo, SupplementalAttribute):
         attrs = list(system.get_supplemental_attributes(attr_type))

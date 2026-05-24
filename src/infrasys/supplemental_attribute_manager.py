@@ -2,13 +2,14 @@
 
 import sqlite3
 from contextlib import contextmanager
-from typing import Any, Callable, Generator, Iterable, Optional, Type, TypeVar, cast
+from typing import Any, Callable, Generator, Iterable, Optional, Sequence, Type, TypeVar, cast
 from uuid import UUID
 
 from loguru import logger
 
 from infrasys.component import Component
 from infrasys.exceptions import ISAlreadyAttached, ISNotStored, ISOperationNotAllowed
+from infrasys.id_manager import IDManager
 from infrasys.supplemental_attribute import SupplementalAttribute
 from infrasys.supplemental_attribute_associations import (
     SupplementalAttributeAssociationsStore,
@@ -23,6 +24,8 @@ class SupplementalAttributeManager:
     def __init__(self, con: sqlite3.Connection, initialize: bool = True, **kwargs) -> None:
         self._con = con
         self._attributes: dict[Type, dict[UUID, SupplementalAttribute]] = {}
+        self._attributes_by_id: dict[int, SupplementalAttribute] = {}
+        self._id_manager = IDManager(next_id=1)
         self._associations = SupplementalAttributeAssociationsStore(con, initialize=initialize)
         self._context: sqlite3.Connection | None = None
         self._context_new_attributes: list[SupplementalAttribute] = []
@@ -50,11 +53,17 @@ class SupplementalAttributeManager:
             attribute.check_supplemental_attribute_addition()
 
         if not already_attached:
+            if attribute.id is None:
+                attribute.id = self._id_manager.get_next_id()
+            else:
+                self._id_manager.advance_past(attribute.id)
             attr_type = type(attribute)
             if attr_type not in self._attributes:
                 self._attributes[attr_type] = {}
 
             self._attributes[attr_type][attribute.uuid] = attribute
+            assert attribute.id is not None
+            self._attributes_by_id[attribute.id] = attribute
 
         try:
             if component is not None:
@@ -110,6 +119,8 @@ class SupplementalAttributeManager:
             if attr_type not in self._attributes:
                 self._attributes[attr_type] = {}
             self._attributes[attr_type][attribute.uuid] = attribute
+            assert attribute.id is not None
+            self._attributes_by_id[attribute.id] = attribute
 
     def rollback_attribute_addition(self, attribute: SupplementalAttribute) -> None:
         """Remove an attribute from in-memory cache without modifying DB associations."""
@@ -118,6 +129,8 @@ class SupplementalAttributeManager:
         if attrs is None:
             return
         attrs.pop(attribute.uuid, None)
+        if attribute.id is not None:
+            self._attributes_by_id.pop(attribute.id, None)
         if not attrs:
             self._attributes.pop(attr_type, None)
 
@@ -144,7 +157,27 @@ class SupplementalAttributeManager:
 
     def get_component_uuids_with_attribute(self, attribute: SupplementalAttribute) -> list[UUID]:
         """Return all component UUIDs attached to the given attribute."""
-        return self._associations.list_associated_component_uuids(attribute)
+        msg = "get_component_uuids_with_attribute is deprecated; use get_component_ids_with_attribute"
+        logger.warning(msg)
+        return []
+
+    def get_component_ids_with_attribute(self, attribute: SupplementalAttribute) -> list[int]:
+        """Return all component IDs attached to the given attribute."""
+        return self._associations.list_associated_component_ids(attribute)
+
+    def get_by_id(self, id_: int) -> SupplementalAttribute:
+        """Return the supplemental attribute with the given integer ID.
+
+        Raises
+        ------
+        ISNotStored
+            Raised if the ID is not stored.
+        """
+        attr = self._attributes_by_id.get(id_)
+        if attr is None:
+            msg = f"No supplemental attribute with id={id_} is stored"
+            raise ISNotStored(msg)
+        return attr
 
     def get_attributes_with_component(
         self,
@@ -153,12 +186,12 @@ class SupplementalAttributeManager:
         filter_func: Optional[Callable[[T], bool]] = None,
     ) -> list[T]:
         attribute_type_name = None if attribute_type is None else attribute_type.__name__
-        attribute_uuids = self._associations.list_associated_supplemental_attribute_uuids(
+        attribute_ids = self._associations.list_associated_supplemental_attribute_ids(
             component, attribute_type=attribute_type_name
         )
         attributes: list[T] = []
-        for uuid in attribute_uuids:
-            attribute = cast(T, self.get_by_uuid(uuid))
+        for id_ in attribute_ids:
+            attribute = cast(T, self.get_by_id(id_))
             if filter_func is None or filter_func(attribute):
                 attributes.append(attribute)
         return attributes
@@ -214,6 +247,8 @@ class SupplementalAttributeManager:
         if self._context is not None:
             self._context_removed_attributes.append(attribute)
         self._attributes[attr_type].pop(attribute.uuid)
+        if attribute.id is not None:
+            self._attributes_by_id.pop(attribute.id, None)
         if not self._attributes[attr_type]:
             self._attributes.pop(attr_type)
         logger.debug("Removed supplemental attribute {}", attribute.label)
@@ -277,3 +312,7 @@ class SupplementalAttributeManager:
         if not self.has_attribute(attribute):
             msg = f"{attribute.label} is not attached to the system"
             raise ISNotStored(msg)
+
+    def migrate_legacy_association_schema(self, components: Sequence[Component]) -> None:
+        """Migrate stored association rows from legacy UUID columns to integer ID columns."""
+        self._associations.migrate_legacy_uuid_table(list(components), list(self.iter_all()))

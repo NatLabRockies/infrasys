@@ -91,9 +91,45 @@ def test_serialization(tmp_path):
     assert len(components2) == num_components
 
     for component in components:
-        component2 = system2.get_component_by_uuid(component.uuid)
+        component2 = system2.get_component_by_id(component.id)
         for key, val in component.__dict__.items():
-            assert getattr(component2, key) == val
+            if key == "legacy_uuid":
+                continue
+            if isinstance(val, Component):
+                assert getattr(component2, key).id == val.id
+            elif isinstance(val, list) and val and isinstance(val[0], Component):
+                assert [x.id for x in getattr(component2, key)] == [x.id for x in val]
+            else:
+                assert getattr(component2, key) == val
+
+
+def test_component_serialization_uses_integer_ids(tmp_path):
+    system = SimpleSystem(name="test-system", auto_add_composed_components=True)
+    gen = SimpleGenerator.example()
+    system.add_component(gen)
+
+    filename = tmp_path / "system.json"
+    system.to_json(filename, overwrite=True)
+    data = orjson.loads(filename.read_bytes())
+
+    components = data["components"]
+    assert all(isinstance(component["id"], int) for component in components)
+    assert all("uuid" not in component for component in components)
+    assert all("legacy_uuid" not in component for component in components)
+
+    serialized_gen = next(
+        component
+        for component in components
+        if component["__metadata__"]["type"] == SimpleGenerator.__name__
+    )
+    bus_reference = serialized_gen["bus"]["__metadata__"]
+    assert isinstance(bus_reference["id"], int)
+    assert "uuid" not in bus_reference
+
+    system2 = SimpleSystem.from_json(filename)
+    gen2 = system2.get_component_by_id(gen.id)
+    assert gen2.name == gen.name
+    assert gen2.bus.id == gen.bus.id
 
 
 @pytest.mark.parametrize("time_series_storage_type", TS_STORAGE_OPTIONS)

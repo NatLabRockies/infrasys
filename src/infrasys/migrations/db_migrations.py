@@ -9,7 +9,7 @@ from infrasys import (
     TIME_SERIES_ASSOCIATIONS_TABLE,
     TIME_SERIES_METADATA_TABLE,
 )
-from infrasys.time_series_metadata_store import make_features_string
+from infrasys.time_series_metadata_store import TimeSeriesMetadataStore, make_features_string
 from infrasys.utils.metadata_utils import (
     create_associations_table,
     create_key_value_store,
@@ -36,7 +36,7 @@ def metadata_store_needs_migration(conn: sqlite3.Connection, version: str | None
     cursor = conn.cursor()
     query = "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1"
     cursor.execute(query, (TIME_SERIES_ASSOCIATIONS_TABLE,))
-    return not cursor.fetchone() is not None
+    return cursor.fetchone() is None
 
 
 def migrate_legacy_metadata_store(conn: sqlite3.Connection) -> bool:
@@ -189,19 +189,16 @@ def migrate_legacy_metadata_store(conn: sqlite3.Connection) -> bool:
     logger.info(
         f"Inserting {len(sql_data_to_insert)} records into {TIME_SERIES_ASSOCIATIONS_TABLE}."
     )
-    cursor.executemany(
-        f"""
-        INSERT INTO `{TIME_SERIES_ASSOCIATIONS_TABLE}` (
-            time_series_uuid, time_series_type, initial_timestamp, resolution,
-            length, name, owner_uuid, owner_type, owner_category, features, units,
-            metadata_uuid
-        ) VALUES (
-            :time_series_uuid, :time_series_type, :initial_timestamp, :resolution,
-            :length, :name, :owner_uuid, :owner_type, :owner_category,
-            :features_json, :units, :metadata_uuid
-        )
-        """,
-        sql_data_to_insert,
+    metadata_store = TimeSeriesMetadataStore(conn, initialize=False)
+    metadata_store._insert_rows(  # type: ignore[attr-defined]
+        [
+            {
+                **row,
+                "features": row.pop("features_json"),
+            }
+            for row in sql_data_to_insert
+        ],
+        cursor,
     )
 
     # Dropping legacy table since it is no longer required.

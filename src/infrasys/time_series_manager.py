@@ -19,6 +19,7 @@ from .arrow_storage import ArrowTimeSeriesStorage
 from .component import Component
 from .exceptions import ISInvalidParameter, ISOperationNotAllowed
 from .h5_time_series_storage import HDF5TimeSeriesStorage
+from .id_manager import IDManager
 from .in_memory_time_series_storage import InMemoryTimeSeriesStorage
 from .supplemental_attribute import SupplementalAttribute
 from .time_series_metadata_store import TimeSeriesMetadataStore
@@ -99,6 +100,7 @@ class TimeSeriesManager:
         self._read_only = _process_time_series_kwarg("time_series_read_only", **kwargs)
         self._storage = storage or self.create_new_storage(**kwargs)
         self._context: TimeSeriesStorageContext | None = None
+        self._id_manager = IDManager(next_id=1)
 
         # TODO: create parsing mechanism? CSV, CSV + JSON
 
@@ -214,6 +216,10 @@ class TimeSeriesManager:
         if not issubclass(ts_type, TimeSeriesData):
             msg = f"The first argument must be an instance of TimeSeriesData: {ts_type}"
             raise ValueError(msg)
+        if time_series.id is None:
+            time_series.id = self._id_manager.get_next_id()
+        else:
+            self._id_manager.advance_past(time_series.id)
         metadata_type = ts_type.get_time_series_metadata_type()
         metadata = metadata_type.from_data(time_series, **features)
 
@@ -519,6 +525,13 @@ class TimeSeriesManager:
         ):
             mgr.convert_storage(**kwargs)
         return mgr
+
+    def migrate_metadata_schema(
+        self,
+        owners: list[Component | SupplementalAttribute],
+    ) -> None:
+        """Migrate legacy UUID-based metadata rows to integer IDs after owners exist."""
+        self._metadata_store.migrate_legacy_uuid_table(owners)
 
     @contextmanager
     def open_time_series_store(

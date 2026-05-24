@@ -592,7 +592,8 @@ def test_system_to_dict():
 
     component_dict: list[dict] = list(system.to_records(SimpleGenerator))
     assert len(component_dict) == 3  # 3 generators
-    assert component_dict[0].get("uuid") is not None
+    assert component_dict[0].get("id") is not None
+    assert component_dict[0].get("uuid") is None
     assert component_dict[0]["bus"] == gen1.bus.label
 
     exclude_first_level_fields = {"name": True, "available": True}
@@ -632,17 +633,18 @@ def test_time_series_metadata_sql():
     system.add_time_series(ts2, gen2)
     rows = system.time_series.metadata_store.sql(
         f"""
-        SELECT owner_type, time_series_type, owner_uuid, time_series_uuid
+        SELECT owner_type, time_series_type, owner_id, time_series_id, time_series_storage_key
         FROM {TIME_SERIES_ASSOCIATIONS_TABLE}
-        WHERE owner_uuid = '{gen1.uuid}'
+        WHERE owner_id = {gen1.id}
     """
     )
     assert len(rows) == 1
     row = rows[0]
     assert row[0] == SimpleGenerator.__name__
     assert row[1] == SingleTimeSeries.__name__
-    assert row[2] == str(gen1.uuid)
-    assert row[3] == str(ts1.uuid)
+    assert row[2] == gen1.id
+    assert row[3] == ts1.id
+    assert row[4] == str(ts1.uuid)
 
 
 def test_time_series_metadata_list_rows():
@@ -662,8 +664,9 @@ def test_time_series_metadata_list_rows():
     columns = [
         "owner_type",
         "time_series_type",
-        "owner_uuid",
-        "time_series_uuid",
+        "owner_id",
+        "time_series_id",
+        "time_series_storage_key",
     ]
     rows = system.time_series.metadata_store.list_rows(
         gen2,
@@ -675,8 +678,9 @@ def test_time_series_metadata_list_rows():
     row = rows[0]
     assert row[0] == SimpleGenerator.__name__
     assert row[1] == SingleTimeSeries.__name__
-    assert row[2] == str(gen2.uuid)
-    assert row[3] == str(ts2.uuid)
+    assert row[2] == gen2.id
+    assert row[3] == ts2.id
+    assert row[4] == str(ts2.uuid)
 
 
 def test_system_counts():
