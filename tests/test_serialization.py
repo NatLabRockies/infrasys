@@ -2,7 +2,6 @@ import os
 import random
 import zipfile
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Type
 
 import numpy as np
@@ -30,16 +29,11 @@ from .models.simple_system import (
 )
 
 TS_STORAGE_OPTIONS = (
-    TimeSeriesStorageType.ARROW,
-    TimeSeriesStorageType.CHRONIFY,
+    TimeSeriesStorageType.TIME_SERIES_STORE,
     TimeSeriesStorageType.MEMORY,
 )
 
-# chronify not yet implemented for nonsequentialtimeseries
-TS_STORAGE_OPTIONS_NONSEQUENTIAL = (
-    TimeSeriesStorageType.ARROW,
-    TimeSeriesStorageType.MEMORY,
-)
+TS_STORAGE_OPTIONS_NONSEQUENTIAL = TS_STORAGE_OPTIONS
 
 
 class ComponentWithPintQuantity(Component):
@@ -437,55 +431,9 @@ def test_system_save_load_with_storage_backends(tmp_path, time_series_storage_ty
         assert loaded_ts.resolution == orig_ts.resolution
 
 
-def test_system_save_load_hdf5_backend(tmp_path):
-    """Test save and load methods work correctly with HDF5 storage backend."""
-    system = SimpleSystem(
-        name="test_system_hdf5",
-        description="Test system with HDF5 storage",
-        auto_add_composed_components=True,
-        time_series_storage_type=TimeSeriesStorageType.HDF5,
-    )
-
-    bus1 = SimpleBus(name="bus1", voltage=120.0)
-    gen1 = SimpleGenerator(name="gen1", available=True, active_power=100.0, rating=150.0, bus=bus1)
-    system.add_components(bus1, gen1)
-    length = 24
-    data = list(range(length))
-    start = datetime(year=2024, month=1, day=1)
-    resolution = timedelta(hours=1)
-
-    ts1 = SingleTimeSeries.from_array(data, "active_power", start, resolution)
-    system.add_time_series(ts1, gen1)
-
-    # Save to zip
-    save_dir = tmp_path / "system_hdf5"
-    system.save(save_dir, filename="system.json", zip=True)
-
-    zip_path = f"{save_dir}.zip"
-    assert os.path.exists(zip_path)
-    assert not os.path.exists(save_dir)
-
-    # Load from zip
-    loaded_system = SimpleSystem.load(zip_path)
-    assert loaded_system.name == system.name
-
-    loaded_gen = loaded_system.get_component(SimpleGenerator, gen1.name)
-    loaded_ts = loaded_system.get_time_series(loaded_gen, "active_power")
-    assert len(loaded_ts.data) == length
-    assert list(loaded_ts.data) == data
-
-
-def test_legacy_format():
-    # This file was save from v0.2.1 with test_with_time_series_quantity.
-    # Ensure that we can deserialize it.
-    SimpleSystem.from_json(Path("tests/data/legacy_system.json"))
-
-
-def test_convert_chronify_storage_permanent(tmp_path):
+def test_convert_time_series_store_storage_permanent(tmp_path):
     gen = SimpleGenerator.example()
-    system = SimpleSystem(
-        auto_add_composed_components=True, time_series_storage_type=TimeSeriesStorageType.ARROW
-    )
+    system = SimpleSystem(auto_add_composed_components=True)
     system.add_components(gen)
     name = "active_power"
     length = 10
@@ -494,10 +442,12 @@ def test_convert_chronify_storage_permanent(tmp_path):
     resolution = timedelta(hours=1)
     ts = SingleTimeSeries.from_array(data, name, start, resolution)
     system.add_time_series(ts, gen)
-    system.convert_storage(
-        time_series_storage_type=TimeSeriesStorageType.CHRONIFY,
+    storage = system.time_series.convert_storage(
+        time_series_storage_type=TimeSeriesStorageType.TIME_SERIES_STORE,
         time_series_directory=tmp_path,
         in_place=False,
         permanent=True,
     )
-    assert (tmp_path / "time_series_data.db").exists()
+    assert storage.get_time_series_directory() == tmp_path
+    assert (tmp_path / "time_series_store.nc").exists()
+    assert (tmp_path / "time_series_store.nc.sqlite").exists()

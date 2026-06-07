@@ -1,24 +1,17 @@
 """Manages time series arrays"""
 
-import atexit
 import sqlite3
-import tempfile
 from contextlib import contextmanager
 from datetime import datetime
 from functools import singledispatch
 from pathlib import Path
-from tempfile import mkdtemp
 from typing import Any, Generator, Literal, Optional, Type
 
-import h5py
-import numpy as np
 from loguru import logger
 
 from . import TIME_SERIES_ASSOCIATIONS_TABLE
-from .arrow_storage import ArrowTimeSeriesStorage
 from .component import Component
 from .exceptions import ISInvalidParameter, ISOperationNotAllowed
-from .h5_time_series_storage import HDF5TimeSeriesStorage
 from .in_memory_time_series_storage import InMemoryTimeSeriesStorage
 from .supplemental_attribute import SupplementalAttribute
 from .time_series_metadata_store import TimeSeriesMetadataStore
@@ -38,53 +31,21 @@ from .time_series_models import (
     TimeSeriesStorageType,
 )
 from .time_series_storage_base import TimeSeriesStorageBase
-from .utils.path_utils import clean_tmp_folder
+from .time_series_store_storage import TimeSeriesStoreStorage
 from .utils.sqlite import has_table
-
-try:
-    from .chronify_time_series_storage import ChronifyTimeSeriesStorage
-
-    is_chronify_installed = True
-except ImportError:
-    is_chronify_installed = False
-
-try:
-    from .time_series_store_storage import TimeSeriesStoreStorage
-
-    is_time_series_store_installed = True
-except ImportError:
-    is_time_series_store_installed = False
-
-
-def is_h5py_installed():
-    try:
-        import h5py  # noqa: F401
-
-        return True
-    except ImportError:
-        return False
 
 
 TIME_SERIES_KWARGS = {
-    "in_memory": False,
     "time_series_read_only": False,
     "time_series_directory": None,
-    "time_series_storage_type": TimeSeriesStorageType.ARROW,
-    "chronify_engine_name": "duckdb",
+    "time_series_storage_type": TimeSeriesStorageType.TIME_SERIES_STORE,
 }
 
 
 TIME_SERIES_REGISTRY: dict[TimeSeriesStorageType, type[TimeSeriesStorageBase]] = {
-    TimeSeriesStorageType.ARROW: ArrowTimeSeriesStorage,
-    TimeSeriesStorageType.HDF5: HDF5TimeSeriesStorage,
     TimeSeriesStorageType.MEMORY: InMemoryTimeSeriesStorage,
+    TimeSeriesStorageType.TIME_SERIES_STORE: TimeSeriesStoreStorage,
 }
-
-if is_chronify_installed:
-    TIME_SERIES_REGISTRY[TimeSeriesStorageType.CHRONIFY] = ChronifyTimeSeriesStorage
-
-if is_time_series_store_installed:
-    TIME_SERIES_REGISTRY[TimeSeriesStorageType.TIME_SERIES_STORE] = TimeSeriesStoreStorage
 
 
 def _process_time_series_kwarg(key: str, **kwargs: Any) -> Any:
@@ -125,61 +86,18 @@ class TimeSeriesManager:
                 break
 
     @staticmethod
-    def create_new_storage(permanent: bool = False, **kwargs):  # noqa: C901
+    def create_new_storage(permanent: bool = False, **kwargs):
         base_directory: Path | None = _process_time_series_kwarg("time_series_directory", **kwargs)
         storage_type = _process_time_series_kwarg("time_series_storage_type", **kwargs)
-        if permanent:
-            if base_directory is None:
-                msg = "Can't convert to permanent storage without a base directory"
-                raise ISInvalidParameter(msg)
-        if not base_directory:
-            base_directory = Path(mkdtemp(dir=base_directory))
-            logger.debug("Creating tmp folder at {}", base_directory)
-            atexit.register(clean_tmp_folder, base_directory)
 
         match storage_type:
-            case TimeSeriesStorageType.ARROW:
-                if permanent:
-                    assert base_directory is not None
-                    return ArrowTimeSeriesStorage.create_with_permanent_directory(base_directory)
-                return ArrowTimeSeriesStorage.create_with_temp_directory(
-                    base_directory=base_directory
-                )
-            case TimeSeriesStorageType.CHRONIFY:
-                if not is_chronify_installed:
-                    msg = (
-                        "chronify is not installed. Please choose a different time series storage "
-                        'option or install chronify with `pip install "infrasys[chronify]"`.'
-                    )
-                    raise ImportError(msg)
-                if permanent:
-                    assert base_directory is not None
-                    return ChronifyTimeSeriesStorage.create_with_permanent_directory(
-                        base_directory,
-                        engine_name=_process_time_series_kwarg("chronify_engine_name", **kwargs),
-                        read_only=_process_time_series_kwarg("time_series_read_only", **kwargs),
-                    )
-                return ChronifyTimeSeriesStorage.create_with_temp_directory(
-                    base_directory=base_directory,
-                    engine_name=_process_time_series_kwarg("chronify_engine_name", **kwargs),
-                    read_only=_process_time_series_kwarg("time_series_read_only", **kwargs),
-                )
             case TimeSeriesStorageType.MEMORY:
                 return InMemoryTimeSeriesStorage()
-            case TimeSeriesStorageType.HDF5:
-                if not is_h5py_installed():
-                    msg = f"`{storage_type}` backend requires `h5py` to be installed. "
-                    msg += 'Install it using `pip install "infrasys[h5]".'
-                    raise ImportError(msg)
-                return HDF5TimeSeriesStorage(base_directory, **kwargs)
             case TimeSeriesStorageType.TIME_SERIES_STORE:
-                if not is_time_series_store_installed:
-                    msg = (
-                        "The time-series-store backend requires time-series-store to be installed. "
-                        "Install the time-series-store Python package."
-                    )
-                    raise ImportError(msg)
                 if permanent:
+                    if base_directory is None:
+                        msg = "Can't convert to permanent storage without a base directory"
+                        raise ISInvalidParameter(msg)
                     return TimeSeriesStoreStorage.create_with_permanent_directory(base_directory)
                 return TimeSeriesStoreStorage.create_with_temp_directory(base_directory)
             case _:
@@ -234,6 +152,9 @@ class TimeSeriesManager:
         if not issubclass(ts_type, TimeSeriesData):
             msg = f"The first argument must be an instance of TimeSeriesData: {ts_type}"
             raise ValueError(msg)
+        if not isinstance(time_series, (SingleTimeSeries, NonSequentialTimeSeries)):
+            msg = f"Time-series persistence is not implemented for {ts_type.__name__}"
+            raise NotImplementedError(msg)
         metadata_type = ts_type.get_time_series_metadata_type()
         metadata = metadata_type.from_data(time_series, **features)
 
@@ -446,27 +367,14 @@ class TimeSeriesManager:
         """Serialize the time series data to dst."""
         if isinstance(self.storage, InMemoryTimeSeriesStorage):
             new_storage = self.convert_storage(
-                time_series_storage_type=TimeSeriesStorageType.ARROW,
+                time_series_storage_type=TimeSeriesStorageType.TIME_SERIES_STORE,
                 time_series_directory=dst,
                 in_place=False,
                 permanent=True,
             )
-            assert isinstance(new_storage, ArrowTimeSeriesStorage)
+            assert isinstance(new_storage, TimeSeriesStoreStorage)
             new_storage.add_serialized_data(data)
             self._metadata_store.serialize(Path(dst) / db_name)
-        elif isinstance(self.storage, HDF5TimeSeriesStorage):
-            self.storage.serialize(data, dst, src=src)
-            with tempfile.TemporaryDirectory() as tmpdirname:
-                temp_file_path = Path(tmpdirname) / db_name
-                self._metadata_store.serialize(temp_file_path)
-                with open(temp_file_path, "rb") as f:
-                    binary_data = f.read()
-            with h5py.File(str(self.storage.output_file), "a") as f_out:
-                f_out.create_dataset(
-                    self.storage.HDF5_TS_METADATA_ROOT_PATH,
-                    data=np.frombuffer(binary_data, dtype=np.uint8),
-                    dtype=np.uint8,
-                )
         else:
             self._metadata_store.serialize(Path(dst) / db_name)
             self._storage.serialize(data, dst, src=src)
@@ -496,27 +404,13 @@ class TimeSeriesManager:
         read_only = _process_time_series_kwarg("time_series_read_only", **kwargs)
         time_series_dir = Path(parent_dir) / data["directory"]
 
-        # This term was introduced in v0.3.0. Maintain compatibility with old serialized files.
-        ts_type = data.get("time_series_storage_type", TimeSeriesStorageType.ARROW)
+        ts_type = data.get(
+            "time_series_storage_type",
+            TimeSeriesStorageType.TIME_SERIES_STORE,
+        )
 
         storage_class = TIME_SERIES_REGISTRY.get(ts_type)
         if storage_class is None:
-            if ts_type == TimeSeriesStorageType.CHRONIFY and not is_chronify_installed:
-                msg = (
-                    "This system used chronify to manage time series data but the package is "
-                    'not installed. Please install it with `pip install "infrasys[chronify]"`.'
-                )
-                raise ImportError(msg)
-            if (
-                ts_type == TimeSeriesStorageType.TIME_SERIES_STORE
-                and not is_time_series_store_installed
-            ):
-                msg = (
-                    "This system used the time-series-store backend but time-series-store is not "
-                    "installed. Install the time-series-store Python package."
-                )
-                raise ImportError(msg)
-
             msg = f"time_series_storage_type={ts_type} is not supported"
             raise NotImplementedError(msg)
 

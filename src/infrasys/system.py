@@ -98,12 +98,11 @@ class System:
             manager.
         kwargs : Any
             Configures time series behaviors:
-              - time_series_storage_type: Defaults to TimeSeriesStorageType.ARROW.
+              - time_series_storage_type: Defaults to TimeSeriesStorageType.TIME_SERIES_STORE.
               - time_series_read_only: Disables add/remove of time series, defaults to False.
               - time_series_directory: Location to store time series files, defaults to the system's
                 tmp directory. Use an alternate location if the space in that directory is limited,
                 such as on a compute node with no local storage.
-              - chronify_engine_name: Database engine to use with chronify, defaults to "duckdb".
 
         Examples
         --------
@@ -1451,7 +1450,7 @@ class System:
         self, mode: FileMode = "r+"
     ) -> Generator[TimeSeriesStorageContext, None, None]:
         """Open a connection to the time series store. This can improve performance when
-        reading or writing many time series arrays for specific backends (chronify and HDF5).
+        reading or writing many time series arrays.
         It will also rollback any changes if an exception is raised.
 
         Returns
@@ -1526,7 +1525,9 @@ class System:
         **kwargs:
             The same keys as TIME_SERIES_KWARGS in time_series_manager.py
             {
-                "time_series_storage_type": TimeSeriesStorageType = TimeSeriesStorageType.ARROW,
+                "time_series_storage_type": TimeSeriesStorageType = (
+                    TimeSeriesStorageType.TIME_SERIES_STORE
+                ),
                 "time_series_read_only": bool = False,
                 "time_series_directory": Path | None = None,
             }

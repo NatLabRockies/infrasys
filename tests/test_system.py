@@ -6,8 +6,6 @@ import numpy as np
 import pytest
 
 from infrasys import TIME_SERIES_ASSOCIATIONS_TABLE, Component, Location, SingleTimeSeries
-from infrasys.arrow_storage import ArrowTimeSeriesStorage
-from infrasys.chronify_time_series_storage import ChronifyTimeSeriesStorage
 from infrasys.exceptions import (
     ISAlreadyAttached,
     ISConflictingArguments,
@@ -15,7 +13,7 @@ from infrasys.exceptions import (
     ISOperationNotAllowed,
 )
 from infrasys.quantities import ActivePower
-from infrasys.time_series_models import TimeSeriesKey, TimeSeriesStorageType
+from infrasys.time_series_models import TimeSeriesStorageType
 from infrasys.utils.time_utils import to_iso_8601
 
 from .models.simple_system import (
@@ -258,8 +256,7 @@ def test_single_time_series():
 
 
 TS_STORAGE_OPTIONS = (
-    TimeSeriesStorageType.ARROW,
-    TimeSeriesStorageType.CHRONIFY,
+    TimeSeriesStorageType.TIME_SERIES_STORE,
     TimeSeriesStorageType.MEMORY,
 )
 
@@ -843,63 +840,12 @@ def test_many_supplemental_attributes(simple_system):
     assert simple_system.get_num_supplemental_attributes() == 50
 
 
-def test_convert_chronify_to_arrow_in_deserialize(tmp_path):
-    system = SimpleSystem(time_series_storage_type=TimeSeriesStorageType.CHRONIFY)
-    assert isinstance(system.time_series.storage, ChronifyTimeSeriesStorage)
-    assert system.time_series.storage.get_database_url()
-    assert system.time_series.storage.get_engine_name() == "duckdb"
-    bus = SimpleBus(name="test-bus", voltage=1.1)
-    gen = SimpleGenerator(name="gen", active_power=1.0, rating=1.0, bus=bus, available=True)
-    system.add_components(bus, gen)
-    length = 10
-    initial_time = datetime(year=2020, month=1, day=1)
-    timestamps = [initial_time + timedelta(hours=i) for i in range(length)]
-    ts = SingleTimeSeries.from_time_array(np.random.rand(length), "test_ts", timestamps)
-    system.add_time_series(ts, gen)
-    filename = tmp_path / "system.json"
-    system.to_json(filename)
-    system2 = SimpleSystem.from_json(
-        filename, time_series_storage_type=TimeSeriesStorageType.ARROW
-    )
-    assert isinstance(system2.time_series.storage, ArrowTimeSeriesStorage)
-    gen2 = system2.get_component(SimpleGenerator, "gen")
-    ts2 = system2.get_time_series(gen2, "test_ts")
-    assert np.array_equal(ts.data, ts2.data)
-
-
-def test_chronfiy_storage():
-    system = SimpleSystem(time_series_storage_type=TimeSeriesStorageType.CHRONIFY)
-    assert isinstance(system.time_series.storage, ChronifyTimeSeriesStorage)
-    bus = SimpleBus(name="test-bus", voltage=1.1)
-    gen = SimpleGenerator(name="gen", active_power=1.0, rating=1.0, bus=bus, available=True)
-    system.add_components(bus, gen)
-    time_series: list[SingleTimeSeries] = []
-    for i in range(2):
-        for initial_time, resolution, length in (
-            (datetime(year=2020, month=1, day=1), timedelta(hours=1), 10),
-            (datetime(year=2020, month=2, day=1), timedelta(minutes=5), 15),
-        ):
-            data = np.random.rand(length)
-            name = f"test_ts_{length}_{i}"
-            ts = SingleTimeSeries.from_array(data, name, initial_time, resolution)
-            system.add_time_series(ts, gen)
-            time_series.append(ts)
-
-    for expected_ts in time_series:
-        actual_ts = system.get_time_series(
-            gen, time_series_type=SingleTimeSeries, name=expected_ts.name
-        )
-        assert np.array_equal(expected_ts.data, actual_ts.data)
-
-
 def test_bulk_add_time_series():
-    system = SimpleSystem(time_series_storage_type=TimeSeriesStorageType.CHRONIFY)
-    assert isinstance(system.time_series.storage, ChronifyTimeSeriesStorage)
+    system = SimpleSystem()
     bus = SimpleBus(name="test-bus", voltage=1.1)
     gen = SimpleGenerator(name="gen", active_power=1.0, rating=1.0, bus=bus, available=True)
     system.add_components(bus, gen)
     time_series: list[SingleTimeSeries] = []
-    keys: list[TimeSeriesKey] = []
     with system.open_time_series_store() as conn:
         for i in range(2):
             for initial_time, resolution, length in (
@@ -909,12 +855,8 @@ def test_bulk_add_time_series():
                 data = np.random.rand(length)
                 name = f"test_ts_{length}_{i}"
                 ts = SingleTimeSeries.from_array(data, name, initial_time, resolution)
-                key = system.add_time_series(ts, gen, context=conn)
-                keys.append(key)
+                system.add_time_series(ts, gen, context=conn)
                 time_series.append(ts)
-
-        for key in keys:
-            system.time_series.storage.check_timestamps(key, context=conn.data_context)
 
     with system.open_time_series_store() as conn:
         for expected_ts in time_series:

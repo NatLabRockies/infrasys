@@ -7,7 +7,6 @@ import numpy as np
 import pytest
 
 from infrasys.exceptions import ISConflictingArguments
-from infrasys.quantities import ActivePower
 from infrasys.time_series_metadata_store import (
     TimeSeriesMetadataStore,
     _deserialize_time_series_metadata,
@@ -15,21 +14,13 @@ from infrasys.time_series_metadata_store import (
 from infrasys.time_series_models import (
     Deterministic,
     DeterministicMetadata,
-    TimeSeriesStorageType,
 )
 from infrasys.utils.sqlite import create_in_memory_db
 from tests.models.simple_system import SimpleGenerator, SimpleSystem
 
-TS_STORAGE_OPTIONS = (
-    TimeSeriesStorageType.ARROW,
-    TimeSeriesStorageType.HDF5,
-)
 
-
-@pytest.mark.parametrize("storage_type", TS_STORAGE_OPTIONS)
-def test_with_deterministic_time_series_quantity(tmp_path, storage_type):
-    """Test serialization of DeterministicTimeSeries with a Pint quantity and different storage types."""
-    system = SimpleSystem(auto_add_composed_components=True, time_series_storage_type=storage_type)
+def test_deterministic_time_series_persistence_is_not_supported():
+    system = SimpleSystem(auto_add_composed_components=True)
     gen = SimpleGenerator.example()
     system.add_components(gen)
 
@@ -45,70 +36,21 @@ def test_with_deterministic_time_series_quantity(tmp_path, storage_type):
         [99.0, 67.0, 89.0, 99.9, 100.0, 101.0, 112.0, 101.3],
     ]
 
-    data = ActivePower(np.array(forecast_data), "watts")
     name = "active_power_forecast"
     ts = Deterministic.from_array(
-        data, name, initial_time, resolution, horizon, interval, window_count
+        np.array(forecast_data),
+        name,
+        initial_time,
+        resolution,
+        horizon,
+        interval,
+        window_count,
     )
-    system.add_time_series(ts, gen)
-
-    sys_file = tmp_path / "system.json"
-    system.to_json(sys_file)
-
-    system2 = SimpleSystem.from_json(sys_file)
-    gen2 = system2.get_component(SimpleGenerator, gen.name)
-    ts2 = system2.get_time_series(gen2, name=name)
-    assert isinstance(ts, Deterministic)
-    assert ts2.resolution == resolution
-    assert ts2.initial_timestamp == initial_time
-
-
-@pytest.mark.parametrize("storage_type", TS_STORAGE_OPTIONS)
-def test_with_deterministic_single_time_series_quantity(tmp_path, storage_type):
-    """Test serialization of Deterministic created from SingleTimeSeries with a Pint quantity and different storage types."""
-    system = SimpleSystem(auto_add_composed_components=True, time_series_storage_type=storage_type)
-    gen = SimpleGenerator.example()
-    system.add_components(gen)
-
-    initial_timestamp = datetime(year=2020, month=1, day=1)
-    name = "active_power"
-    horizon = timedelta(hours=8)
-    interval = timedelta(hours=1)
-    resolution = timedelta(hours=1)
-
-    # Create deterministic data directly from array
-    # Create forecast windows manually from the time series data
-    horizon_steps = int(horizon / resolution)
-    interval_steps = int(interval / resolution)
-    total_steps = 8784
-    window_count = int((total_steps - horizon_steps) / interval_steps) + 1
-
-    forecast_data = []
-    for window_idx in range(window_count):
-        start_idx = window_idx * interval_steps
-        end_idx = start_idx + horizon_steps
-        forecast_data.append(list(range(start_idx, end_idx)))
-
-    ts_deterministic = Deterministic.from_array(
-        data=np.array(forecast_data),
-        name=name,
-        resolution=resolution,
-        initial_timestamp=initial_timestamp,
-        interval=interval,
-        horizon=horizon,
-        window_count=window_count,
-    )
-    system.add_time_series(ts_deterministic, gen)
-
-    sys_file = tmp_path / "system.json"
-    system.to_json(sys_file)
-
-    system2 = SimpleSystem.from_json(sys_file)
-    gen2 = system2.get_component(SimpleGenerator, gen.name)
-    ts2 = system2.get_time_series(gen2, name=name, time_series_type=Deterministic)
-    assert isinstance(ts_deterministic, Deterministic)
-    assert ts2.horizon == horizon
-    assert ts2.initial_timestamp == initial_timestamp
+    with pytest.raises(
+        NotImplementedError,
+        match="Time-series persistence is not implemented for Deterministic",
+    ):
+        system.add_time_series(ts, gen)
 
 
 def test_deterministic_metadata_get_range():

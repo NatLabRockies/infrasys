@@ -47,10 +47,6 @@ class TimeSeriesStorageType(StrEnum):
     """Defines the possible storage types for time series."""
 
     MEMORY = "memory"
-    ARROW = "arrow"
-    CHRONIFY = "chronify"
-    HDF5 = "hdf5"
-    PARQUET = "parquet"
     TIME_SERIES_STORE = "time_series_store"
 
 

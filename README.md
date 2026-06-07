@@ -20,8 +20,8 @@ their domain problems instead of managing persistence concerns.
 
 - **Typed components with pint validation:** Base models derive from `pydantic` and use
   `pint` quantities whenever a physical unit is involved.
-- **Flexible time-series storage:** Arrow, HDF5, Chronify, and in-memory backends are available
-  via `System` configuration to match your compute environment.
+- **Efficient time-series storage:** Persistent arrays use the Rust-backed `time-series-store`
+  package, with an in-memory option for temporary workflows.
 - **Efficient serialization:** Components, supplemental attributes, and nested systems are
   serialized to JSON with automatic metadata and optional migration hooks.
 - **Designed for extension:** Derive your own `System` classes, override component addition
@@ -33,7 +33,6 @@ their domain problems instead of managing persistence concerns.
 
 ```bash
 pip install git+https://github.com/NREL/infrasys.git@main
-pip install "infrasys[chronify]"  # optional backend for Chronify/duckdb-based storage
 ```
 
 Don’t forget to install pre-commit hooks so your push meets project quality checks:

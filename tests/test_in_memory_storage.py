@@ -3,8 +3,6 @@ from datetime import datetime, timedelta
 import numpy as np
 import pytest
 
-from infrasys.arrow_storage import ArrowTimeSeriesStorage
-from infrasys.chronify_time_series_storage import ChronifyTimeSeriesStorage
 from infrasys.exceptions import ISAlreadyAttached
 from infrasys.in_memory_time_series_storage import InMemoryTimeSeriesStorage
 from infrasys.time_series_models import (
@@ -12,122 +10,113 @@ from infrasys.time_series_models import (
     SingleTimeSeries,
     TimeSeriesStorageType,
 )
+from infrasys.time_series_store_storage import TimeSeriesStoreStorage
 
-from .models.simple_system import SimpleBus, SimpleGenerator, SimpleSystem
+from .models.simple_system import SimpleGenerator, SimpleSystem
 
 
 @pytest.mark.parametrize(
-    "original_kwargs,new_kwargs,original_stype,new_stype",
+    "original_type,new_type,original_class,new_class",
     [
         (
-            {"time_series_storage_type": TimeSeriesStorageType.MEMORY},
-            {},
+            TimeSeriesStorageType.MEMORY,
+            TimeSeriesStorageType.TIME_SERIES_STORE,
             InMemoryTimeSeriesStorage,
-            ArrowTimeSeriesStorage,
+            TimeSeriesStoreStorage,
         ),
         (
-            {"time_series_storage_type": TimeSeriesStorageType.MEMORY},
-            {"time_series_storage_type": TimeSeriesStorageType.CHRONIFY},
-            InMemoryTimeSeriesStorage,
-            ChronifyTimeSeriesStorage,
-        ),
-        (
-            {"time_series_storage_type": TimeSeriesStorageType.CHRONIFY},
-            {"time_series_storage_type": TimeSeriesStorageType.ARROW},
-            ChronifyTimeSeriesStorage,
-            ArrowTimeSeriesStorage,
-        ),
-        (
-            {"time_series_storage_type": TimeSeriesStorageType.ARROW},
-            {"time_series_storage_type": TimeSeriesStorageType.CHRONIFY},
-            ArrowTimeSeriesStorage,
-            ChronifyTimeSeriesStorage,
-        ),
-        (
-            {},
-            {"time_series_storage_type": TimeSeriesStorageType.MEMORY},
-            ArrowTimeSeriesStorage,
+            TimeSeriesStorageType.TIME_SERIES_STORE,
+            TimeSeriesStorageType.MEMORY,
+            TimeSeriesStoreStorage,
             InMemoryTimeSeriesStorage,
         ),
     ],
 )
 def test_convert_storage_single_time_series(
-    original_kwargs, new_kwargs, original_stype, new_stype
+    tmp_path,
+    original_type,
+    new_type,
+    original_class,
+    new_class,
 ):
-    test_bus = SimpleBus.example()
-    test_generator = SimpleGenerator.example()
-    system = SimpleSystem(auto_add_composed_components=True, **original_kwargs)
-
-    assert isinstance(system._time_series_mgr._storage, original_stype)
-
-    system.get_components()
-    system.add_components(test_bus)
-    system.add_components(test_generator)
-
-    test_time_series_data = SingleTimeSeries(
+    generator = SimpleGenerator.example()
+    system = SimpleSystem(
+        auto_add_composed_components=True,
+        time_series_storage_type=original_type,
+    )
+    system.add_components(generator)
+    time_series = SingleTimeSeries(
         data=np.arange(24),
         resolution=timedelta(hours=1),
         initial_timestamp=datetime(2020, 1, 1),
         name="load",
     )
-    system.add_time_series(test_time_series_data, test_generator)
+    system.add_time_series(time_series, generator)
     with pytest.raises(ISAlreadyAttached):
-        system.add_time_series(test_time_series_data, test_generator)
+        system.add_time_series(time_series, generator)
 
-    system.convert_storage(**new_kwargs)
+    assert isinstance(system.time_series.storage, original_class)
+    system.convert_storage(
+        time_series_storage_type=new_type,
+        time_series_directory=tmp_path,
+    )
 
-    assert isinstance(system._time_series_mgr._storage, new_stype)
-
-    ts2 = system.get_time_series(test_generator, time_series_type=SingleTimeSeries, name="load")
-    assert np.array_equal(ts2.data_array, test_time_series_data.data_array)
+    assert isinstance(system.time_series.storage, new_class)
+    result = system.get_time_series(generator, name="load")
+    np.testing.assert_array_equal(result.data_array, time_series.data_array)
 
 
 @pytest.mark.parametrize(
-    "original_kwargs,new_kwargs,original_stype,new_stype",
+    "original_type,new_type,original_class,new_class",
     [
         (
-            {"time_series_storage_type": TimeSeriesStorageType.MEMORY},
-            {},
+            TimeSeriesStorageType.MEMORY,
+            TimeSeriesStorageType.TIME_SERIES_STORE,
             InMemoryTimeSeriesStorage,
-            ArrowTimeSeriesStorage,
+            TimeSeriesStoreStorage,
         ),
         (
-            {},
-            {"time_series_storage_type": TimeSeriesStorageType.MEMORY},
-            ArrowTimeSeriesStorage,
+            TimeSeriesStorageType.TIME_SERIES_STORE,
+            TimeSeriesStorageType.MEMORY,
+            TimeSeriesStoreStorage,
             InMemoryTimeSeriesStorage,
         ),
     ],
 )
 def test_convert_storage_nonsequential_time_series(
-    original_kwargs, new_kwargs, original_stype, new_stype
+    tmp_path,
+    original_type,
+    new_type,
+    original_class,
+    new_class,
 ):
-    test_bus = SimpleBus.example()
-    test_generator = SimpleGenerator.example()
-    system = SimpleSystem(auto_add_composed_components=True, **original_kwargs)
-
-    assert isinstance(system._time_series_mgr._storage, original_stype)
-
-    system.get_components()
-    system.add_components(test_bus)
-    system.add_components(test_generator)
-
-    timestamps = np.array(
-        [datetime(year=2030, month=1, day=1) + timedelta(seconds=5 * i) for i in range(24)],
+    generator = SimpleGenerator.example()
+    system = SimpleSystem(
+        auto_add_composed_components=True,
+        time_series_storage_type=original_type,
     )
-    test_time_series_data = NonSequentialTimeSeries(
+    system.add_components(generator)
+    timestamps = np.array(
+        [datetime(2030, 1, 1) + timedelta(seconds=5 * i) for i in range(24)],
+    )
+    time_series = NonSequentialTimeSeries(
         data=np.arange(24),
         timestamps=timestamps,
         name="load",
     )
-    system.add_time_series(test_time_series_data, test_generator)
-    with pytest.raises(ISAlreadyAttached):
-        system.add_time_series(test_time_series_data, test_generator)
-    system.convert_storage(**new_kwargs)
+    system.add_time_series(time_series, generator)
 
-    assert isinstance(system._time_series_mgr._storage, new_stype)
-    ts2 = system.get_time_series(
-        test_generator, time_series_type=NonSequentialTimeSeries, name="load"
+    assert isinstance(system.time_series.storage, original_class)
+    system.convert_storage(
+        time_series_storage_type=new_type,
+        time_series_directory=tmp_path,
     )
-    assert np.array_equal(ts2.data_array, test_time_series_data.data_array)
-    assert np.array_equal(ts2.timestamps, test_time_series_data.timestamps)
+
+    assert isinstance(system.time_series.storage, new_class)
+    result = system.get_time_series(
+        generator,
+        time_series_type=NonSequentialTimeSeries,
+        name="load",
+    )
+    np.testing.assert_array_equal(result.data_array, time_series.data_array)
+    np.testing.assert_array_equal(result.timestamps, time_series.timestamps)

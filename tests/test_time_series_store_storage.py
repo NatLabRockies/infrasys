@@ -3,8 +3,6 @@ from datetime import datetime, timedelta
 import numpy as np
 import pytest
 
-pytest.importorskip("time_series_store")
-
 from infrasys.exceptions import ISNotStored
 from infrasys.time_series_store_storage import TimeSeriesStoreStorage
 from infrasys.time_series_models import (
@@ -31,6 +29,11 @@ def make_system(tmp_path) -> tuple[SimpleSystem, SimpleGenerator]:
     )
     system.add_components(bus, generator)
     return system, generator
+
+
+def test_time_series_store_is_default():
+    system = SimpleSystem()
+    assert isinstance(system.time_series.storage, TimeSeriesStoreStorage)
 
 
 def test_single_time_series_round_trip_and_slice(tmp_path):
