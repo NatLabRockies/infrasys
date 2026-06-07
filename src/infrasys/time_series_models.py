@@ -51,6 +51,7 @@ class TimeSeriesStorageType(StrEnum):
     CHRONIFY = "chronify"
     HDF5 = "hdf5"
     PARQUET = "parquet"
+    TIME_SERIES_STORE = "time_series_store"
 
 
 class TimeSeriesData(InfraSysBaseModelWithIdentifers, abc.ABC):

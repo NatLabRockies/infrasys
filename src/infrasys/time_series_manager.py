@@ -48,6 +48,13 @@ try:
 except ImportError:
     is_chronify_installed = False
 
+try:
+    from .time_series_store_storage import TimeSeriesStoreStorage
+
+    is_time_series_store_installed = True
+except ImportError:
+    is_time_series_store_installed = False
+
 
 def is_h5py_installed():
     try:
@@ -75,6 +82,9 @@ TIME_SERIES_REGISTRY: dict[TimeSeriesStorageType, type[TimeSeriesStorageBase]] =
 
 if is_chronify_installed:
     TIME_SERIES_REGISTRY[TimeSeriesStorageType.CHRONIFY] = ChronifyTimeSeriesStorage
+
+if is_time_series_store_installed:
+    TIME_SERIES_REGISTRY[TimeSeriesStorageType.TIME_SERIES_STORE] = TimeSeriesStoreStorage
 
 
 def _process_time_series_kwarg(key: str, **kwargs: Any) -> Any:
@@ -162,6 +172,16 @@ class TimeSeriesManager:
                     msg += 'Install it using `pip install "infrasys[h5]".'
                     raise ImportError(msg)
                 return HDF5TimeSeriesStorage(base_directory, **kwargs)
+            case TimeSeriesStorageType.TIME_SERIES_STORE:
+                if not is_time_series_store_installed:
+                    msg = (
+                        "The time-series-store backend requires time-series-store to be installed. "
+                        "Install the time-series-store Python package."
+                    )
+                    raise ImportError(msg)
+                if permanent:
+                    return TimeSeriesStoreStorage.create_with_permanent_directory(base_directory)
+                return TimeSeriesStoreStorage.create_with_temp_directory(base_directory)
             case _:
                 msg = f"{storage_type=}"
                 raise NotImplementedError(msg)
@@ -485,6 +505,15 @@ class TimeSeriesManager:
                 msg = (
                     "This system used chronify to manage time series data but the package is "
                     'not installed. Please install it with `pip install "infrasys[chronify]"`.'
+                )
+                raise ImportError(msg)
+            if (
+                ts_type == TimeSeriesStorageType.TIME_SERIES_STORE
+                and not is_time_series_store_installed
+            ):
+                msg = (
+                    "This system used the time-series-store backend but time-series-store is not "
+                    "installed. Install the time-series-store Python package."
                 )
                 raise ImportError(msg)
 

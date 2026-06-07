@@ -4,12 +4,13 @@ This guide explains how to use the different storage backends available in Infra
 
 ## Available Storage Backends
 
-Infrasys offers four different storage backends:
+Infrasys offers five different storage backends:
 
 1. **In-Memory Storage** ({py:class}`~infrasys.in_memory_time_series_storage.InMemoryTimeSeriesStorage`): Stores time series data entirely in memory
 2. **Arrow Storage** ({py:class}`~infrasys.arrow_storage.ArrowTimeSeriesStorage`): Stores time series data in Apache Arrow files on disk
 3. **Chronify Storage** ({py:class}`~infrasys.chronify_time_series_storage.ChronifyTimeSeriesStorage`): Stores time series data in a SQL database using the Chronify library
 4. **HDF5 Storage** (`HDF5TimeSeriesStorage`): Stores time series data in HDF5 files (available in development version)
+5. **time-series-store** (`TimeSeriesStoreStorage`): Stores arrays in a compact NetCDF file with a SQLite metadata sidecar using the optional `time-series-store` package
 
 ## Choosing a Storage Backend
 
@@ -30,6 +31,11 @@ system_chronify = System(time_series_storage_type=TimeSeriesStorageType.CHRONIFY
 
 # Create a system with HDF5 storage (development version)
 system_hdf5 = System(time_series_storage_type=TimeSeriesStorageType.HDF5)
+
+# Create a system with the time-series-store backend
+system_time_series_store = System(
+    time_series_storage_type=TimeSeriesStorageType.TIME_SERIES_STORE
+)
 ```
 
 ```{note}
@@ -204,6 +210,27 @@ system = System(time_series_storage_type=TimeSeriesStorageType.HDF5)
 ```{note}
 HDF5 storage is currently available in the development version only.
 ```
+
+### time-series-store
+
+**Best for:**
+
+- Large collections of one-dimensional static time series
+- Compact storage in a single NetCDF file
+- Sharing the same storage format with Rust and Julia applications
+
+Install the `time-series-store` Python package and select the backend:
+
+```bash
+pip install time-series-store
+```
+
+```python
+system = System(time_series_storage_type=TimeSeriesStorageType.TIME_SERIES_STORE)
+```
+
+The `time-series-store` backend currently supports `SingleTimeSeries` and
+`NonSequentialTimeSeries`.
 
 ## Working with Time Series Data
 
