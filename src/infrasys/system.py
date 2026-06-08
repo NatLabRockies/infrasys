@@ -103,6 +103,10 @@ class System:
               - time_series_directory: Location to store time series files, defaults to the system's
                 tmp directory. Use an alternate location if the space in that directory is limited,
                 such as on a compute node with no local storage.
+              - time_series_compression: NetCDF compression filter for the time-series-store
+                backend; "deflate" (default) or "none".
+              - time_series_compression_level: DEFLATE level 0-9, defaults to 3.
+              - time_series_shuffle: Enable the byte-shuffle filter for DEFLATE, defaults to True.
 
         Examples
         --------

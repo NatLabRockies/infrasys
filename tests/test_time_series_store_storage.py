@@ -82,6 +82,46 @@ def test_nonsequential_time_series_round_trip(tmp_path):
     np.testing.assert_array_equal(result.timestamps, timestamps)
 
 
+@pytest.mark.parametrize(
+    "compression_kwargs",
+    [
+        {"time_series_compression": "none"},
+        {"time_series_compression": "deflate", "time_series_compression_level": 9},
+        {"time_series_compression": "deflate", "time_series_shuffle": False},
+    ],
+)
+def test_compression_options_flow_from_system(tmp_path, compression_kwargs):
+    """Compression kwargs passed to System reach the backend and round-trip."""
+    system = SimpleSystem(
+        time_series_storage_type=TimeSeriesStorageType.TIME_SERIES_STORE,
+        time_series_directory=tmp_path,
+        **compression_kwargs,
+    )
+    assert isinstance(system.time_series.storage, TimeSeriesStoreStorage)
+    bus = SimpleBus(name="bus", voltage=1.0)
+    generator = SimpleGenerator(
+        name="generator", active_power=1.0, rating=1.0, bus=bus, available=True
+    )
+    system.add_components(bus, generator)
+
+    time_series = SingleTimeSeries.from_array(
+        np.arange(24, dtype=np.float64),
+        "active_power",
+        datetime(2024, 1, 1),
+        timedelta(hours=1),
+    )
+    system.add_time_series(time_series, generator)
+    result = system.get_time_series(generator, name="active_power")
+    np.testing.assert_array_equal(result.data, np.arange(24, dtype=np.float64))
+
+
+def test_invalid_compression_rejected(tmp_path):
+    from time_series_store import InvalidParameterError
+
+    with pytest.raises(InvalidParameterError):
+        TimeSeriesStoreStorage.create_with_temp_directory(tmp_path, compression="lz4")
+
+
 def test_remove_time_series(tmp_path):
     system, generator = make_system(tmp_path)
     time_series = SingleTimeSeries.from_array(

@@ -41,23 +41,57 @@ class TimeSeriesStoreStorage(TimeSeriesStorageBase):
 
     @classmethod
     def create_with_temp_directory(
-        cls, base_directory: Path | None = None
+        cls,
+        base_directory: Path | None = None,
+        *,
+        compression: str = "deflate",
+        compression_level: int = 3,
+        shuffle: bool = True,
     ) -> "TimeSeriesStoreStorage":
         if base_directory is not None:
             base_directory.mkdir(parents=True, exist_ok=True)
         directory = Path(mkdtemp(dir=base_directory))
         logger.debug("Creating tmp folder at {}", directory)
         atexit.register(clean_tmp_folder, directory)
-        return cls._create(directory)
+        return cls._create(
+            directory,
+            compression=compression,
+            compression_level=compression_level,
+            shuffle=shuffle,
+        )
 
     @classmethod
-    def create_with_permanent_directory(cls, directory: Path) -> "TimeSeriesStoreStorage":
+    def create_with_permanent_directory(
+        cls,
+        directory: Path,
+        *,
+        compression: str = "deflate",
+        compression_level: int = 3,
+        shuffle: bool = True,
+    ) -> "TimeSeriesStoreStorage":
         directory.mkdir(parents=True, exist_ok=True)
-        return cls._create(directory)
+        return cls._create(
+            directory,
+            compression=compression,
+            compression_level=compression_level,
+            shuffle=shuffle,
+        )
 
     @classmethod
-    def _create(cls, directory: Path) -> "TimeSeriesStoreStorage":
-        store = TimeSeriesStore.create(path=directory / cls.STORAGE_FILE)
+    def _create(
+        cls,
+        directory: Path,
+        *,
+        compression: str = "deflate",
+        compression_level: int = 3,
+        shuffle: bool = True,
+    ) -> "TimeSeriesStoreStorage":
+        store = TimeSeriesStore.create(
+            path=directory / cls.STORAGE_FILE,
+            compression=compression,
+            compression_level=compression_level,
+            shuffle=shuffle,
+        )
         return cls(directory, store)
 
     @classmethod
