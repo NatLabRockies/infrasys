@@ -98,11 +98,13 @@ class TimeSeriesStoreStorage(TimeSeriesStorageBase):
                 _as_utc(time_series.initial_timestamp),
                 time_series.resolution,
                 np.asarray(time_series.data_array, dtype=np.float64),
+                metadata.name,
             )
         elif isinstance(time_series, NonSequentialTimeSeries):
             rust_time_series = RustNonSequentialTimeSeries(
                 [_as_utc(x) for x in time_series.timestamps.astype("datetime64[us]").tolist()],
                 np.asarray(time_series.data_array, dtype=np.float64),
+                metadata.name,
             )
         else:
             msg = f"add_time_series not implemented for {type(time_series)}"
@@ -112,7 +114,6 @@ class TimeSeriesStoreStorage(TimeSeriesStorageBase):
             owner_uuid=str(metadata.time_series_uuid),
             owner_type=metadata.type,
             owner_category=OwnerCategory.Component,
-            name=metadata.name,
             time_series=rust_time_series,
         )
 
