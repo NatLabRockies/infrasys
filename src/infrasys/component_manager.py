@@ -444,7 +444,7 @@ class ComponentManager:
             The label of the parent component that contains this composed component.
             Used to produce a clearer error message.
         """
-        if component.id is not None and component.id in self._components_by_id:
+        if self.has_component(component):
             return
 
         if self._auto_add_composed_components:

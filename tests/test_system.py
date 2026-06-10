@@ -1075,6 +1075,29 @@ def test_rejects_foreign_component_with_colliding_system_local_id():
     assert system.get_component_by_uuid(local_gen.uuid) is local_gen
 
 
+def test_rejects_foreign_composed_component_with_colliding_system_local_id():
+    system = SimpleSystem()
+    local_bus = SimpleBus(name="bus", voltage=1.1)
+    system.add_component(local_bus)
+
+    foreign_system = SimpleSystem()
+    foreign_bus = SimpleBus(name="bus", voltage=1.1)
+    foreign_system.add_component(foreign_bus)
+
+    assert foreign_bus.id == local_bus.id
+    assert foreign_bus.uuid != local_bus.uuid
+
+    gen = SimpleGenerator(
+        name="gen",
+        active_power=1.0,
+        rating=1.0,
+        bus=foreign_bus,
+        available=True,
+    )
+    with pytest.raises(ISOperationNotAllowed):
+        system.add_component(gen)
+
+
 def test_get_by_label_with_integer_id():
     """Test that get_by_label resolves integer ID-based labels."""
     system = SimpleSystem(auto_add_composed_components=True)

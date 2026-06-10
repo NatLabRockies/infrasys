@@ -1022,8 +1022,7 @@ class System:
             metadata_list = list(self._time_series_mgr.list_time_series_metadata(component))
             logger.warning(
                 "Removing component {} which has {} time series(s). "
-                "Time series must be removed before the component to avoid "
-                "silent CASCADE deletion in the metadata database.",
+                "Associated time series will be removed before the component.",
                 component.label,
                 len(metadata_list),
             )
