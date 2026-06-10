@@ -216,6 +216,7 @@ class ComponentManager:
         self, component: Component, component_type: Optional[Type[Component]] = None
     ) -> list[Component]:
         """Return a list of all components that this component composes."""
+        self.raise_if_not_attached(component)
         return [
             self.get_by_id(x)
             for x in self._associations.list_child_components(
@@ -227,6 +228,7 @@ class ComponentManager:
         self, component: Component, component_type: Optional[Type[Component]] = None
     ) -> list[Component]:
         """Return a list of all components that compose this component."""
+        self.raise_if_not_attached(component)
         return [
             self.get_by_id(x)
             for x in self._associations.list_parent_components(

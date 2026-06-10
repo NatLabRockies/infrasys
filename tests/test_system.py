@@ -1046,7 +1046,7 @@ def test_remove_component_cleans_up_indexes():
 def test_rejects_foreign_component_with_colliding_system_local_id():
     """Components from another system are not attached even if system-local IDs collide."""
 
-    def make_system() -> tuple[SimpleSystem, SimpleGenerator]:
+    def make_system() -> tuple[SimpleSystem, SimpleGenerator, SimpleBus]:
         bus = SimpleBus(name="bus", voltage=1.1)
         gen = SimpleGenerator(
             name="gen",
@@ -1057,22 +1057,30 @@ def test_rejects_foreign_component_with_colliding_system_local_id():
         )
         system = SimpleSystem(auto_add_composed_components=True)
         system.add_component(gen)
-        return system, gen
+        return system, gen, bus
 
-    _, foreign_gen = make_system()
-    system, local_gen = make_system()
+    _, foreign_gen, foreign_bus = make_system()
+    system, local_gen, local_bus = make_system()
 
     assert foreign_gen.id is not None
     assert local_gen.id is not None
     assert foreign_gen.id == local_gen.id
     assert foreign_gen.uuid != local_gen.uuid
+    assert foreign_bus.id == local_bus.id
+    assert foreign_bus.uuid != local_bus.uuid
     assert not system.has_component(foreign_gen)
 
     with pytest.raises(ISNotStored):
         system.remove_component(foreign_gen, cascade_down=False)
+    with pytest.raises(ISNotStored):
+        system.list_child_components(foreign_gen)
+    with pytest.raises(ISNotStored):
+        system.list_parent_components(foreign_bus)
 
     assert system.get_component_by_id(local_gen.id) is local_gen
     assert system.get_component_by_uuid(local_gen.uuid) is local_gen
+    assert system.list_child_components(local_gen) == [local_bus]
+    assert system.list_parent_components(local_bus) == [local_gen]
 
 
 def test_rejects_foreign_composed_component_with_colliding_system_local_id():
