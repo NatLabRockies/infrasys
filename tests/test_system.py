@@ -1043,6 +1043,38 @@ def test_remove_component_cleans_up_indexes():
         system.get_component_by_id(gen2.id)
 
 
+def test_rejects_foreign_component_with_colliding_system_local_id():
+    """Components from another system are not attached even if system-local IDs collide."""
+
+    def make_system() -> tuple[SimpleSystem, SimpleGenerator]:
+        bus = SimpleBus(name="bus", voltage=1.1)
+        gen = SimpleGenerator(
+            name="gen",
+            active_power=1.0,
+            rating=1.0,
+            bus=bus,
+            available=True,
+        )
+        system = SimpleSystem(auto_add_composed_components=True)
+        system.add_component(gen)
+        return system, gen
+
+    _, foreign_gen = make_system()
+    system, local_gen = make_system()
+
+    assert foreign_gen.id is not None
+    assert local_gen.id is not None
+    assert foreign_gen.id == local_gen.id
+    assert foreign_gen.uuid != local_gen.uuid
+    assert not system.has_component(foreign_gen)
+
+    with pytest.raises(ISNotStored):
+        system.remove_component(foreign_gen, cascade_down=False)
+
+    assert system.get_component_by_id(local_gen.id) is local_gen
+    assert system.get_component_by_uuid(local_gen.uuid) is local_gen
+
+
 def test_get_by_label_with_integer_id():
     """Test that get_by_label resolves integer ID-based labels."""
     system = SimpleSystem(auto_add_composed_components=True)
@@ -1069,8 +1101,13 @@ def test_get_by_label_integer_name_wrong_type():
 def test_has_component_with_none_id():
     """Test that has_component returns False when component has no id."""
     system = SimpleSystem()
-    gen = SimpleGenerator(name="unattached", active_power=1.0, rating=1.0,
-                          bus=SimpleBus(name="bus", voltage=1.1), available=True)
+    gen = SimpleGenerator(
+        name="unattached",
+        active_power=1.0,
+        rating=1.0,
+        bus=SimpleBus(name="bus", voltage=1.1),
+        available=True,
+    )
     assert gen.id is None
     assert not system.has_component(gen)
 
@@ -1078,8 +1115,14 @@ def test_has_component_with_none_id():
 def test_serialize_component_reference_without_id():
     """Test that serialize_component_reference raises ValueError when component has no id."""
     from infrasys.component import serialize_component_reference
-    gen = SimpleGenerator(name="unattached", active_power=1.0, rating=1.0,
-                          bus=SimpleBus(name="bus", voltage=1.1), available=True)
+
+    gen = SimpleGenerator(
+        name="unattached",
+        active_power=1.0,
+        rating=1.0,
+        bus=SimpleBus(name="bus", voltage=1.1),
+        available=True,
+    )
     with pytest.raises(ValueError, match="must be attached before it can be serialized"):
         serialize_component_reference(gen)
 
@@ -1097,6 +1140,7 @@ def test_assign_new_uuid():
 def test_uuid_setter():
     """Test the uuid property setter."""
     from uuid import uuid4
+
     system = SimpleSystem(auto_add_composed_components=True)
     gen = SimpleGenerator.example()
     system.add_component(gen)
@@ -1108,6 +1152,7 @@ def test_uuid_setter():
 def test_example_not_implemented():
     """Test that Component.example raises NotImplementedError."""
     from infrasys import Component
+
     with pytest.raises(NotImplementedError, match="does not implement example"):
         Component.example()
 
@@ -1115,8 +1160,13 @@ def test_example_not_implemented():
 def test_component_associations_error_no_id():
     """Test that ComponentAssociations methods raise when component has no id."""
     system = SimpleSystem()
-    gen = SimpleGenerator(name="unattached", active_power=1.0, rating=1.0,
-                          bus=SimpleBus(name="bus", voltage=1.1), available=True)
+    gen = SimpleGenerator(
+        name="unattached",
+        active_power=1.0,
+        rating=1.0,
+        bus=SimpleBus(name="bus", voltage=1.1),
+        available=True,
+    )
     assoc = system._component_mgr._associations
 
     with pytest.raises(ISOperationNotAllowed, match="does not have an id"):

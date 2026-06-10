@@ -121,19 +121,16 @@ class ComponentManager:
                             msg = f"There is more than one component with {label=}."
                             raise ISOperationNotAllowed(msg)
                         return components[0]
-            # Name not found; try to parse as integer ID
+            # Name not found; try to parse as integer ID.
             try:
-                name_or_uuid = int(name_or_uuid)
+                component_id = int(name_or_uuid)
             except ValueError:
                 msg = f"No component with {label=} is stored."
                 raise ISNotStored(msg)
 
-        if isinstance(name_or_uuid, int):
-            component = self.get_by_id(name_or_uuid)
+            component = self.get_by_id(component_id)
             if type(component).__name__ == class_name:
                 return component
-            msg = f"No component with {label=} is stored."
-            raise ISNotStored(msg)
 
         msg = f"No component with {label=} is stored."
         raise ISNotStored(msg)
@@ -144,7 +141,10 @@ class ComponentManager:
 
     def has_component(self, component) -> bool:
         """Return True if the component is attached."""
-        return component.id in self._components_by_id if component.id is not None else False
+        if component.id is None:
+            return False
+        stored_component = self._components_by_id.get(component.id)
+        return stored_component is not None and _component_matches(stored_component, component)
 
     def iter(
         self, *component_types: Type[Component], filter_func: Callable | None = None
@@ -275,35 +275,37 @@ class ComponentManager:
             msg = f"{component.label} is not stored"
             raise ISNotStored(msg)
 
-        self._check_parent_components_for_remove(component, force)
         container = self._components[component_type][key]
-        for i, comp in enumerate(container):
-            if _component_matches(comp, component):
-                container.pop(i)
-                # Always clean up ID/UUID indexes for the removed component,
-                # regardless of whether other components remain under the same key.
-                if component.id is not None:
-                    self._components_by_id.pop(component.id, None)
-                self._components_by_uuid.pop(component.uuid, None)
-                if not self._components[component_type][key]:
-                    self._components[component_type].pop(key)
-                if not self._components[component_type]:
-                    self._components.pop(component_type)
-                logger.debug("Removed component {}", component.label)
-                if cascade_down:
-                    child_components = self._associations.list_child_components(component)
-                else:
-                    child_components = []
-                self._associations.remove(component)
-                for child_id in child_components:
-                    child = self.get_by_id(child_id)
-                    parent_components = self.list_parent_components(child)
-                    if not parent_components:
-                        self.remove(child, cascade_down=cascade_down, force=force)
-                return
-
-        msg = f"Component {component.label} is not stored"
-        raise ISNotStored(msg)
+        matches = [
+            (i, comp) for i, comp in enumerate(container) if _component_matches(comp, component)
+        ]
+        if not matches:
+            msg = f"Component {component.label} is not stored"
+            raise ISNotStored(msg)
+        matched_index, matched_component = matches[0]
+        self._check_parent_components_for_remove(matched_component, force)
+        container.pop(matched_index)
+        # Always clean up ID/UUID indexes for the removed component,
+        # regardless of whether other components remain under the same key.
+        if matched_component.id is not None:
+            self._components_by_id.pop(matched_component.id, None)
+        self._components_by_uuid.pop(matched_component.uuid, None)
+        if not self._components[component_type][key]:
+            self._components[component_type].pop(key)
+        if not self._components[component_type]:
+            self._components.pop(component_type)
+        logger.debug("Removed component {}", matched_component.label)
+        if cascade_down:
+            child_components = self._associations.list_child_components(matched_component)
+        else:
+            child_components = []
+        self._associations.remove(matched_component)
+        for child_id in child_components:
+            child = self.get_by_id(child_id)
+            parent_components = self.list_parent_components(child)
+            if not parent_components:
+                self.remove(child, cascade_down=cascade_down, force=force)
+        return
 
     def _check_parent_components_for_remove(self, component: Component, force: bool) -> None:
         parent_components = self.list_parent_components(component)
@@ -477,17 +479,13 @@ class ComponentManager:
         system_uuid : UUID
             The component must be attached to the system with this UUID.
         """
-        if component.id is None or component.id not in self._components_by_id:
+        if not self.has_component(component):
             msg = f"{component.label} is not attached to the system"
             raise ISNotStored(msg)
 
 
 def _component_matches(a: Component, b: Component) -> bool:
-    """Return True if two component references match the same stored component.
-
-    Prefers matching by integer ``id``; falls back to ``uuid`` when ``id`` is
-    not available on either reference.
-    """
-    if a.id is not None and b.id is not None:
-        return a.id == b.id
-    return a.uuid == b.uuid
+    """Return True if two component references identify the same stored component."""
+    if a.id is None or b.id is None:
+        return False
+    return a.id == b.id and a.uuid == b.uuid
