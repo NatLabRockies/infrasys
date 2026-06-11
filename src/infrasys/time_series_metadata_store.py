@@ -10,6 +10,7 @@ from uuid import UUID
 
 import orjson
 
+from infrasys.id_manager import IDManager
 from infrasys.utils.sqlite import backup, execute
 
 from . import (
@@ -36,6 +37,13 @@ from .utils.metadata_utils import (
     get_window_count,
 )
 
+_OPTIONAL_INSERT_COLUMNS = (
+    "horizon",
+    "interval",
+    "window_count",
+    "scaling_factor_multiplier",
+)
+
 
 class TimeSeriesMetadataStore:
     """Stores time series metadata in a SQLite database."""
@@ -46,6 +54,9 @@ class TimeSeriesMetadataStore:
             assert create_associations_table(connection=self._con)
             create_key_value_store(connection=self._con)
         self._cache_metadata: dict[UUID, TimeSeriesMetadata] = {}
+        self._metadata_id_manager = IDManager(next_id=1)
+        self._time_series_id_manager = IDManager(next_id=1)
+        self._owner_id_manager = IDManager(next_id=1)
 
     def _load_metadata_into_memory(self):
         query = f"SELECT * FROM {TIME_SERIES_ASSOCIATIONS_TABLE}"
@@ -60,6 +71,25 @@ class TimeSeriesMetadataStore:
             )
             metadata = _deserialize_time_series_metadata(row)
             self._cache_metadata[metadata.uuid] = metadata
+        # Advance ID managers past any IDs already present in the database
+        # so that newly added metadata gets fresh IDs.
+        columns = {row[1] for row in cursor.execute(
+            f"PRAGMA table_info({TIME_SERIES_ASSOCIATIONS_TABLE})"
+        ).fetchall()}
+        if "metadata_id" in columns:
+            max_ids = cursor.execute(
+                f"""
+                SELECT
+                    COALESCE(MAX(metadata_id), 0),
+                    COALESCE(MAX(time_series_id), 0),
+                    COALESCE(MAX(owner_id), 0)
+                FROM {TIME_SERIES_ASSOCIATIONS_TABLE}
+                """
+            ).fetchone()
+            if max_ids:
+                self._metadata_id_manager.advance_past(max_ids[0])
+                self._time_series_id_manager.advance_past(max_ids[1])
+                self._owner_id_manager.advance_past(max_ids[2])
         return
 
     def add(
@@ -101,9 +131,19 @@ class TimeSeriesMetadataStore:
         if metadata.units:
             units = orjson.dumps(serialize_value(metadata.units))
 
+        if metadata.id is None:
+            metadata.id = self._metadata_id_manager.get_next_id()
+        else:
+            self._metadata_id_manager.advance_past(metadata.id)
+        if metadata.time_series_id is None:
+            metadata.time_series_id = self._time_series_id_manager.get_next_id()
+        else:
+            self._time_series_id_manager.advance_past(metadata.time_series_id)
+
         rows = [
             {
-                "time_series_uuid": str(metadata.time_series_uuid),
+                "time_series_id": metadata.time_series_id,
+                "time_series_storage_key": str(metadata.time_series_uuid),
                 "time_series_type": metadata.type,
                 "initial_timestamp": initial_time,
                 "resolution": resolution,
@@ -112,16 +152,18 @@ class TimeSeriesMetadataStore:
                 "window_count": window_count,
                 "length": metadata.length if hasattr(metadata, "length") else None,
                 "name": metadata.name,
-                "owner_uuid": str(owner.uuid),
+                "owner_id": owner.id,
+                "owner_storage_key": str(owner.uuid),
                 "owner_type": owner.__class__.__name__,
-                "owner_category": "Component",
+                "owner_category": _get_owner_category(owner),
                 "features": make_features_string(metadata.features),
                 "units": units,
-                "metadata_uuid": str(metadata.uuid),
+                "metadata_id": metadata.id,
+                "metadata_storage_key": str(metadata.uuid),
             }
             for owner in owners
         ]
-        self._insert_rows(rows, cur)
+        self.insert_rows(rows, cur)
         if connection is None:
             self._con.commit()
 
@@ -155,7 +197,7 @@ class TimeSeriesMetadataStore:
         time_series_type_count = {(x[0], x[1], x[2], x[3]): x[4] for x in rows}
 
         time_series_count = execute(
-            cur, f"SELECT COUNT(DISTINCT time_series_uuid) from {TIME_SERIES_ASSOCIATIONS_TABLE}"
+            cur, f"SELECT COUNT(DISTINCT time_series_id) from {TIME_SERIES_ASSOCIATIONS_TABLE}"
         ).fetchall()[0][0]
 
         return TimeSeriesCounts(
@@ -196,9 +238,9 @@ class TimeSeriesMetadataStore:
     def has_time_series(self, time_series_uuid: UUID) -> bool:
         """Return True if there is time series matching the UUID."""
         cur = self._con.cursor()
-        query = f"SELECT 1 FROM {TIME_SERIES_ASSOCIATIONS_TABLE} WHERE time_series_uuid = ?"
+        query = f"SELECT 1 FROM {TIME_SERIES_ASSOCIATIONS_TABLE} WHERE time_series_storage_key = ?"
         row = execute(cur, query, params=(str(time_series_uuid),)).fetchone()
-        return row
+        return row is not None
 
     def has_time_series_metadata(
         self,
@@ -223,14 +265,14 @@ class TimeSeriesMetadataStore:
         if not params:
             return set()
         uuids = ",".join(itertools.repeat("?", len(params)))
-        query = f"SELECT DISTINCT time_series_uuid FROM {TIME_SERIES_ASSOCIATIONS_TABLE} WHERE time_series_uuid IN ({uuids})"
+        query = f"SELECT DISTINCT time_series_storage_key FROM {TIME_SERIES_ASSOCIATIONS_TABLE} WHERE time_series_storage_key IN ({uuids})"
         rows = execute(cur, query, params=params).fetchall()
         return {UUID(x[0]) for x in rows}
 
     def list_existing_time_series_uuids(self) -> set[UUID]:
         """Return the UUIDs that are present."""
         cur = self._con.cursor()
-        query = f"SELECT DISTINCT time_series_uuid FROM {TIME_SERIES_ASSOCIATIONS_TABLE}"
+        query = f"SELECT DISTINCT time_series_storage_key FROM {TIME_SERIES_ASSOCIATIONS_TABLE}"
         rows = execute(cur, query).fetchall()
         return {UUID(x[0]) for x in rows}
 
@@ -271,10 +313,10 @@ class TimeSeriesMetadataStore:
         # Use the denormalized view
         query = f"""
         SELECT
-            metadata_uuid
+            metadata_storage_key
         FROM {TIME_SERIES_ASSOCIATIONS_TABLE}
         WHERE
-            time_series_uuid = ? {limit_str}
+            time_series_storage_key = ? {limit_str}
         """
         cur = self._con.cursor()
         rows = execute(cur, query, params=params).fetchall()
@@ -314,7 +356,7 @@ class TimeSeriesMetadataStore:
         where_clause, params = self._make_where_clause(owners, name, time_series_type, **features)
 
         query = (
-            f"SELECT metadata_uuid FROM {TIME_SERIES_ASSOCIATIONS_TABLE} WHERE ({where_clause})"
+            f"SELECT metadata_storage_key FROM {TIME_SERIES_ASSOCIATIONS_TABLE} WHERE ({where_clause})"
         )
         rows = execute(cur, query, params=params).fetchall()
         matches = len(rows)
@@ -335,7 +377,7 @@ class TimeSeriesMetadataStore:
         result: list[TimeSeriesMetadata] = []
         for metadata_uuid in unique_metadata_uuids:
             query_count = (
-                f"SELECT COUNT(*) FROM {TIME_SERIES_ASSOCIATIONS_TABLE} WHERE metadata_uuid = ?"
+                f"SELECT COUNT(*) FROM {TIME_SERIES_ASSOCIATIONS_TABLE} WHERE metadata_storage_key = ?"
             )
             count_association = execute(cur, query_count, params=[str(metadata_uuid)]).fetchone()[
                 0
@@ -355,8 +397,8 @@ class TimeSeriesMetadataStore:
         con = connection or self._con
         cur = con.cursor()
 
-        query = f"DELETE FROM {TIME_SERIES_ASSOCIATIONS_TABLE} WHERE metadata_uuid = ?"
-        cur.execute(query, (str(metadata.uuid),))
+        query = f"DELETE FROM {TIME_SERIES_ASSOCIATIONS_TABLE} WHERE metadata_storage_key = ?"
+        execute(cur, query, params=(str(metadata.uuid),))
 
         if connection is None:
             con.commit()
@@ -366,37 +408,46 @@ class TimeSeriesMetadataStore:
         else:
             return metadata
 
-    def sql(self, query: str, params: Sequence[str] = ()) -> list[tuple]:
+    def sql(self, query: str, params: Sequence[Any] = ()) -> list[tuple]:
         """Run a SQL query on the time series metadata table."""
         cur = self._con.cursor()
         return execute(cur, query, params=params).fetchall()
 
-    def _insert_rows(self, rows: list[dict], cur: sqlite3.Cursor) -> None:
+    def insert_rows(self, rows: list[dict], cur: sqlite3.Cursor) -> None:
         query = f"""
         INSERT INTO {TIME_SERIES_ASSOCIATIONS_TABLE} (
-            time_series_uuid, time_series_type, initial_timestamp, resolution,
-            horizon, interval, window_count, length, name, owner_uuid,
-            owner_type, owner_category, features, units, metadata_uuid
+            time_series_id, time_series_storage_key, time_series_type, initial_timestamp,
+            resolution, horizon, interval, window_count, length, name, owner_id,
+            owner_storage_key, owner_type, owner_category, features, units, metadata_id,
+            metadata_storage_key
         ) VALUES (
-            :time_series_uuid, :time_series_type, :initial_timestamp,
-            :resolution, :horizon, :interval, :window_count, :length, :name,
-            :owner_uuid, :owner_type, :owner_category, :features, :units,
-            :metadata_uuid
+            :time_series_id, :time_series_storage_key, :time_series_type,
+            :initial_timestamp, :resolution, :horizon, :interval, :window_count,
+            :length, :name, :owner_id, :owner_storage_key, :owner_type,
+            :owner_category, :features, :units, :metadata_id, :metadata_storage_key
         )
         """
+        rows = self._normalize_insert_rows(rows)
+        self._insert_parent_ids(rows, cur)
         cur.executemany(query, rows)
 
     def _make_components_str(
-        self, params: list[str], *owners: Component | SupplementalAttribute
+        self, params: list, *owners: Component | SupplementalAttribute
     ) -> str:
         if not owners:
             msg = "At least one component must be passed."
             raise ISOperationNotAllowed(msg)
 
-        or_clause = "OR ".join((itertools.repeat("owner_uuid = ? ", len(owners))))
+        or_clause = "OR ".join(
+            (itertools.repeat("(owner_id = ? AND owner_category = ?) ", len(owners)))
+        )
 
         for owner in owners:
-            params.append(str(owner.uuid))
+            if owner.id is None:
+                msg = f"{owner.label} does not have an id assigned."
+                raise ISOperationNotAllowed(msg)
+            params.append(owner.id)
+            params.append(_get_owner_category(owner))
 
         return f"({or_clause})"
 
@@ -406,8 +457,8 @@ class TimeSeriesMetadataStore:
         name: str | None,
         time_series_type: str | None,
         **features: str,
-    ) -> tuple[str, list[str]]:
-        params: list[str] = []
+    ) -> tuple[str, list]:
+        params: list = []
         component_str = self._make_components_str(params, *owners)
 
         if name is None:
@@ -431,7 +482,7 @@ class TimeSeriesMetadataStore:
         return f"({component_str} {var_str} {ts_str}) {feat_str}", params
 
     def unique_uuids_by_type(self, time_series_type: str):
-        query = f"SELECT DISTINCT time_series_uuid from {TIME_SERIES_ASSOCIATIONS_TABLE} where time_series_type = ?"
+        query = f"SELECT DISTINCT time_series_storage_key from {TIME_SERIES_ASSOCIATIONS_TABLE} where time_series_type = ?"
         params = (time_series_type,)
         uuid_strings = self.sql(query, params)
         return [UUID(ustr[0]) for ustr in uuid_strings]
@@ -465,16 +516,182 @@ class TimeSeriesMetadataStore:
         features_str = make_features_string(features)
         if features_str:
             params.append(features_str)
-        query = f"SELECT metadata_uuid FROM {TIME_SERIES_ASSOCIATIONS_TABLE} WHERE {where_clause} AND features = ?"
+        query = f"SELECT metadata_storage_key FROM {TIME_SERIES_ASSOCIATIONS_TABLE} WHERE {where_clause} AND features = ?"
         rows = execute(cur, query, params=params).fetchall()
 
         if rows:
             return [UUID(row[0]) for row in rows]
 
         where_clause, params = self._make_where_clause(owners, name, time_series_type, **features)
-        query = f"SELECT metadata_uuid FROM {TIME_SERIES_ASSOCIATIONS_TABLE} WHERE {where_clause}"
+        query = f"SELECT metadata_storage_key FROM {TIME_SERIES_ASSOCIATIONS_TABLE} WHERE {where_clause}"
         rows = execute(cur, query, params=params).fetchall()
         return [UUID(row[0]) for row in rows]
+
+    def migrate_legacy_uuid_table(self, owners: Sequence[Component | SupplementalAttribute]) -> None:
+        """Migrate legacy UUID association rows to integer ID columns."""
+        columns = _get_table_columns(self._con, TIME_SERIES_ASSOCIATIONS_TABLE)
+        if {"time_series_id", "owner_id", "metadata_id"}.issubset(columns):
+            if "owner_storage_key" in columns:
+                self._remap_owner_ids_from_storage_keys(owners)
+            return
+        if not {"time_series_uuid", "owner_uuid", "metadata_uuid"}.issubset(columns):
+            return
+
+        owner_ids = {str(owner.uuid): owner.id for owner in owners}
+        if any(id_ is None for id_ in owner_ids.values()):
+            msg = "Cannot migrate time series associations before owner IDs exist"
+            raise RuntimeError(msg)
+
+        cur = self._con.cursor()
+        rows = execute(cur, f"SELECT * FROM {TIME_SERIES_ASSOCIATIONS_TABLE}").fetchall()
+        columns_order = [row[1] for row in cur.execute(
+            f"PRAGMA table_info({TIME_SERIES_ASSOCIATIONS_TABLE})"
+        ).fetchall()]
+        row_dicts = [dict(zip(columns_order, row)) for row in rows]
+        execute(
+            cur,
+            f"ALTER TABLE {TIME_SERIES_ASSOCIATIONS_TABLE} "
+            f"RENAME TO {TIME_SERIES_ASSOCIATIONS_TABLE}_legacy_uuid",
+        )
+        create_associations_table(self._con, table_name=TIME_SERIES_ASSOCIATIONS_TABLE)
+
+        time_series_ids: dict[str, int] = {}
+        metadata_ids: dict[str, int] = {}
+        migrated = []
+        for row in row_dicts:
+            time_series_key = row["time_series_uuid"]
+            metadata_key = row["metadata_uuid"]
+            time_series_id = time_series_ids.setdefault(
+                time_series_key, self._time_series_id_manager.get_next_id()
+            )
+            metadata_id = metadata_ids.setdefault(
+                metadata_key, self._metadata_id_manager.get_next_id()
+            )
+            owner_id = owner_ids.get(row["owner_uuid"])
+            if owner_id is None:
+                msg = f"Cannot migrate time series association for owner_uuid={row['owner_uuid']}"
+                raise RuntimeError(msg)
+            migrated.append(
+                {
+                    "time_series_id": time_series_id,
+                    "time_series_storage_key": time_series_key,
+                    "time_series_type": row["time_series_type"],
+                    "initial_timestamp": row["initial_timestamp"],
+                    "resolution": row["resolution"],
+                    "horizon": row["horizon"],
+                    "interval": row["interval"],
+                    "window_count": row["window_count"],
+                    "length": row["length"],
+                    "name": row["name"],
+                    "owner_id": owner_id,
+                    "owner_storage_key": row["owner_uuid"],
+                    "owner_type": row["owner_type"],
+                    "owner_category": row["owner_category"],
+                    "features": row["features"],
+                    "units": row["units"],
+                    "metadata_id": metadata_id,
+                    "metadata_storage_key": metadata_key,
+                }
+            )
+        if migrated:
+            self.insert_rows(migrated, cur)
+        execute(cur, f"DROP TABLE {TIME_SERIES_ASSOCIATIONS_TABLE}_legacy_uuid")
+        self._con.commit()
+        self._cache_metadata.clear()
+        self._load_metadata_into_memory()
+
+    def _remap_owner_ids_from_storage_keys(
+        self, owners: Sequence[Component | SupplementalAttribute]
+    ) -> None:
+        owner_ids = {str(owner.uuid): owner.id for owner in owners}
+        cur = self._con.cursor()
+        rows = execute(
+            cur,
+            f"""
+            SELECT DISTINCT owner_storage_key
+            FROM {TIME_SERIES_ASSOCIATIONS_TABLE}
+            WHERE owner_storage_key IS NOT NULL
+            """,
+        ).fetchall()
+        for (owner_storage_key,) in rows:
+            owner_id = owner_ids.get(owner_storage_key)
+            if owner_id is None:
+                continue
+            cur.execute("INSERT OR IGNORE INTO owners(id) VALUES(?)", (owner_id,))
+            execute(
+                cur,
+                f"""
+                UPDATE {TIME_SERIES_ASSOCIATIONS_TABLE}
+                SET owner_id = ?
+                WHERE owner_storage_key = ?
+                """,
+                (owner_id, owner_storage_key),
+            )
+        self._con.commit()
+
+    @staticmethod
+    def _insert_parent_ids(rows: list[dict], cur: sqlite3.Cursor) -> None:
+        cur.executemany(
+            "INSERT OR IGNORE INTO time_series(id) VALUES(?)",
+            {(row["time_series_id"],) for row in rows},
+        )
+        cur.executemany(
+            "INSERT OR IGNORE INTO owners(id) VALUES(?)",
+            {(row["owner_id"],) for row in rows},
+        )
+        cur.executemany(
+            "INSERT OR IGNORE INTO time_series_metadata(id) VALUES(?)",
+            {(row["metadata_id"],) for row in rows},
+        )
+
+    def _normalize_insert_rows(self, rows: list[dict]) -> list[dict]:
+        normalized = []
+        owner_ids_by_storage_key: dict[str, int] = {}
+        time_series_ids_by_storage_key: dict[str, int] = {}
+        metadata_ids_by_storage_key: dict[str, int] = {}
+        for row in rows:
+            row = dict(row)
+            for column in _OPTIONAL_INSERT_COLUMNS:
+                row.setdefault(column, None)
+            if "time_series_storage_key" not in row:
+                row["time_series_storage_key"] = row.pop("time_series_uuid")
+            if "time_series_id" not in row:
+                row["time_series_id"] = self._get_or_create_id(
+                    time_series_ids_by_storage_key,
+                    row["time_series_storage_key"],
+                    self._time_series_id_manager,
+                )
+            if "metadata_storage_key" not in row:
+                row["metadata_storage_key"] = row.pop("metadata_uuid")
+            if "metadata_id" not in row:
+                row["metadata_id"] = self._get_or_create_id(
+                    metadata_ids_by_storage_key,
+                    row["metadata_storage_key"],
+                    self._metadata_id_manager,
+                )
+            if "owner_storage_key" not in row:
+                row["owner_storage_key"] = row.get("owner_uuid")
+            if "owner_id" not in row:
+                row["owner_id"] = self._get_or_create_id(
+                    owner_ids_by_storage_key,
+                    row.get("owner_storage_key") or "",
+                    self._owner_id_manager,
+                )
+            row.pop("owner_uuid", None)
+            normalized.append(row)
+        return normalized
+
+    @staticmethod
+    def _get_or_create_id(
+        ids_by_key: dict[str, int],
+        key: str,
+        id_manager: IDManager | None = None,
+    ) -> int:
+        if key not in ids_by_key:
+            ids_by_key[key] = (
+                id_manager.get_next_id() if id_manager is not None else len(ids_by_key) + 1
+            )
+        return ids_by_key[key]
 
 
 @dataclass
@@ -504,6 +721,12 @@ def _make_features_dict(features: dict[str, Any]) -> dict[str, Any]:
 
 
 def _deserialize_time_series_metadata(data: dict) -> TimeSeriesMetadata:
+    """Deserialize a time series metadata dict into a typed metadata object.
+
+    Works on a shallow copy of the input dict to avoid mutating the caller's data.
+    """
+    data = dict(data)
+    data.pop("id", None)
     time_series_type = data.pop("time_series_type")
     # NOTE: This is only relevant for compatibility with IS.jl and can be
     # removed in the future when we have tigther integration
@@ -530,7 +753,13 @@ def _deserialize_time_series_metadata(data: dict) -> TimeSeriesMetadata:
     else:
         data["features"] = {}
 
-    data["uuid"] = data.pop("metadata_uuid")
+    if "metadata_storage_key" in data:
+        data["id"] = data.pop("metadata_id")
+        data["legacy_uuid"] = data.pop("metadata_storage_key")
+    else:
+        data["legacy_uuid"] = data.pop("metadata_uuid")
+    if "time_series_storage_key" in data:
+        data["time_series_uuid"] = data.pop("time_series_storage_key")
     data["type"] = time_series_type
     metadata_instance = metadata.model_validate(
         {key: value for key, value in data.items() if key in metadata.model_fields}
@@ -542,3 +771,11 @@ def make_features_string(features: dict[str, Any]) -> str:
     """Serializes a dictionary of features into a sorted string."""
     data = [{key: value} for key, value in sorted(features.items())]
     return orjson.dumps(data).decode()
+
+
+def _get_owner_category(owner: Component | SupplementalAttribute) -> str:
+    return "Component" if isinstance(owner, Component) else "SupplementalAttribute"
+
+
+def _get_table_columns(con: sqlite3.Connection, table_name: str) -> set[str]:
+    return {row[1] for row in con.execute(f"PRAGMA table_info({table_name})").fetchall()}

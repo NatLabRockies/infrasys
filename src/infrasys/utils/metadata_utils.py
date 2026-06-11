@@ -42,15 +42,23 @@ def create_supplemental_attribute_associations_table(
     bool
         True if the table exists or was created successfully.
     """
+    cur = connection.cursor()
+    execute(cur, "PRAGMA foreign_keys = ON")
+    execute(cur, "CREATE TABLE IF NOT EXISTS components(id INTEGER PRIMARY KEY)")
+    execute(
+        cur,
+        "CREATE TABLE IF NOT EXISTS supplemental_attributes(id INTEGER PRIMARY KEY)",
+    )
     schema = [
         "id INTEGER PRIMARY KEY",
-        "attribute_uuid TEXT",
+        "attribute_id INTEGER NOT NULL",
         "attribute_type TEXT",
-        "component_uuid TEXT",
+        "component_id INTEGER NOT NULL",
         "component_type TEXT",
+        "FOREIGN KEY(attribute_id) REFERENCES supplemental_attributes(id) ON DELETE CASCADE",
+        "FOREIGN KEY(component_id) REFERENCES components(id) ON DELETE CASCADE",
     ]
     schema_text = ",".join(schema)
-    cur = connection.cursor()
     execute(cur, f"CREATE TABLE IF NOT EXISTS {table_name}({schema_text})")
     logger.debug("Created supplemental attribute associations table {}", table_name)
     if with_index:
@@ -71,12 +79,12 @@ def create_supplemental_attribute_association_indexes(
     execute(
         cur,
         f"CREATE INDEX IF NOT EXISTS {table_name}_by_attribute "
-        f"ON {table_name} (attribute_uuid, component_uuid, component_type)",
+        f"ON {table_name} (attribute_id, component_id, component_type)",
     )
     execute(
         cur,
         f"CREATE INDEX IF NOT EXISTS {table_name}_by_component "
-        f"ON {table_name} (component_uuid, attribute_uuid, attribute_type)",
+        f"ON {table_name} (component_id, attribute_id, attribute_type)",
     )
     connection.commit()
 
@@ -103,15 +111,22 @@ def create_component_associations_table(
     bool
         True if the table exists or was created successfully.
     """
+    cur = connection.cursor()
+    execute(cur, "PRAGMA foreign_keys = ON")
+    execute(
+        cur,
+        "CREATE TABLE IF NOT EXISTS components(id INTEGER PRIMARY KEY)",
+    )
     schema = [
         "id INTEGER PRIMARY KEY",
-        "component_uuid TEXT",
+        "component_id INTEGER NOT NULL",
         "component_type TEXT",
-        "attached_component_uuid TEXT",
+        "attached_component_id INTEGER NOT NULL",
         "attached_component_type TEXT",
+        "FOREIGN KEY(component_id) REFERENCES components(id) ON DELETE CASCADE",
+        "FOREIGN KEY(attached_component_id) REFERENCES components(id) ON DELETE CASCADE",
     ]
     schema_text = ",".join(schema)
-    cur = connection.cursor()
     execute(cur, f"CREATE TABLE IF NOT EXISTS {table_name}({schema_text})")
     logger.debug("Created component associations table {}", table_name)
     if with_index:
@@ -131,12 +146,12 @@ def create_component_association_indexes(
     cur = connection.cursor()
     execute(
         cur,
-        f"CREATE INDEX IF NOT EXISTS {table_name}_by_component ON {table_name} (component_uuid)",
+        f"CREATE INDEX IF NOT EXISTS {table_name}_by_component ON {table_name} (component_id)",
     )
     execute(
         cur,
         f"CREATE INDEX IF NOT EXISTS {table_name}_by_attached_component "
-        f"ON {table_name} (attached_component_uuid)",
+        f"ON {table_name} (attached_component_id)",
     )
     connection.commit()
     return
@@ -164,9 +179,15 @@ def create_associations_table(
     bool
         True if the table was created successfully.
     """
+    cur = connection.cursor()
+    execute(cur, "PRAGMA foreign_keys = ON")
+    execute(cur, "CREATE TABLE IF NOT EXISTS owners(id INTEGER PRIMARY KEY)")
+    execute(cur, "CREATE TABLE IF NOT EXISTS time_series(id INTEGER PRIMARY KEY)")
+    execute(cur, "CREATE TABLE IF NOT EXISTS time_series_metadata(id INTEGER PRIMARY KEY)")
     schema = [
         "id INTEGER PRIMARY KEY",
-        "time_series_uuid TEXT NOT NULL",
+        "time_series_id INTEGER NOT NULL",
+        "time_series_storage_key TEXT NOT NULL",
         "time_series_type TEXT NOT NULL",
         "initial_timestamp TEXT",
         "resolution TEXT NULL",
@@ -175,17 +196,21 @@ def create_associations_table(
         "window_count INTEGER",
         "length INTEGER",
         "name TEXT NOT NULL",
-        "owner_uuid TEXT NOT NULL",
+        "owner_id INTEGER NOT NULL",
+        "owner_storage_key TEXT",
         "owner_type TEXT NOT NULL",
         "owner_category TEXT NOT NULL",
         "features TEXT NOT NULL",
         "scaling_factor_multiplier TEXT NULL",
-        "metadata_uuid TEXT NOT NULL",
+        "metadata_id INTEGER NOT NULL",
+        "metadata_storage_key TEXT NOT NULL",
         "units TEXT NULL",
+        "FOREIGN KEY(time_series_id) REFERENCES time_series(id) ON DELETE CASCADE",
+        "FOREIGN KEY(owner_id) REFERENCES owners(id) ON DELETE CASCADE",
+        "FOREIGN KEY(metadata_id) REFERENCES time_series_metadata(id) ON DELETE CASCADE",
     ]
     schema_text = ",".join(schema)
-    cur = connection.cursor()
-    execute(cur, f"CREATE TABLE {table_name}({schema_text})")
+    execute(cur, f"CREATE TABLE IF NOT EXISTS {table_name}({schema_text})")
     logger.debug("Created time series associations table")
     if with_index:
         create_indexes(connection, table_name)
@@ -245,11 +270,15 @@ def create_indexes(
     execute(
         cur,
         f"CREATE UNIQUE INDEX IF NOT EXISTS by_c_vn_tst_hash ON {table_name} "
-        f"(owner_uuid, time_series_type, name, resolution, features)",
+        f"(owner_category, owner_id, time_series_type, name, resolution, features)",
     )
     execute(
         cur,
-        f"CREATE INDEX IF NOT EXISTS by_ts_uuid ON {table_name} (time_series_uuid)",
+        f"CREATE INDEX IF NOT EXISTS by_ts_id ON {table_name} (time_series_id)",
+    )
+    execute(
+        cur,
+        f"CREATE INDEX IF NOT EXISTS by_ts_storage_key ON {table_name} (time_series_storage_key)",
     )
     return
 

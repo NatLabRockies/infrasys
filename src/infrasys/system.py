@@ -54,6 +54,7 @@ from .time_series_models import (
     TimeSeriesMetadata,
     TimeSeriesStorageContext,
 )
+from .utils.migrations import upgrade_legacy_component_ids
 from .utils.sqlite import backup, create_in_memory_db, restore
 from .utils.time_utils import from_iso_8601
 
@@ -490,8 +491,12 @@ class System:
 
         if component_needs_metadata_migration(system_data["components"][0]):
             system_data["components"] = migrate_component_metadata(system_data["components"])
+        upgrade_legacy_component_ids(system_data)
         system._deserialize_components(system_data["components"])
         system._deserialize_supplemental_attributes(system_data["supplemental_attributes"])
+        system._time_series_mgr.migrate_metadata_schema(
+            [*system._component_mgr.iter_all(), *system._supplemental_attr_mgr.iter_all()]
+        )
         logger.info("Deserialized system {}", system.label)
         return system
 
@@ -775,6 +780,10 @@ class System:
         """
         return self._component_mgr.get_by_uuid(uuid)
 
+    def get_component_by_id(self, id_: int) -> Any:
+        """Return the component with the input integer ID."""
+        return self._component_mgr.get_by_id(id_)
+
     def get_components(
         self, *component_types: Type[T], filter_func: Callable | None = None
     ) -> Iterable[T]:
@@ -822,8 +831,8 @@ class System:
     ) -> list[Component]:
         """Return all components attached to the given supplemental attribute."""
         return [
-            self._component_mgr.get_by_uuid(x)
-            for x in self._supplemental_attr_mgr.get_component_uuids_with_attribute(attribute)
+            self._component_mgr.get_by_id(x)
+            for x in self._supplemental_attr_mgr.get_component_ids_with_attribute(attribute)
         ]
 
     def get_supplemental_attributes_with_component(
@@ -853,6 +862,10 @@ class System:
     def get_supplemental_attribute_by_uuid(self, uuid: UUID) -> SupplementalAttribute:
         """Return the supplemental attribute with the given UUID."""
         return self._supplemental_attr_mgr.get_by_uuid(uuid)
+
+    def get_supplemental_attribute_by_id(self, id_: int) -> SupplementalAttribute:
+        """Return the supplemental attribute with the given integer ID."""
+        return self._supplemental_attr_mgr.get_by_id(id_)
 
     def get_supplemental_attributes(
         self,
@@ -1006,7 +1019,14 @@ class System:
         """
         self._component_mgr.raise_if_not_attached(component)
         if self.has_time_series(component):
-            for metadata in self._time_series_mgr.list_time_series_metadata(component):
+            metadata_list = list(self._time_series_mgr.list_time_series_metadata(component))
+            logger.warning(
+                "Removing component {} which has {} time series(s). "
+                "Associated time series will be removed before the component.",
+                component.label,
+                len(metadata_list),
+            )
+            for metadata in metadata_list:
                 self.remove_time_series(
                     component,
                     time_series_type=metadata.get_time_series_data_type(),
@@ -1714,7 +1734,7 @@ class System:
     ) -> Any:
         component_type = cached_types.get_type(metadata)
         if cached_types.allowed_to_deserialize(component_type):
-            return self._components.get_by_uuid(metadata.uuid)
+            return self._components.get_by_id(metadata.id)
         return None
 
     def _deserialize_composed_list(
@@ -1726,7 +1746,7 @@ class System:
             assert isinstance(metadata, SerializedComponentReference)
             component_type = cached_types.get_type(metadata)
             if cached_types.allowed_to_deserialize(component_type):
-                deserialized_components.append(self._components.get_by_uuid(metadata.uuid))
+                deserialized_components.append(self._components.get_by_id(metadata.id))
             else:
                 return None
         return deserialized_components
@@ -1743,6 +1763,9 @@ class System:
             attr = supplemental_attribute_type(**values)
             self._supplemental_attr_mgr.add(None, attr, deserialization_in_progress=True)
             cached_types.add_deserialized_type(supplemental_attribute_type)
+        self._supplemental_attr_mgr.migrate_legacy_association_schema(
+            list(self._component_mgr.iter_all())
+        )
 
     @staticmethod
     def _make_time_series_directory(filename: Path) -> Path:

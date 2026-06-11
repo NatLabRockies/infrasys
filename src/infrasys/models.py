@@ -5,7 +5,8 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from loguru import logger
-from pydantic import BaseModel, ConfigDict, Field, field_serializer
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from pydantic.json_schema import SkipJsonSchema
 
 
 def make_model_config(**kwargs: Any) -> ConfigDict:
@@ -28,19 +29,35 @@ class InfraSysBaseModel(BaseModel):
     model_config = make_model_config()
 
 
-class InfraSysBaseModelWithIdentifers(InfraSysBaseModel, abc.ABC):
-    """Base class for all Infrastructure Systems types with UUIDs"""
+class InfraSysBaseModelWithIdentifiers(InfraSysBaseModel, abc.ABC):
+    """Base class for Infrastructure Systems types with stable integer identifiers."""
 
-    uuid: UUID = Field(default_factory=uuid4, repr=False)
+    id: int | None = Field(
+        default=None,
+        ge=1,
+        repr=False,
+        validation_alias=AliasChoices("id"),
+    )
+    legacy_uuid: SkipJsonSchema[UUID] = Field(
+        default_factory=uuid4,
+        exclude=True,
+        repr=False,
+        validation_alias=AliasChoices("legacy_uuid", "uuid"),
+    )
 
-    @field_serializer("uuid")
-    def _serialize_uuid(self, _) -> str:
-        return str(self.uuid)
+    @property
+    def uuid(self) -> UUID:
+        """Return the legacy UUID for backwards-compatible API access."""
+        return self.legacy_uuid
+
+    @uuid.setter
+    def uuid(self, value: UUID) -> None:
+        self.legacy_uuid = value
 
     def assign_new_uuid(self):
-        """Generate a new UUID."""
-        self.uuid = uuid4()
-        logger.debug("Assigned new UUID for {}: {}", self.label, self.uuid)
+        """Generate a new legacy UUID."""
+        self.legacy_uuid = uuid4()
+        logger.debug("Assigned new legacy UUID for {}: {}", self.label, self.legacy_uuid)
 
     @classmethod
     def example(cls) -> "InfraSysBaseModelWithIdentifers":
@@ -58,8 +75,11 @@ class InfraSysBaseModelWithIdentifers(InfraSysBaseModel, abc.ABC):
     def label(self) -> str:
         """Provides a description of an instance."""
         class_name = self.__class__.__name__
-        name = getattr(self, "name", "") or str(self.uuid)
+        name = getattr(self, "name", "") or str(self.id or self.legacy_uuid)
         return make_label(class_name, name)
+
+
+InfraSysBaseModelWithIdentifers = InfraSysBaseModelWithIdentifiers
 
 
 def make_label(class_name: str, name: str) -> str:
@@ -70,6 +90,8 @@ def make_label(class_name: str, name: str) -> str:
 def get_class_and_name_from_label(label: str) -> tuple[str, str | UUID]:
     """Return the class and name from a label.
     If the name is a stringified UUID, it will be converted to a UUID.
+    Numeric names are returned as strings so that callers can attempt a name-based
+    lookup first and fall back to an ID-based lookup only when the name is not found.
     """
     class_name, name = label.split(".", maxsplit=1)
     name_or_uuid: str | UUID = name

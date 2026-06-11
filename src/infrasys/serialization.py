@@ -3,7 +3,8 @@ import importlib
 from typing import Annotated, Any, Literal, Type, TypeAlias, Union
 from uuid import UUID
 
-from pydantic import Field, TypeAdapter, field_serializer
+from pydantic import AliasChoices, Field, TypeAdapter
+from pydantic.json_schema import SkipJsonSchema
 
 from infrasys.models import InfraSysBaseModel
 from infrasys.time_series_models import TimeSeriesData
@@ -35,14 +36,37 @@ class SerializedBaseType(SerializedTypeBase):
 
 
 class SerializedComponentReference(SerializedTypeBase):
-    """Reference information for a component that has been serialized as a UUID within another."""
+    """Reference information for a component serialized inside another component.
 
-    serialized_type: Literal[SerializedType.COMPOSED_COMPONENT] = SerializedType.COMPOSED_COMPONENT
-    uuid: UUID
+    Integer IDs are the primary key. Legacy UUIDs are preserved for backward
+    compatibility during deserialization but are excluded from serialized output.
+    """
 
-    @field_serializer("uuid")
-    def _serialize_uuid(self, _) -> str:
-        return str(self.uuid)
+    serialized_type: Literal[SerializedType.COMPOSED_COMPONENT] = (
+        SerializedType.COMPOSED_COMPONENT
+    )
+    id: int = Field(
+        ge=1,
+        validation_alias=AliasChoices("id"),
+        description="Integer ID referencing the serialized component",
+    )
+    legacy_uuid: SkipJsonSchema[UUID | None] = Field(
+        default=None,
+        exclude=True,
+        validation_alias=AliasChoices("legacy_uuid", "uuid"),
+        description=(
+            "Legacy UUID reference accepted during deserialization for backward "
+            "compatibility; never included in serialized output"
+        ),
+    )
+
+    @property
+    def uuid(self) -> UUID:
+        """Return the legacy referenced component UUID for backwards-compatible callers."""
+        if self.legacy_uuid is None:
+            msg = "Serialized component reference does not contain a legacy UUID"
+            raise AttributeError(msg)
+        return self.legacy_uuid
 
 
 class SerializedQuantityType(SerializedTypeBase):
