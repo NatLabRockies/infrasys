@@ -8,14 +8,21 @@ from collections import defaultdict
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Generator, Iterable, Literal, Optional, Type, TypeAlias, TypeVar
+from typing import (
+    Any,
+    Callable,
+    Generator,
+    Iterable,
+    Literal,
+    Optional,
+    Type,
+    TypeAlias,
+    TypeVar,
+)
 from uuid import UUID, uuid4
 
 import orjson
 from loguru import logger
-from rich import print as _pprint
-from rich.table import Table
-
 from .component import (
     Component,
 )
@@ -44,6 +51,7 @@ from .serialization import (
     SerializedType,
     SerializedTypeMetadata,
 )
+from .system_info import ComponentColumnInput, SystemInfo, render_components_table
 from .supplemental_attribute import SupplementalAttribute
 from .supplemental_attribute_manager import SupplementalAttributeManager
 from .time_series_manager import TIME_SERIES_KWARGS, TimeSeriesManager
@@ -55,7 +63,6 @@ from .time_series_models import (
     TimeSeriesStorageContext,
 )
 from .utils.sqlite import backup, create_in_memory_db, restore
-from .utils.time_utils import from_iso_8601
 
 T = TypeVar("T", bound="Component")
 U = TypeVar("U", bound="SupplementalAttribute")
@@ -1750,10 +1757,12 @@ class System:
 
     def show_components(
         self,
-        component_type: Type[Component],
+        component_type: Type[T],
+        columns: ComponentColumnInput | bool | None = None,
         show_uuid: bool = False,
         show_time_series: bool = False,
         show_supplemental: bool = False,
+        filter_func: Callable[[T], bool] | None = None,
     ) -> None:
         """Display a table of components of the specified type.
 
@@ -1762,174 +1771,41 @@ class System:
         component_type : Type[Component]
             The type of components to display. If component_type is an abstract type,
             all matching subtypes will be included.
+        columns : str | ComponentColumn | tuple | list | bool | None
+            Component field name(s) or computed column specifications to include after the
+            Name column. A bare string is treated as one field name. Passing a bool preserves
+            compatibility with legacy positional ``show_uuid`` calls.
         show_uuid : bool
             Whether to include the UUID column in the table. Defaults to False.
         show_time_series : bool
             Whether to include the Time Series count column in the table. Defaults to False.
-        show_time_series : bool
+        show_supplemental : bool
             Whether to include the Supplemental Attributes count column in the table. Defaults to False.
+        filter_func : Callable | None
+            Optional function to filter the displayed components. The function must accept a
+            component as a single argument.
 
         Examples
         --------
         >>> system.show_components(Generator)  # Shows only names
-        >>> system.show_components(Bus, show_uuid=True)
+        >>> system.show_components(Bus, "voltage")
+        >>> system.show_components(Bus, ("name", "voltage"))
         >>> system.show_components(Generator, show_time_series=True)
         >>> system.show_components(Generator, show_supplemental=True)
         """
-        components = list(self.get_components(component_type))
-
-        if not components:
-            logger.warning(f"No components of type {component_type.__name__} found in the system.")
-            return
-
-        table = Table(
-            title=f"{component_type.__name__}: {len(components)}",
-            show_header=True,
-            title_justify="left",
-            title_style="bold",
+        if isinstance(columns, bool):
+            show_uuid = columns
+            columns = None
+        render_components_table(
+            self,
+            component_type,
+            columns,
+            show_uuid=show_uuid,
+            show_time_series=show_time_series,
+            show_supplemental=show_supplemental,
+            filter_func=filter_func,
         )
-        table.add_column("Name", min_width=20, justify="left")
-
-        if show_uuid:
-            table.add_column("UUID", min_width=36, justify="left")
-        if show_time_series:
-            table.add_column("Has Time Series", min_width=12, justify="right")
-        if show_supplemental:
-            table.add_column("Has Supplemental Attributes", min_width=12, justify="right")
-
-        sorted_components = sorted(components, key=lambda x: getattr(x, "name", x.label))
-
-        for component in sorted_components:
-            row_data = [component.name]
-
-            if show_uuid:
-                row_data.append(str(component.uuid))
-            if show_time_series:
-                row_data.append(str(len(self.list_time_series_metadata(component))))
-            if show_supplemental:
-                row_data.append(
-                    str(len(self.get_supplemental_attributes_with_component(component)))
-                )
-
-            table.add_row(*row_data)
-
-        _pprint(table)
 
     def info(self):
         info = SystemInfo(system=self)
         info.render()
-
-
-class SystemInfo:
-    """Class to store system component info"""
-
-    def __init__(self, system) -> None:
-        self.system = system
-
-    def extract_system_counts(self) -> tuple[int, int, dict, dict]:
-        component_count = self.system._components.get_num_components()
-        component_type_count = {
-            k.__name__: v for k, v in self.system._components.get_num_components_by_type().items()
-        }
-        ts_counts = self.system.time_series.metadata_store.get_time_series_counts()
-        return (
-            component_count,
-            ts_counts.time_series_count,
-            component_type_count,
-            ts_counts.time_series_type_count,
-        )
-
-    def render(self) -> None:
-        """Render Summary information from the system."""
-        (
-            component_count,
-            time_series_count,
-            component_type_count,
-            time_series_type_count,
-        ) = self.extract_system_counts()
-        owner_type_count = self._get_owner_type_counts(component_type_count)
-
-        # System table
-        system_table = Table(
-            title="System",
-            show_header=True,
-            title_justify="left",
-            title_style="bold",
-        )
-        system_table.add_column("Property")
-        system_table.add_column("Value", justify="right")
-        system_table.add_row("System name", self.system.name)
-        system_table.add_row("Data format version", self.system._data_format_version)
-        system_table.add_row("Components attached", f"{component_count}")
-        system_table.add_row("Time Series attached", f"{time_series_count}")
-        total_suppl_attrs = self.system.get_num_supplemental_attributes()
-        system_table.add_row("Supplemental Attributes attached", f"{total_suppl_attrs}")
-        system_table.add_row("Description", self.system.description)
-        _pprint(system_table)
-
-        # Component and time series table
-        component_table = Table(
-            title="Component Information",
-            show_header=True,
-            title_justify="left",
-            title_style="bold",
-        )
-        component_table.add_column("Type", min_width=20)
-        component_table.add_column("Count", justify="right")
-
-        for component_type, component_count in sorted(component_type_count.items()):
-            component_table.add_row(
-                f"{component_type}",
-                f"{component_count}",
-            )
-
-        if component_table.rows:
-            _pprint(component_table)
-
-        time_series_table = Table(
-            title="Time Series Summary",
-            show_header=True,
-            title_justify="left",
-            title_style="bold",
-        )
-        time_series_table.add_column("Owner Type", min_width=20)
-        time_series_table.add_column("Time Series Type", justify="right")
-        time_series_table.add_column("Initial time", justify="right")
-        time_series_table.add_column("Resolution", justify="right")
-        time_series_table.add_column("No. Components", justify="right")
-        time_series_table.add_column("No. Components with Time Series", justify="right")
-
-        for (
-            component_type,
-            time_series_type,
-            time_series_start_time,
-            time_series_resolution,
-        ), time_series_count in sorted(
-            time_series_type_count.items(),
-            key=lambda item: tuple(v if v is not None else "" for v in item[0]),
-        ):
-            owner_count = owner_type_count.get(component_type, 0)
-            time_series_table.add_row(
-                f"{component_type}",
-                f"{time_series_type}",
-                f"{time_series_start_time}" if time_series_start_time is not None else "N/A",
-                f"{from_iso_8601(time_series_resolution)}"
-                if time_series_resolution is not None
-                else "N/A",
-                f"{owner_count}",
-                f"{time_series_count}",
-            )
-
-        if time_series_table.rows:
-            _pprint(time_series_table)
-
-    def _get_owner_type_counts(self, component_type_count: dict[str, int]) -> dict[str, int]:
-        """Combine component and supplemental attribute counts by type for summary tables."""
-        owner_type_count = dict(component_type_count)
-        supplemental_attribute_counts: dict[str, int] = defaultdict(int)
-
-        for attribute in self.system._supplemental_attr_mgr.iter_all():
-            supplemental_attribute_counts[type(attribute).__name__] += 1
-
-        owner_type_count.update(supplemental_attribute_counts)
-        return owner_type_count

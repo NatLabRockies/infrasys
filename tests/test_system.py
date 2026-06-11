@@ -1,16 +1,25 @@
 import itertools
 from datetime import datetime, timedelta
+from typing import Any
 from uuid import uuid4
 
 import numpy as np
 import pytest
 
-from infrasys import TIME_SERIES_ASSOCIATIONS_TABLE, Component, Location, SingleTimeSeries
+import infrasys.system_info as system_info_module
+from infrasys import (
+    TIME_SERIES_ASSOCIATIONS_TABLE,
+    Component,
+    ComponentColumn,
+    Location,
+    SingleTimeSeries,
+)
 from infrasys.arrow_storage import ArrowTimeSeriesStorage
 from infrasys.chronify_time_series_storage import ChronifyTimeSeriesStorage
 from infrasys.exceptions import (
     ISAlreadyAttached,
     ISConflictingArguments,
+    ISInvalidParameter,
     ISNotStored,
     ISOperationNotAllowed,
 )
@@ -747,6 +756,106 @@ def test_system_show_components(simple_system_with_time_series):
     simple_system_with_time_series.show_components(SimpleBus, show_uuid=True)
     simple_system_with_time_series.show_components(SimpleBus, show_time_series=True)
     simple_system_with_time_series.show_components(SimpleBus, show_supplemental=True)
+    simple_system_with_time_series.show_components(SimpleBus, True)
+
+
+@pytest.mark.parametrize("columns", ["voltage", ("voltage", "name"), ["voltage", "name"]])
+def test_system_show_components_with_component_fields(
+    simple_system_with_time_series,
+    capsys,
+    columns,
+):
+    simple_system_with_time_series.show_components(SimpleBus, columns)
+
+    output = capsys.readouterr().out
+    assert "voltage" in output
+    assert "1.1" in output
+    assert "test-bus" in output
+
+
+def test_system_show_components_with_computed_column(simple_system_with_time_series, capsys):
+    column = ComponentColumn[SimpleBus](
+        name="double_voltage",
+        extractor=lambda component: component.voltage * 2,
+    )
+
+    simple_system_with_time_series.show_components(SimpleBus, column)
+
+    output = capsys.readouterr().out
+    assert "double_voltage" in output
+    assert "2.2" in output
+
+
+def test_system_show_components_with_columns_and_metadata(
+    simple_system_with_time_series,
+    monkeypatch,
+):
+    rendered_tables: list[Any] = []
+    monkeypatch.setattr(system_info_module, "_pprint", rendered_tables.append)
+
+    simple_system_with_time_series.show_components(
+        SimpleBus,
+        "voltage",
+        show_uuid=True,
+        show_time_series=True,
+        show_supplemental=True,
+    )
+
+    assert len(rendered_tables) == 1
+    columns = [column.header for column in rendered_tables[0].columns]
+    assert columns == [
+        "Name",
+        "voltage",
+        "UUID",
+        "Has Time Series",
+        "Has Supplemental Attributes",
+    ]
+
+
+def test_system_show_components_with_filter_func(simple_system_with_time_series, capsys):
+    simple_system_with_time_series.show_components(
+        SimpleBus,
+        "voltage",
+        filter_func=lambda component: component.name == "not-present",
+    )
+
+    output = capsys.readouterr().out
+    assert output == ""
+
+
+def test_system_show_components_invalid_field_name(simple_system_with_time_series):
+    with pytest.raises(ISInvalidParameter, match="missing.*SimpleBus"):
+        simple_system_with_time_series.show_components(SimpleBus, "missing")
+
+
+@pytest.mark.parametrize("columns", [1, ["voltage", 1]])
+def test_system_show_components_invalid_column_specs(simple_system_with_time_series, columns):
+    invalid_columns: Any = columns
+
+    with pytest.raises(ISInvalidParameter, match="SimpleBus"):
+        simple_system_with_time_series.show_components(SimpleBus, invalid_columns)
+
+
+def test_system_show_components_with_empty_computed_value(simple_system_with_time_series, capsys):
+    simple_system_with_time_series.show_components(
+        SimpleBus,
+        ComponentColumn[SimpleBus](name="empty", extractor=lambda _component: None),
+    )
+
+    output = capsys.readouterr().out
+    assert "empty" in output
+
+
+def test_system_show_components_computed_column_failure(simple_system_with_time_series):
+    def fail(_component: SimpleBus) -> float:
+        msg = "boom"
+        raise RuntimeError(msg)
+
+    with pytest.raises(ISInvalidParameter, match="broken.*SimpleBus.test-bus"):
+        simple_system_with_time_series.show_components(
+            SimpleBus,
+            ComponentColumn[SimpleBus](name="broken", extractor=fail),
+        )
 
 
 def test_system_info_renders_supplemental_attributes_table(
