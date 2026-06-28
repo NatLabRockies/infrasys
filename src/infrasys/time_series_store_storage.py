@@ -145,7 +145,7 @@ class TimeSeriesStoreStorage(TimeSeriesStorageBase):
             raise NotImplementedError(msg)
 
         self._store.add_time_series(
-            owner_uuid=str(metadata.time_series_uuid),
+            owner_id=_owner_id(metadata),
             owner_type=metadata.type,
             owner_category=OwnerCategory.Component,
             time_series=rust_time_series,
@@ -217,12 +217,13 @@ class TimeSeriesStoreStorage(TimeSeriesStorageBase):
         data["time_series_storage_type"] = TimeSeriesStorageType.TIME_SERIES_STORE.value
 
     def _get_key(self, metadata: TimeSeriesMetadata):
-        keys = self._store.get_time_series_keys(str(metadata.time_series_uuid))
+        owner_id = _owner_id(metadata)
+        keys = self._store.get_time_series_keys(owner_id, OwnerCategory.Component)
         if not keys:
-            msg = f"No time series with {metadata.time_series_uuid} is stored"
+            msg = f"No time series with id {owner_id} is stored"
             raise ISNotStored(msg)
         if len(keys) != 1:
-            msg = f"Expected one stored key for {metadata.time_series_uuid}, got {len(keys)}"
+            msg = f"Expected one stored key for id {owner_id}, got {len(keys)}"
             raise RuntimeError(msg)
         return keys[0]
 
@@ -233,6 +234,19 @@ class TimeSeriesStoreStorage(TimeSeriesStorageBase):
             dst = destination / name
             if src.resolve() != dst.resolve():
                 shutil.copyfile(src, dst)
+
+
+def _owner_id(metadata: TimeSeriesMetadata) -> int:
+    """Return the integer id the time-series-store uses to own the series.
+
+    The store keys each unique time series by its integer id; infrasys assigns
+    one to every time series before it is persisted, so a missing id signals a
+    series that was never stored.
+    """
+    if metadata.time_series_id is None:
+        msg = f"time_series_id is not set for time series {metadata.time_series_uuid}"
+        raise ISNotStored(msg)
+    return metadata.time_series_id
 
 
 def _as_utc(value: datetime) -> datetime:

@@ -136,4 +136,4 @@ docs = [
 "**/{tests,docs,tools}/*" = ["E402"]
 
 [tool.uv.sources]
-time-series-store = { path = "../ts-store/crates/time-series-store-py" }
+time-series-store = { path = "../time-series-store/crates/time-series-store-py" }

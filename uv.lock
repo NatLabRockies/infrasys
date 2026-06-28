@@ -390,7 +390,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "python-dateutil", specifier = ">=2.9,<3" },
     { name = "rich", specifier = ">=13.7,<14" },
-    { name = "time-series-store", directory = "../ts-store/crates/time-series-store-py" },
+    { name = "time-series-store", directory = "../time-series-store/crates/time-series-store-py" },
 ]
 
 [package.metadata.requires-dev]
@@ -1402,7 +1402,7 @@ wheels = [
 [[package]]
 name = "time-series-store"
 version = "0.1.0"
-source = { directory = "../ts-store/crates/time-series-store-py" }
+source = { directory = "../time-series-store/crates/time-series-store-py" }
 dependencies = [
     { name = "numpy" },
 ]
