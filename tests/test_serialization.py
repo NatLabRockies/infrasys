@@ -85,9 +85,45 @@ def test_serialization(tmp_path):
     assert len(components2) == num_components
 
     for component in components:
-        component2 = system2.get_component_by_uuid(component.uuid)
+        component2 = system2.get_component_by_id(component.id)
         for key, val in component.__dict__.items():
-            assert getattr(component2, key) == val
+            if key == "legacy_uuid":
+                continue
+            if isinstance(val, Component):
+                assert getattr(component2, key).id == val.id
+            elif isinstance(val, list) and val and isinstance(val[0], Component):
+                assert [x.id for x in getattr(component2, key)] == [x.id for x in val]
+            else:
+                assert getattr(component2, key) == val
+
+
+def test_component_serialization_uses_integer_ids(tmp_path):
+    system = SimpleSystem(name="test-system", auto_add_composed_components=True)
+    gen = SimpleGenerator.example()
+    system.add_component(gen)
+
+    filename = tmp_path / "system.json"
+    system.to_json(filename, overwrite=True)
+    data = orjson.loads(filename.read_bytes())
+
+    components = data["components"]
+    assert all(isinstance(component["id"], int) for component in components)
+    assert all("uuid" not in component for component in components)
+    assert all("legacy_uuid" not in component for component in components)
+
+    serialized_gen = next(
+        component
+        for component in components
+        if component["__metadata__"]["type"] == SimpleGenerator.__name__
+    )
+    bus_reference = serialized_gen["bus"]["__metadata__"]
+    assert isinstance(bus_reference["id"], int)
+    assert "uuid" not in bus_reference
+
+    system2 = SimpleSystem.from_json(filename)
+    gen2 = system2.get_component_by_id(gen.id)
+    assert gen2.name == gen.name
+    assert gen2.bus.id == gen.bus.id
 
 
 @pytest.mark.parametrize("time_series_storage_type", TS_STORAGE_OPTIONS)
@@ -451,3 +487,105 @@ def test_convert_time_series_store_storage_permanent(tmp_path):
     assert storage.get_time_series_directory() == tmp_path
     assert (tmp_path / "time_series_store.nc").exists()
     assert (tmp_path / "time_series_store.nc.sqlite").exists()
+
+
+def test_serialized_component_reference_uuid_property_raises():
+    """Test that SerializedComponentReference.uuid raises when legacy_uuid is None."""
+    from infrasys.serialization import SerializedComponentReference
+
+    ref = SerializedComponentReference(id=1, module="test", type="TestType")
+    with pytest.raises(AttributeError, match="does not contain a legacy UUID"):
+        _ = ref.uuid  # noqa
+
+
+def test_serialized_component_reference_uuid_property_returns_value():
+    """Test that SerializedComponentReference.uuid returns the legacy UUID."""
+    from uuid import UUID
+    from infrasys.serialization import SerializedComponentReference
+
+    uuid_val = UUID("a1b2c3d4-0000-0000-0000-000000000001")
+    ref = SerializedComponentReference(id=1, legacy_uuid=uuid_val, module="test", type="TestType")
+    assert ref.uuid == uuid_val
+
+
+def test_get_class_and_name_from_label_with_uuid():
+    """Test that get_class_and_name_from_label parses UUID labels correctly."""
+    from infrasys.models import get_class_and_name_from_label
+    from uuid import UUID
+
+    uuid_str = "a1b2c3d4-0000-0000-0000-000000000001"
+    class_name, name = get_class_and_name_from_label(f"SimpleBus.{uuid_str}")
+    assert class_name == "SimpleBus"
+    assert isinstance(name, UUID)
+    assert str(name) == uuid_str
+
+
+def test_get_class_and_name_from_label_with_unknown_string():
+    """Test that get_class_and_name_from_label falls back to string for unknown formats."""
+    from infrasys.models import get_class_and_name_from_label
+
+    class_name, name = get_class_and_name_from_label("Type.my-component")
+    assert class_name == "Type"
+    assert isinstance(name, str)
+    assert name == "my-component"
+
+
+def test_upgrade_legacy_component_ids_migration():
+    """Test that upgrade_legacy_component_ids correctly upgrades a legacy UUID-based JSON."""
+    from infrasys.utils.migrations import upgrade_legacy_component_ids
+
+    # Simulate data after migrate_component_metadata has flattened __metadata__
+    # (modern flat format: serialized_type at top level of metadata)
+    system_data = {
+        "components": [
+            {
+                "uuid": "a1b2c3d4-0000-0000-0000-000000000001",
+                "name": "bus1",
+                "voltage": 1.1,
+                "__metadata__": {
+                    "module": "tests.models.simple_system",
+                    "type": "SimpleBus",
+                    "serialized_type": "base",
+                },
+            },
+            {
+                "uuid": "a1b2c3d4-0000-0000-0000-000000000002",
+                "name": "gen1",
+                "active_power": 1.0,
+                "__metadata__": {
+                    "module": "tests.models.simple_system",
+                    "type": "SimpleGenerator",
+                    "serialized_type": "base",
+                },
+                "bus": {
+                    "__metadata__": {
+                        "module": "tests.models.simple_system",
+                        "type": "SimpleBus",
+                        "serialized_type": "composed_component",
+                        "uuid": "a1b2c3d4-0000-0000-0000-000000000001",
+                    }
+                },
+            },
+        ],
+        "supplemental_attributes": [],
+    }
+
+    upgrade_legacy_component_ids(system_data)
+
+    # All components should have integer IDs
+    components = system_data["components"]
+    assert all(isinstance(c["id"], int) for c in components)
+    assert components[0]["id"] == 1
+    assert components[1]["id"] == 2
+
+    # UUID field should be replaced by legacy_uuid
+    assert "uuid" not in components[0]
+    assert components[0]["legacy_uuid"] == "a1b2c3d4-0000-0000-0000-000000000001"
+    assert "uuid" not in components[1]
+    assert components[1]["legacy_uuid"] == "a1b2c3d4-0000-0000-0000-000000000002"
+
+    # Composed component reference should have integer ID instead of UUID
+    bus_metadata = components[1]["bus"]["__metadata__"]
+    assert bus_metadata["id"] == 1
+    assert "uuid" not in bus_metadata
+    assert bus_metadata["legacy_uuid"] == "a1b2c3d4-0000-0000-0000-000000000001"

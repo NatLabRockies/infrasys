@@ -10,8 +10,10 @@ from typing import Any, Generator, Literal, Optional, Type
 from loguru import logger
 
 from . import TIME_SERIES_ASSOCIATIONS_TABLE
+from .utils.sqlite import execute
 from .component import Component
 from .exceptions import ISInvalidParameter, ISOperationNotAllowed
+from .id_manager import IDManager
 from .in_memory_time_series_storage import InMemoryTimeSeriesStorage
 from .supplemental_attribute import SupplementalAttribute
 from .time_series_metadata_store import TimeSeriesMetadataStore
@@ -76,6 +78,7 @@ class TimeSeriesManager:
         self._read_only = _process_time_series_kwarg("time_series_read_only", **kwargs)
         self._storage = storage or self.create_new_storage(**kwargs)
         self._context: TimeSeriesStorageContext | None = None
+        self._id_manager = IDManager(next_id=1)
 
         # TODO: create parsing mechanism? CSV, CSV + JSON
 
@@ -172,6 +175,10 @@ class TimeSeriesManager:
         if not isinstance(time_series, (SingleTimeSeries, NonSequentialTimeSeries)):
             msg = f"Time-series persistence is not implemented for {ts_type.__name__}"
             raise NotImplementedError(msg)
+        if time_series.id is None:
+            time_series.id = self._id_manager.get_next_id()
+        else:
+            self._id_manager.advance_past(time_series.id)
         metadata_type = ts_type.get_time_series_metadata_type()
         metadata = metadata_type.from_data(time_series, **features)
 
@@ -453,12 +460,34 @@ class TimeSeriesManager:
 
         # Load metadata and handle storage conversion if requested
         mgr.metadata_store._load_metadata_into_memory()
+        # Advance the time series ID manager so new time series get fresh IDs.
+        # Guard against legacy databases that haven't been migrated yet.
+        columns = {row[1] for row in mgr.metadata_store._con.execute(
+            f"PRAGMA table_info({TIME_SERIES_ASSOCIATIONS_TABLE})"
+        ).fetchall()}
+        if "time_series_id" in columns:
+            max_ts_id = execute(
+                mgr.metadata_store._con.cursor(),
+                f"SELECT COALESCE(MAX(time_series_id), 0) FROM {TIME_SERIES_ASSOCIATIONS_TABLE}",
+            ).fetchone()[0]
+            mgr._id_manager.advance_past(max_ts_id)
         if (
             "time_series_storage_type" in kwargs
             and _process_time_series_kwarg("time_series_storage_type", **kwargs) != ts_type
         ):
             mgr.convert_storage(**kwargs)
         return mgr
+
+    def migrate_metadata_schema(
+        self,
+        owners: list[Component | SupplementalAttribute],
+    ) -> None:
+        """Migrate legacy UUID-based metadata rows to integer IDs after owners exist.
+
+        Delegates to :meth:`TimeSeriesMetadataStore.migrate_legacy_uuid_table`.
+        See also :func:`infrasys.utils.migrations.upgrade_legacy_component_ids`.
+        """
+        self._metadata_store.migrate_legacy_uuid_table(owners)
 
     @contextmanager
     def open_time_series_store(

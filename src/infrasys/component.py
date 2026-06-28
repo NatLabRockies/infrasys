@@ -69,10 +69,13 @@ class Component(InfraSysBaseModelWithIdentifers):
 
 def serialize_component_reference(component: Component) -> dict[str, Any]:
     """Make a JSON serializable reference to a component."""
+    if component.id is None:
+        msg = f"Component {component.label} must be attached before it can be serialized"
+        raise ValueError(msg)
     return SerializedTypeMetadata.validate_python(
         SerializedComponentReference(
             module=component.__module__,
             type=component.__class__.__name__,
-            uuid=component.uuid,
+            id=component.id,
         ),
     ).model_dump(by_alias=True)

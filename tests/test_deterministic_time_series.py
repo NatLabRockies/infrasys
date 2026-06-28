@@ -169,7 +169,7 @@ def test_deterministic_single_time_series_backwards_compatibility(tmp_path: Any)
         }
     ]
 
-    metadata_store._insert_rows(rows, cursor)  # type: ignore[arg-type]
+    metadata_store.insert_rows(rows, cursor)  # type: ignore[arg-type]
     conn.commit()
 
     metadata_store._load_metadata_into_memory()  # type: ignore[misc]
@@ -205,3 +205,97 @@ def test_deserialize_metadata_preserves_all_features() -> None:
     }
     metadata = _deserialize_time_series_metadata(metadata_dict)
     assert metadata.features == features
+
+
+def test_migrate_legacy_uuid_table():
+    """Test that migrate_legacy_uuid_table converts UUID-based associations to integer IDs."""
+    import sqlite3
+    from infrasys import Component
+    from infrasys.id_manager import IDManager
+    from infrasys.time_series_metadata_store import _get_owner_category
+
+    # Create a legacy UUID-based table manually
+    con = create_in_memory_db()
+    legacy_schema = [
+        "id INTEGER PRIMARY KEY",
+        "time_series_uuid TEXT NOT NULL",
+        "time_series_type TEXT NOT NULL",
+        "initial_timestamp TEXT",
+        "resolution TEXT NULL",
+        "horizon TEXT",
+        "interval TEXT",
+        "window_count INTEGER",
+        "length INTEGER",
+        "name TEXT NOT NULL",
+        "owner_uuid TEXT NOT NULL",
+        "owner_type TEXT NOT NULL",
+        "owner_category TEXT NOT NULL",
+        "features TEXT NOT NULL",
+        "scaling_factor_multiplier TEXT NULL",
+        "metadata_uuid TEXT NOT NULL",
+        "units TEXT NULL",
+    ]
+
+    class _FakeComponent(Component):
+        name: str
+
+    owner = _FakeComponent(name="test-owner")
+    owner.id = 42
+    owner.legacy_uuid = uuid.UUID("a1b2c3d4-0000-0000-0000-000000000001")
+
+    ts_uuid = str(uuid.uuid4())
+    metadata_uuid = str(uuid.uuid4())
+
+    con.execute(f"CREATE TABLE time_series_associations({','.join(legacy_schema)})")
+    con.execute(
+        "INSERT INTO time_series_associations VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (
+            None, ts_uuid, "SingleTimeSeries",
+            datetime(2020, 1, 1).isoformat(), "PT1H",
+            None, None, None, 100, "active_power",
+            str(owner.uuid), "_FakeComponent",
+            _get_owner_category(owner), "[]",
+            None, metadata_uuid, None,
+        ),
+    )
+    con.commit()
+
+    store = TimeSeriesMetadataStore(con, initialize=False)
+    store.migrate_legacy_uuid_table([owner])
+
+    # After migration: verify the new columns exist and data is migrated
+    cur = con.cursor()
+    columns = {row[1] for row in cur.execute("PRAGMA table_info(time_series_associations)")}
+    assert "time_series_id" in columns
+    assert "owner_id" in columns
+    assert "metadata_id" in columns
+    assert "time_series_storage_key" in columns
+    assert "owner_storage_key" in columns
+    assert "metadata_storage_key" in columns
+    assert "time_series_uuid" not in columns  # old column dropped
+
+    rows = cur.execute("SELECT * FROM time_series_associations").fetchall()
+    assert len(rows) == 1
+
+    # Verify the cache loaded data correctly
+    metadata_list = store.list_metadata_with_time_series_uuid(uuid.UUID(ts_uuid))
+    assert len(metadata_list) == 1
+
+
+def test_get_owner_category():
+    """Test _get_owner_category returns correct category."""
+    from infrasys import Component
+    from infrasys.supplemental_attribute import SupplementalAttribute
+    from infrasys.time_series_metadata_store import _get_owner_category
+
+    class _FakeComponent(Component):
+        name: str
+
+    class _FakeAttr(SupplementalAttribute):
+        pass
+
+    comp = _FakeComponent(name="test")
+    attr = _FakeAttr()
+
+    assert _get_owner_category(comp) == "Component"
+    assert _get_owner_category(attr) == "SupplementalAttribute"
