@@ -6,7 +6,7 @@ import tempfile
 import zipfile
 from collections import defaultdict
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Generator, Iterable, Literal, Optional, Type, TypeAlias, TypeVar
 from uuid import UUID, uuid4
@@ -1455,6 +1455,35 @@ class System:
             time_series_type=time_series_type,
             **features,
         )
+
+    def transform_single_time_series(self, horizon: timedelta, interval: timedelta) -> int:
+        """Derive ``Deterministic`` forecasts from every stored ``SingleTimeSeries``.
+
+        Each ``SingleTimeSeries`` gains a forecast view that shares the same underlying array
+        (a "perfect forecast"). After transforming, retrieve a forecast by passing
+        ``time_series_type=Deterministic`` to :meth:`get_time_series`. Returns the number of
+        series transformed.
+
+        Parameters
+        ----------
+        horizon
+            Duration of each forecast window (e.g., ``timedelta(hours=24)``).
+        interval
+            Time between consecutive forecast windows (e.g., ``timedelta(hours=1)``).
+
+        Raises
+        ------
+        ISOperationNotAllowed
+            Raised if the system's time series are read-only.
+
+        Examples
+        --------
+        >>> system.transform_single_time_series(
+        ...     horizon=timedelta(hours=24), interval=timedelta(hours=1)
+        ... )
+        >>> forecast = system.get_time_series(gen1, "active_power", time_series_type=Deterministic)
+        """
+        return self._time_series_mgr.transform_single_time_series(horizon, interval)
 
     @contextmanager
     def open_time_series_store(

@@ -1,13 +1,12 @@
 from datetime import datetime, timedelta
 
 import numpy as np
-import pytest
 
 from infrasys.time_series_models import Deterministic
 from tests.models.simple_system import SimpleGenerator, SimpleSystem
 
 
-def test_deterministic_time_series_persistence_is_not_supported():
+def test_deterministic_time_series_persistence():
     system = SimpleSystem(auto_add_composed_components=True)
     gen = SimpleGenerator.example()
     system.add_components(gen)
@@ -34,8 +33,12 @@ def test_deterministic_time_series_persistence_is_not_supported():
         interval,
         window_count,
     )
-    with pytest.raises(
-        NotImplementedError,
-        match="Time-series persistence is not implemented for Deterministic",
-    ):
-        system.add_time_series(ts, gen)
+    system.add_time_series(ts, gen)
+
+    result = system.get_time_series(gen, name=name, time_series_type=Deterministic)
+    assert isinstance(result, Deterministic)
+    np.testing.assert_array_equal(result.data_array, np.array(forecast_data))
+    assert result.initial_timestamp == initial_time
+    assert result.horizon == horizon
+    assert result.interval == interval
+    assert result.window_count == window_count

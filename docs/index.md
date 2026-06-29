@@ -13,7 +13,7 @@ generators and buses) that have quantities (e.g., power and voltage) which may v
 the user application.
 - Manages serialization and de-serialization of components to JSON, including automatic handling of
 nested objects.
-- Enables data model migration.
+- Enables data format upgrades on de-serialization through customizable upgrade hooks.
 
 ```{eval-rst}
 .. toctree::

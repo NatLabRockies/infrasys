@@ -43,8 +43,8 @@ each column representing a time step within that window.
 
 You can create a Deterministic time series in two ways:
 
-1. **Explicitly with forecast data** using `Deterministic.from_array()` when you have pre-computed forecast values.
-2. **From a SingleTimeSeries** using `Deterministic.from_single_time_series()` to create a "perfect forecast" based on historical data by extracting overlapping windows.
+1. **Explicitly with forecast data** using `Deterministic.from_array()` when you have pre-computed forecast values, then attach it with `system.add_time_series()`.
+2. **From stored SingleTimeSeries** using `System.transform_single_time_series()` to create "perfect forecasts" derived from historical data.
 
 ### Creating Deterministic Time Series with Explicit Data
 
@@ -76,18 +76,20 @@ forecast_data = [
 # Create the data with units
 data = ActivePower(np.array(forecast_data), "watts")
 name = "active_power_forecast"
-ts = DeterministicTimeSeries.from_array(
-# Create the data with units
-data = ActivePower(np.array(forecast_data), "watts")
-name = "active_power_forecast"
 ts = Deterministic.from_array(
     data, name, initial_time, resolution, horizon, interval, window_count
 )
+system.add_time_series(ts, generator)
 ```
 
 ### Creating "Perfect Forecasts" from SingleTimeSeries
 
-The `from_single_time_series()` classmethod is useful when you want to create a "perfect forecast" based on historical data for testing or validation purposes. It extracts overlapping forecast windows from an existing `SingleTimeSeries`.
+When you want a "perfect forecast" derived from historical data, call
+`System.transform_single_time_series(horizon, interval)`. This re-describes **every**
+`SingleTimeSeries` already stored on the system as a deterministic forecast that shares the same
+underlying array — the overlapping forecast windows are computed by the Rust `time-series-store`
+backend, not materialized in Python. After transforming, retrieve a forecast by passing
+`time_series_type=Deterministic` to `get_time_series`.
 
 Example:
 
@@ -103,14 +105,17 @@ ts = SingleTimeSeries.from_array(
     resolution=timedelta(hours=1),
     initial_timestamp=initial_timestamp,
 )
-horizon = timedelta(hours=8)
-interval = timedelta(hours=1)
-ts_deterministic = Deterministic.from_single_time_series(
-    ts, interval=interval, horizon=horizon
-)
+system.add_time_series(ts, generator)
+
+# Derive perfect forecasts from all stored SingleTimeSeries.
+system.transform_single_time_series(horizon=timedelta(hours=8), interval=timedelta(hours=1))
+
+forecast = system.get_time_series(generator, name="active_power", time_series_type=Deterministic)
 ```
 
-In this example, `ts_deterministic` creates a forecast for `active_power` by extracting forecast windows from the original `SingleTimeSeries` `ts` at different offsets determined by `interval` and `horizon`. The forecast data is materialized as a 2D array where each row is a forecast window.
+`transform_single_time_series` returns the number of series transformed. The original
+`SingleTimeSeries` remains retrievable with `time_series_type=SingleTimeSeries`; the forecast view
+is returned as a `Deterministic` whose data is a 2D array with one forecast window per row.
 
 ## Resolution
 
@@ -134,11 +139,10 @@ For example, a `timedelta` of 1 month will be converted to the ISO format string
 
 ## Behaviors
 
-Users can customize time series behavior with these flags passed to the `System` constructor:
+The `System` stores all time series arrays and their metadata in the Rust-backed
+`time-series-store` backend (NetCDF arrays plus a SQLite database). Users can customize time series
+behavior with these keyword arguments passed to the `System` constructor:
 
-- `time_series_in_memory`: The `System` stores each array of data in an Arrow file by default. This
-  is a binary file that enables efficient storage and row access. Set this flag to store the data in
-  memory instead.
 - `time_series_read_only`: The default behavior allows users to add and remove time series data.
   Set this flag to disable mutation. That can be useful if you are de-serializing a system, won't be
   changing it, and want to avoid copying the data.
@@ -146,5 +150,8 @@ Users can customize time series behavior with these flags passed to the `System`
   default. This filesystem may be of limited size. If your data will exceed that limit, such as what
   is likely to happen on an HPC compute node, set this parameter to an alternate location (such as
   `/tmp/scratch` on NREL's HPC systems).
+- `time_series_compression`, `time_series_compression_level`, `time_series_shuffle`: Control NetCDF
+  compression of the stored arrays. By default the backend uses `"deflate"` compression at level `3`
+  with byte shuffle enabled; set `time_series_compression="none"` to disable compression.
 
 Refer to the [Time Series API](#time-series-api) for more information.

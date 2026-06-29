@@ -4,14 +4,32 @@ import numpy as np
 import pytest
 
 from infrasys.exceptions import ISNotStored
+from infrasys.quantities import ActivePower
 from infrasys.time_series_store_storage import TimeSeriesStoreStorage
 from infrasys.time_series_models import (
+    Deterministic,
+    DeterministicTimeSeriesKey,
     NonSequentialTimeSeries,
     SingleTimeSeries,
     TimeSeriesStorageType,
 )
 
 from .models.simple_system import SimpleBus, SimpleGenerator, SimpleSystem
+
+
+def make_deterministic(name: str = "active_power", units: bool = False) -> Deterministic:
+    data = np.arange(12, dtype=np.float64).reshape(3, 4)
+    if units:
+        data = ActivePower(data, "watts")
+    return Deterministic.from_array(
+        data,
+        name,
+        datetime(2024, 1, 1),
+        resolution=timedelta(hours=1),
+        horizon=timedelta(hours=4),
+        interval=timedelta(hours=1),
+        window_count=3,
+    )
 
 
 def make_system(tmp_path) -> tuple[SimpleSystem, SimpleGenerator]:
@@ -163,3 +181,114 @@ def test_serialization_round_trip(tmp_path):
         read_only.get_time_series(read_only_generator, name="active_power").data,
         time_series.data,
     )
+
+
+@pytest.mark.parametrize("units", [False, True])
+def test_deterministic_round_trip(tmp_path, units):
+    system, generator = make_system(tmp_path)
+    forecast = make_deterministic(units=units)
+    key = system.add_time_series(forecast, generator)
+    assert isinstance(key, DeterministicTimeSeriesKey)
+
+    result = system.get_time_series(generator, name="active_power", time_series_type=Deterministic)
+    assert isinstance(result, Deterministic)
+    np.testing.assert_array_equal(result.data_array, forecast.data_array)
+    assert result.initial_timestamp == forecast.initial_timestamp
+    assert result.resolution == forecast.resolution
+    assert result.horizon == forecast.horizon
+    assert result.interval == forecast.interval
+    assert result.window_count == forecast.window_count
+    if units:
+        from infrasys.quantities import ActivePower as _AP
+
+        assert isinstance(result.data, _AP)
+
+
+def test_deterministic_keys(tmp_path):
+    system, generator = make_system(tmp_path)
+    system.add_time_series(make_deterministic(), generator)
+    keys = system.list_time_series_keys(generator, time_series_type=Deterministic)
+    assert len(keys) == 1
+    assert isinstance(keys[0], DeterministicTimeSeriesKey)
+    assert keys[0].window_count == 3
+
+
+def test_deterministic_serialization_round_trip(tmp_path):
+    system, generator = make_system(tmp_path / "storage")
+    forecast = make_deterministic()
+    system.add_time_series(forecast, generator)
+    filename = tmp_path / "system.json"
+    system.to_json(filename)
+
+    loaded = SimpleSystem.from_json(filename)
+    loaded_generator = loaded.get_component(SimpleGenerator, generator.name)
+    result = loaded.get_time_series(
+        loaded_generator, name="active_power", time_series_type=Deterministic
+    )
+    np.testing.assert_array_equal(result.data_array, forecast.data_array)
+    assert result.window_count == forecast.window_count
+    assert result.horizon == forecast.horizon
+
+
+def test_transform_single_time_series(tmp_path):
+    system, generator = make_system(tmp_path)
+    single = SingleTimeSeries.from_array(
+        np.arange(12, dtype=np.float64),
+        "active_power",
+        datetime(2024, 1, 1),
+        timedelta(hours=1),
+    )
+    system.add_time_series(single, generator)
+
+    count = system.transform_single_time_series(
+        horizon=timedelta(hours=4), interval=timedelta(hours=2)
+    )
+    assert count == 1
+
+    forecast = system.get_time_series(
+        generator, name="active_power", time_series_type=Deterministic
+    )
+    assert isinstance(forecast, Deterministic)
+    assert forecast.data_array.ndim == 2
+
+    # The underlying SingleTimeSeries is still retrievable.
+    original = system.get_time_series(
+        generator, name="active_power", time_series_type=SingleTimeSeries
+    )
+    np.testing.assert_array_equal(original.data, single.data)
+
+
+def test_transform_single_time_series_round_trip(tmp_path):
+    system, generator = make_system(tmp_path / "storage")
+    single = SingleTimeSeries.from_array(
+        np.arange(12, dtype=np.float64),
+        "active_power",
+        datetime(2024, 1, 1),
+        timedelta(hours=1),
+    )
+    system.add_time_series(single, generator)
+    system.transform_single_time_series(horizon=timedelta(hours=4), interval=timedelta(hours=2))
+    expected = system.get_time_series(
+        generator, name="active_power", time_series_type=Deterministic
+    ).data_array
+
+    filename = tmp_path / "system.json"
+    system.to_json(filename)
+    loaded = SimpleSystem.from_json(filename)
+    loaded_generator = loaded.get_component(SimpleGenerator, generator.name)
+    forecast = loaded.get_time_series(
+        loaded_generator, name="active_power", time_series_type=Deterministic
+    )
+    np.testing.assert_array_equal(forecast.data_array, expected)
+
+
+def test_forecast_rejects_slicing(tmp_path):
+    system, generator = make_system(tmp_path)
+    system.add_time_series(make_deterministic(), generator)
+    with pytest.raises(NotImplementedError):
+        system.get_time_series(
+            generator,
+            name="active_power",
+            time_series_type=Deterministic,
+            start_time=datetime(2024, 1, 1, 1),
+        )

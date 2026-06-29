@@ -233,6 +233,11 @@ class AbstractDeterministic(TimeSeriesData):
             return self.data.magnitude
         return self.data
 
+    @property
+    def length(self) -> int:
+        """Return the number of forecast windows."""
+        return self.window_count
+
 
 class Deterministic(AbstractDeterministic):
     """A deterministic forecast for a particular data field in a Component.
@@ -263,8 +268,8 @@ class Deterministic(AbstractDeterministic):
 
     See Also
     --------
-    from_single_time_series : A classmethod that creates a deterministic forecast from
-        an existing SingleTimeSeries for "perfect forecast" scenarios.
+    infrasys.system.System.transform_single_time_series : Derive forecasts from stored
+        ``SingleTimeSeries`` ("perfect forecast" scenarios).
     """
 
     @classmethod
@@ -368,9 +373,7 @@ def single_time_series_range(
             raise ISConflictingArguments(msg)
         diff = start_time - initial_timestamp
         if (diff % resolution).total_seconds() != 0.0:
-            msg = (
-                f"{start_time=} conflicts with {initial_timestamp=} and {resolution=}"
-            )
+            msg = f"{start_time=} conflicts with {initial_timestamp=} and {resolution=}"
             raise ISConflictingArguments(msg)
         index = int(diff / resolution)
     if slice_length is None:

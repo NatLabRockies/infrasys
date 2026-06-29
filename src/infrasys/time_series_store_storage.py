@@ -31,6 +31,7 @@ import orjson
 import pint
 from loguru import logger
 from time_series_store import (  # type: ignore[import-untyped]
+    Deterministic as RustDeterministic,
     NonSequentialTimeSeries as RustNonSequentialTimeSeries,
     OwnerCategory,
     SingleTimeSeries as RustSingleTimeSeries,
@@ -47,6 +48,8 @@ from infrasys.exceptions import (
 from infrasys.serialization import serialize_value
 from infrasys.supplemental_attribute import SupplementalAttribute
 from infrasys.time_series_models import (
+    Deterministic,
+    DeterministicTimeSeriesKey,
     NonSequentialTimeSeries,
     NonSequentialTimeSeriesKey,
     QuantityMetadata,
@@ -59,6 +62,9 @@ from infrasys.time_series_models import (
 )
 from infrasys.utils.path_utils import clean_tmp_folder
 from infrasys.utils.time_utils import to_iso_8601
+
+# Store-side time-series type names that infrasys exposes as ``Deterministic``.
+_FORECAST_TYPES = frozenset({"Deterministic", "DeterministicSingleTimeSeries"})
 
 
 @dataclass
@@ -89,6 +95,10 @@ class _StoredSeries:
     units: QuantityMetadata | None = None
     resolution: timedelta | None = None
     initial_timestamp: datetime | None = None
+    # Forecast-only parameters (populated for Deterministic/DeterministicSingleTimeSeries).
+    horizon: timedelta | None = None
+    interval: timedelta | None = None
+    window_count: int | None = None
 
 
 class TimeSeriesStoreStorage:
@@ -213,6 +223,9 @@ class TimeSeriesStoreStorage:
                 units=units,
                 resolution=getattr(time_series, "resolution", None),
                 initial_timestamp=getattr(time_series, "initial_timestamp", None),
+                horizon=getattr(time_series, "horizon", None),
+                interval=getattr(time_series, "interval", None),
+                window_count=getattr(time_series, "window_count", None),
             )
             self._add_record(stored, rust_time_series, units_str, owner_id, category)
 
@@ -258,7 +271,9 @@ class TimeSeriesStoreStorage:
         ISOperationNotAllowed
             Raised if more than one matches.
         """
-        matches = self.list_metadata(owner, name=name, time_series_type=time_series_type, **features)
+        matches = self.list_metadata(
+            owner, name=name, time_series_type=time_series_type, **features
+        )
         if not matches:
             msg = "No time series matching the inputs is stored"
             raise ISNotStored(msg)
@@ -400,6 +415,16 @@ class TimeSeriesStoreStorage:
             assoc_map = self._index.setdefault((owner_id, category_name), {})
             assoc_map[_assoc_key(stored.name, stored.time_series_type, stored.features)] = stored
 
+    def transform_single_time_series(self, horizon: timedelta, interval: timedelta) -> int:
+        """Derive ``Deterministic`` forecasts from every stored ``SingleTimeSeries``.
+
+        Mirrors the Rust store's store-wide transform: each ``SingleTimeSeries`` gains a forecast
+        association sharing the same underlying array. Returns the number of series transformed.
+        """
+        count = self._store.transform_single_time_series(horizon=horizon, interval=interval)
+        self.rehydrate()
+        return count
+
     # ------------------------------------------------------------------
     # Data operations
     # ------------------------------------------------------------------
@@ -413,6 +438,11 @@ class TimeSeriesStoreStorage:
     ) -> TimeSeriesData:
         owner_id, category = _owner_identity(owner)
         key = self._resolve_key(owner_id, category, stored)
+        if stored.time_series_type in _FORECAST_TYPES and (
+            start_time is not None or length is not None
+        ):
+            msg = "start_time/length slicing is not supported for forecast time series"
+            raise NotImplementedError(msg)
         time_range = None
         result_initial_timestamp = None
         if stored.time_series_type == "SingleTimeSeries":
@@ -447,6 +477,18 @@ class TimeSeriesStoreStorage:
                     [_as_naive_utc(x) for x in rust_result.timestamps],
                     dtype=object,
                 ),
+            )
+        if stored.time_series_type in _FORECAST_TYPES:
+            # The Rust store returns (horizon_steps, count); infrasys uses (window_count,
+            # horizon_steps), so transpose back.
+            return Deterministic(
+                name=stored.name,
+                data=data.T,
+                initial_timestamp=_as_naive_utc(rust_result.initial_timestamp),
+                resolution=_parse_resolution(rust_result.resolution),
+                horizon=_parse_resolution(rust_result.horizon),
+                interval=_parse_resolution(rust_result.interval),
+                window_count=rust_result.count,
             )
 
         msg = f"get_time_series not implemented for {stored.time_series_type}"
@@ -489,8 +531,17 @@ class TimeSeriesStoreStorage:
         units = _deserialize_units(record.get("units"))
         resolution = _parse_resolution(record["resolution"]) if record.get("resolution") else None
         initial_timestamp = None
+        horizon = interval = None
+        window_count = None
         if ts_type == "SingleTimeSeries":
-            initial_timestamp = self._read_initial_timestamp(record)
+            initial_timestamp = _as_naive_utc(self._read_rust_object(record).initial_timestamp)
+        elif ts_type in _FORECAST_TYPES:
+            obj = self._read_rust_object(record)
+            initial_timestamp = _as_naive_utc(obj.initial_timestamp)
+            resolution = _parse_resolution(obj.resolution)
+            horizon = _parse_resolution(obj.horizon)
+            interval = _parse_resolution(obj.interval)
+            window_count = obj.count
         return _StoredSeries(
             name=record["name"],
             time_series_type=ts_type,
@@ -500,9 +551,18 @@ class TimeSeriesStoreStorage:
             units=units,
             resolution=resolution,
             initial_timestamp=initial_timestamp,
+            horizon=horizon,
+            interval=interval,
+            window_count=window_count,
         )
 
-    def _read_initial_timestamp(self, record: dict[str, Any]) -> datetime:
+    def _read_rust_object(self, record: dict[str, Any]) -> Any:
+        """Fetch the Rust time-series object for a store metadata record.
+
+        Matches on name, type, and features so that a ``SingleTimeSeries`` and a
+        ``DeterministicSingleTimeSeries`` sharing the same name (post-transform) are
+        distinguished.
+        """
         category = (
             OwnerCategory.Component
             if record["owner_category"] == "Component"
@@ -510,12 +570,13 @@ class TimeSeriesStoreStorage:
         )
         keys = self._store.get_time_series_keys(record["owner_id"], category)
         for key in keys:
-            if key.name == record["name"] and dict(key.features) == dict(
-                record.get("features") or {}
+            if (
+                key.name == record["name"]
+                and _ts_type_name(key.time_series_type) == record["time_series_type"]
+                and dict(key.features) == dict(record.get("features") or {})
             ):
-                stored = self._store.get_time_series(key)
-                return _as_naive_utc(stored.initial_timestamp)
-        msg = f"Could not read initial_timestamp for {record['name']}"
+                return self._store.get_time_series(key)
+        msg = f"Could not read stored object for {record['name']}"
         raise ISNotStored(msg)
 
     @classmethod
@@ -545,6 +606,23 @@ def _key_from_stored(stored: _StoredSeries) -> TimeSeriesKey:
             features=stored.features,
             length=stored.length,
         )
+    if stored.time_series_type in _FORECAST_TYPES:
+        assert stored.initial_timestamp is not None and stored.resolution is not None
+        assert (
+            stored.interval is not None
+            and stored.horizon is not None
+            and stored.window_count is not None
+        )
+        return DeterministicTimeSeriesKey(
+            name=stored.name,
+            time_series_type=Deterministic,
+            features=stored.features,
+            initial_timestamp=stored.initial_timestamp,
+            resolution=stored.resolution,
+            interval=stored.interval,
+            horizon=stored.horizon,
+            window_count=stored.window_count,
+        )
     msg = f"key not implemented for {stored.time_series_type}"
     raise NotImplementedError(msg)
 
@@ -554,6 +632,8 @@ def _data_type_name(time_series: TimeSeriesData) -> str:
         return "SingleTimeSeries"
     if isinstance(time_series, NonSequentialTimeSeries):
         return "NonSequentialTimeSeries"
+    if isinstance(time_series, Deterministic):
+        return "Deterministic"
     msg = f"add_time_series not implemented for {type(time_series)}"
     raise NotImplementedError(msg)
 
@@ -570,6 +650,19 @@ def _to_rust_time_series(time_series: TimeSeriesData):
         return RustNonSequentialTimeSeries(
             [_as_utc(x) for x in time_series.timestamps.astype("datetime64[us]").tolist()],
             np.asarray(time_series.data_array, dtype=np.float64),
+            time_series.name,
+        )
+    if isinstance(time_series, Deterministic):
+        # infrasys stores forecasts as (window_count, horizon_steps); the Rust store expects
+        # the transpose (horizon_steps, count).
+        data = np.ascontiguousarray(np.asarray(time_series.data_array, dtype=np.float64).T)
+        return RustDeterministic(
+            _as_utc(time_series.initial_timestamp),
+            time_series.resolution,
+            time_series.horizon,
+            time_series.interval,
+            time_series.window_count,
+            data,
             time_series.name,
         )
     msg = f"add_time_series not implemented for {type(time_series)}"
@@ -619,6 +712,20 @@ def _assoc_key(name: str, time_series_type: str, features: dict[str, Any]) -> tu
     return (name, time_series_type, tuple(sorted(features.items())))
 
 
+def _type_matches(stored_type: str, filter_type: str | None) -> bool:
+    """Match a stored time-series type against a query filter.
+
+    A ``Deterministic`` filter matches both explicitly-stored forecasts and forecasts derived
+    from a ``SingleTimeSeries`` via ``transform_single_time_series`` (which the store tags as
+    ``DeterministicSingleTimeSeries``). infrasys surfaces both as ``Deterministic``.
+    """
+    if filter_type is None:
+        return True
+    if filter_type == "Deterministic":
+        return stored_type in _FORECAST_TYPES
+    return stored_type == filter_type
+
+
 def _matches(
     stored: _StoredSeries,
     name: str | None,
@@ -627,7 +734,7 @@ def _matches(
 ) -> bool:
     if name is not None and stored.name != name:
         return False
-    if time_series_type is not None and stored.time_series_type != time_series_type:
+    if not _type_matches(stored.time_series_type, time_series_type):
         return False
     for key, value in features.items():
         if stored.features.get(key) != value:

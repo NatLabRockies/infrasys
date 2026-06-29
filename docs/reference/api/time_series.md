@@ -18,15 +18,19 @@
 ```
 
 ```{eval-rst}
-.. _deterministic-time-series-api:
+.. _nonsequential-time-series-api:
 ```
 
 ```{eval-rst}
-.. autopydantic_model:: infrasys.time_series_models.DeterministicTimeSeries
+.. autopydantic_model:: infrasys.time_series_models.NonSequentialTimeSeries
    :members:
 ```
 
 ```{eval-rst}
-.. autopydantic_model:: infrasys.time_series_models.DeterministicSingleTimeSeries
+.. _deterministic-time-series-api:
+```
+
+```{eval-rst}
+.. autopydantic_model:: infrasys.time_series_models.Deterministic
    :members:
 ```

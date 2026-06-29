@@ -2,7 +2,7 @@
 
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import singledispatch
 from pathlib import Path
 from typing import Any, Generator, Literal, Optional, Type
@@ -13,6 +13,8 @@ from .component import Component
 from .exceptions import ISInvalidParameter, ISOperationNotAllowed
 from .supplemental_attribute import SupplementalAttribute
 from .time_series_models import (
+    Deterministic,
+    DeterministicTimeSeriesKey,
     NonSequentialTimeSeries,
     NonSequentialTimeSeriesKey,
     SingleTimeSeries,
@@ -126,7 +128,7 @@ class TimeSeriesManager:
         if not issubclass(ts_type, TimeSeriesData):
             msg = f"The first argument must be an instance of TimeSeriesData: {ts_type}"
             raise ValueError(msg)
-        if not isinstance(time_series, (SingleTimeSeries, NonSequentialTimeSeries)):
+        if not isinstance(time_series, (SingleTimeSeries, NonSequentialTimeSeries, Deterministic)):
             msg = f"Time-series persistence is not implemented for {ts_type.__name__}"
             raise NotImplementedError(msg)
 
@@ -218,7 +220,9 @@ class TimeSeriesManager:
             **features,
         )
         return [
-            self._get_by_metadata(x, owner, start_time=start_time, length=length, context=connection)
+            self._get_by_metadata(
+                x, owner, start_time=start_time, length=length, context=connection
+            )
             for x in records
         ]
 
@@ -295,6 +299,21 @@ class TimeSeriesManager:
         """
         self._handle_read_only()
         raise NotImplementedError
+
+    def transform_single_time_series(self, horizon: timedelta, interval: timedelta) -> int:
+        """Derive ``Deterministic`` forecasts from every stored ``SingleTimeSeries``.
+
+        Each ``SingleTimeSeries`` gains a forecast view sharing the same underlying array.
+        After transforming, retrieve a forecast with ``get(..., time_series_type=Deterministic)``.
+        Returns the number of series transformed.
+
+        Raises
+        ------
+        ISOperationNotAllowed
+            Raised if the manager was created in read-only mode.
+        """
+        self._handle_read_only()
+        return self._storage.transform_single_time_series(horizon, interval)
 
     def _get_by_metadata(
         self,
@@ -397,6 +416,20 @@ def _(time_series: NonSequentialTimeSeries, features: dict[str, Any]) -> TimeSer
         features=features,
         name=time_series.name,
         time_series_type=NonSequentialTimeSeries,
+    )
+
+
+@make_time_series_key.register(Deterministic)
+def _(time_series: Deterministic, features: dict[str, Any]) -> TimeSeriesKey:
+    return DeterministicTimeSeriesKey(
+        initial_timestamp=time_series.initial_timestamp,
+        resolution=time_series.resolution,
+        horizon=time_series.horizon,
+        interval=time_series.interval,
+        window_count=time_series.window_count,
+        features=features,
+        name=time_series.name,
+        time_series_type=Deterministic,
     )
 
 

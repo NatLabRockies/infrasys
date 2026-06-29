@@ -20,8 +20,8 @@ their domain problems instead of managing persistence concerns.
 
 - **Typed components with pint validation:** Base models derive from `pydantic` and use
   `pint` quantities whenever a physical unit is involved.
-- **Efficient time-series storage:** Persistent arrays use the Rust-backed `time-series-store`
-  package, with an in-memory option for temporary workflows.
+- **Efficient time-series storage:** Time series arrays and their metadata are stored by the
+  Rust-backed `time-series-store` package (NetCDF arrays plus a SQLite database).
 - **Efficient serialization:** Components, supplemental attributes, and nested systems are
   serialized to JSON with automatic metadata and optional migration hooks.
 - **Designed for extension:** Derive your own `System` classes, override component addition
@@ -68,8 +68,8 @@ gets written to a sibling directory alongside the JSON file so you can externali
 - **How To guides:** step-by-step recipes in `docs/how_tos`.
 - **Tutorials:** opinionated walkthroughs for custom systems under `docs/tutorials`.
 - **API Reference:** auto-generated reference material lives in `docs/reference`.
-- **Explanation articles:** deeper dives on the storage backends, migrations, and behavior in
-  `docs/explanation`.
+- **Explanation articles:** deeper dives on the time-series storage backend, serialization, and
+  behavior in `docs/explanation`.
 
 To build the docs locally, install `docs` extras and run `make html` from the `docs` directory.
 
@@ -87,6 +87,54 @@ pip install -e ".[dev]"
 pytest
 ```
 
+### Building the Rust `time-series-store` extension
+
+infrasys depends on the Rust `time-series-store` package for its time series backend. During
+local development this is resolved from a sibling checkout via [`[tool.uv.sources]`](pyproject.toml):
+
+```toml
+[tool.uv.sources]
+time-series-store = { path = "../time-series-store/crates/time-series-store-py" }
+```
+
+1. Clone the [`time-series-store`](https://github.com/NatLabRockies/time-series-store) repository
+   next to this one so the relative path resolves:
+
+   ```bash
+   git clone https://github.com/NatLabRockies/time-series-store.git ../time-series-store
+   ```
+
+2. Make sure a Rust toolchain is installed (`uv` compiles the extension with `maturin`):
+
+   ```bash
+   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+   ```
+
+3. Sync the environment. `uv` builds the Rust extension and installs everything from `uv.lock`:
+
+   ```bash
+   uv sync
+   ```
+
+4. **After editing the Rust source**, rebuild and reinstall the compiled extension — a plain
+   `uv sync` will not rebuild an unchanged-version path dependency:
+
+   ```bash
+   uv sync --reinstall-package time-series-store
+   ```
+
+   You can confirm the rebuild picked up your changes, e.g.:
+
+   ```bash
+   uv run python -c "import time_series_store as t; print(t.TimeSeriesStore.add_time_series.__doc__)"
+   ```
+
+With the environment synced, run the suite through `uv`:
+
+```bash
+uv run pytest
+```
+
 - Formatting and linting are managed by `ruff` and configured through its `pyproject.toml` section.
   Keep your hooks healthy by installing them via `pre-commit install` (see Getting started) and running
   `pre-commit run --all-files` before pushing.
@@ -94,7 +142,7 @@ pytest
 ## Support & Contribution
 
 infrasys is being developed under NREL Software Record SWR-24-42. Report issues and feature
-requests at [https://github.com/NREL/infrasys/issues](https://github.com/NREL/infrasys/issues).
+requests at [https://github.com/NatLabRockies/infrasys/issues](https://github.com/NatLabRockies/infrasys/issues).
 Review the `docs/reference` and `docs/how_tos` material before submitting a change so your
 diff is aligned with the project conventions.
 

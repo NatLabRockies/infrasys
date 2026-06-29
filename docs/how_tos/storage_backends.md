@@ -33,9 +33,11 @@ system = System(
 If no directory is provided, infrasys creates a temporary directory and removes it when the
 process exits.
 
-The backend currently supports `SingleTimeSeries` and
-`NonSequentialTimeSeries`. Deterministic forecast persistence will be available after support is
-added to `time-series-store`.
+`infrasys` persists `SingleTimeSeries`, `NonSequentialTimeSeries`, and `Deterministic` forecasts.
+Forecasts can be added explicitly with `system.add_time_series(Deterministic.from_array(...),
+component)`, or derived from stored `SingleTimeSeries` with
+`system.transform_single_time_series(horizon, interval)`; both are retrieved with
+`time_series_type=Deterministic`.
 
 ## Read-Only Mode
 
