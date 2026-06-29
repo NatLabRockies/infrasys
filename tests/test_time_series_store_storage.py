@@ -138,42 +138,6 @@ def test_remove_time_series(tmp_path):
         system.get_time_series(generator, name="active_power")
 
 
-def test_convert_to_and_from_time_series_store_storage(tmp_path):
-    system = SimpleSystem(time_series_storage_type=TimeSeriesStorageType.MEMORY)
-    bus = SimpleBus(name="bus", voltage=1.0)
-    generator = SimpleGenerator(
-        name="generator",
-        active_power=1.0,
-        rating=1.0,
-        bus=bus,
-        available=True,
-    )
-    system.add_components(bus, generator)
-    time_series = SingleTimeSeries.from_array(
-        np.arange(6),
-        "active_power",
-        datetime(2024, 1, 1),
-        timedelta(hours=1),
-    )
-    system.add_time_series(time_series, generator)
-
-    system.convert_storage(
-        time_series_storage_type=TimeSeriesStorageType.TIME_SERIES_STORE,
-        time_series_directory=tmp_path,
-    )
-    assert isinstance(system.time_series.storage, TimeSeriesStoreStorage)
-    np.testing.assert_array_equal(
-        system.get_time_series(generator, name="active_power").data,
-        time_series.data,
-    )
-
-    system.convert_storage(time_series_storage_type=TimeSeriesStorageType.MEMORY)
-    np.testing.assert_array_equal(
-        system.get_time_series(generator, name="active_power").data,
-        time_series.data,
-    )
-
-
 def test_serialization_round_trip(tmp_path):
     system, generator = make_system(tmp_path / "storage")
     time_series = SingleTimeSeries.from_array(

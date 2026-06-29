@@ -26,10 +26,6 @@ from .exceptions import (
     ISInvalidParameter,
     ISOperationNotAllowed,
 )
-from .migrations.db_migrations import (
-    metadata_store_needs_migration,
-    migrate_legacy_metadata_store,
-)
 from .migrations.metadata_migration import (
     component_needs_metadata_migration,
     migrate_component_metadata,
@@ -51,7 +47,6 @@ from .time_series_models import (
     SingleTimeSeries,
     TimeSeriesData,
     TimeSeriesKey,
-    TimeSeriesMetadata,
     TimeSeriesStorageContext,
 )
 from .utils.migrations import upgrade_legacy_component_ids
@@ -241,9 +236,7 @@ class System:
             data["system"] = system_data
 
         backup(self._con, time_series_dir / self.DB_FILENAME)
-        self._time_series_mgr.serialize(
-            system_data["time_series"], time_series_dir, db_name=self.DB_FILENAME
-        )
+        self._time_series_mgr.serialize(system_data["time_series"], time_series_dir)
 
         data_dump = orjson.dumps(data)
         with open(filename, "wb") as f_out:
@@ -460,9 +453,6 @@ class System:
         con = create_in_memory_db()
         restore(con, ts_path / data["time_series"]["directory"] / System.DB_FILENAME)
 
-        if metadata_store_needs_migration(con):
-            migrate_legacy_metadata_store(con)
-
         time_series_manager = TimeSeriesManager.deserialize(
             con, data["time_series"], ts_path, **ts_kwargs
         )
@@ -497,9 +487,6 @@ class System:
         upgrade_legacy_component_ids(system_data)
         system._deserialize_components(system_data["components"])
         system._deserialize_supplemental_attributes(system_data["supplemental_attributes"])
-        system._time_series_mgr.migrate_metadata_schema(
-            [*system._component_mgr.iter_all(), *system._supplemental_attr_mgr.iter_all()]
-        )
         logger.info("Deserialized system {}", system.label)
         return system
 
@@ -1022,19 +1009,19 @@ class System:
         """
         self._component_mgr.raise_if_not_attached(component)
         if self.has_time_series(component):
-            metadata_list = list(self._time_series_mgr.list_time_series_metadata(component))
+            keys = list(self._time_series_mgr.list_time_series_metadata(component))
             logger.warning(
                 "Removing component {} which has {} time series(s). "
                 "Associated time series will be removed before the component.",
                 component.label,
-                len(metadata_list),
+                len(keys),
             )
-            for metadata in metadata_list:
+            for key in keys:
                 self.remove_time_series(
                     component,
-                    time_series_type=metadata.get_time_series_data_type(),
-                    name=metadata.name,
-                    **metadata.features,
+                    time_series_type=key.time_series_type,
+                    name=key.name,
+                    **key.features,
                 )
         self._component_mgr.remove(component, cascade_down=cascade_down, force=force)
 
@@ -1100,12 +1087,12 @@ class System:
         """Remove the supplemental attribute from the system."""
         self._supplemental_attr_mgr.raise_if_not_attached(attribute)
         if self.has_time_series(attribute):
-            for metadata in self._time_series_mgr.list_time_series_metadata(attribute):
+            for key in self._time_series_mgr.list_time_series_metadata(attribute):
                 self.remove_time_series(
                     attribute,
-                    time_series_type=metadata.get_time_series_data_type(),
-                    name=metadata.name,
-                    **metadata.features,
+                    time_series_type=key.time_series_type,
+                    name=key.name,
+                    **key.features,
                 )
         return self._supplemental_attr_mgr.remove(attribute)
 
@@ -1402,8 +1389,8 @@ class System:
         name: str | None = None,
         time_series_type: Type[TimeSeriesData] = SingleTimeSeries,
         **features: Any,
-    ) -> list[TimeSeriesMetadata]:
-        """Return all time series metadata that match the inputs.
+    ) -> list[TimeSeriesKey]:
+        """Return all time series keys that match the inputs.
 
         Parameters
         ----------
@@ -1539,41 +1526,6 @@ class System:
         raise NotImplementedError(msg)
 
     # TODO: add delete methods that (1) don't raise if not found and (2) don't return anything?
-
-    def convert_storage(self, **kwargs) -> None:
-        """
-        Converts the time series storage medium.
-
-        Parameters
-        ----------
-        **kwargs:
-            The same keys as TIME_SERIES_KWARGS in time_series_manager.py
-            {
-                "time_series_storage_type": TimeSeriesStorageType = (
-                    TimeSeriesStorageType.TIME_SERIES_STORE
-                ),
-                "time_series_read_only": bool = False,
-                "time_series_directory": Path | None = None,
-            }
-
-            Only arguments that need to be changed from the default TIME_SERIES_KWARGS
-            need to be passed
-
-        Examples
-        --------
-
-        # Initialize the system (defaults to Arrow storage)
-        >>> system = infrasys.System(auto_add_composed_components=True)
-
-        # Add components and time series data
-        >>> generator, bus, load_data = create_some_data()
-        >>> system.add_components(generator, bus)
-        >>> system.add_time_series(load_data, generator)
-
-        # Convert the storage to in_memory
-        >>> system.convert_storage(time_series_storage_type=TimeSeriesStorageType.MEMORY)
-        """
-        self._time_series_mgr.convert_storage(**kwargs)
 
     @property
     def _components(self) -> ComponentManager:
@@ -1859,7 +1811,7 @@ class SystemInfo:
         component_type_count = {
             k.__name__: v for k, v in self.system._components.get_num_components_by_type().items()
         }
-        ts_counts = self.system.time_series.metadata_store.get_time_series_counts()
+        ts_counts = self.system.time_series.get_time_series_counts()
         return (
             component_count,
             ts_counts.time_series_count,

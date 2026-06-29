@@ -28,10 +28,7 @@ from .models.simple_system import (
     SimpleSystem,
 )
 
-TS_STORAGE_OPTIONS = (
-    TimeSeriesStorageType.TIME_SERIES_STORE,
-    TimeSeriesStorageType.MEMORY,
-)
+TS_STORAGE_OPTIONS = (TimeSeriesStorageType.TIME_SERIES_STORE,)
 
 TS_STORAGE_OPTIONS_NONSEQUENTIAL = TS_STORAGE_OPTIONS
 
@@ -465,28 +462,6 @@ def test_system_save_load_with_storage_backends(tmp_path, time_series_storage_ty
         assert list(loaded_ts.data) == list(orig_ts.data)
         assert loaded_ts.initial_timestamp == orig_ts.initial_timestamp
         assert loaded_ts.resolution == orig_ts.resolution
-
-
-def test_convert_time_series_store_storage_permanent(tmp_path):
-    gen = SimpleGenerator.example()
-    system = SimpleSystem(auto_add_composed_components=True)
-    system.add_components(gen)
-    name = "active_power"
-    length = 10
-    data = list(range(length))
-    start = datetime(year=2020, month=1, day=1)
-    resolution = timedelta(hours=1)
-    ts = SingleTimeSeries.from_array(data, name, start, resolution)
-    system.add_time_series(ts, gen)
-    storage = system.time_series.convert_storage(
-        time_series_storage_type=TimeSeriesStorageType.TIME_SERIES_STORE,
-        time_series_directory=tmp_path,
-        in_place=False,
-        permanent=True,
-    )
-    assert storage.get_time_series_directory() == tmp_path
-    assert (tmp_path / "time_series_store.nc").exists()
-    assert (tmp_path / "time_series_store.nc.sqlite").exists()
 
 
 def test_serialized_component_reference_uuid_property_raises():

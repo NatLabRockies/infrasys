@@ -7,21 +7,16 @@ from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import (
     Any,
-    Literal,
-    Optional,
     Sequence,
     Type,
     TypeAlias,
-    Union,
 )
-from uuid import UUID
 
 import numpy as np
 import pandas as pd
 import pint
 from numpy.typing import NDArray
 from pydantic import (
-    Field,
     WithJsonSchema,
     computed_field,
     field_serializer,
@@ -33,7 +28,7 @@ from typing_extensions import Annotated
 from infrasys.exceptions import (
     ISConflictingArguments,
 )
-from infrasys.models import InfraSysBaseModel, InfraSysBaseModelWithIdentifers
+from infrasys.models import InfraSysBaseModel
 from infrasys.normalization import NormalizationModel
 
 TIME_COLUMN = "timestamp"
@@ -46,12 +41,15 @@ ISArray: TypeAlias = Sequence | NDArray | pint.Quantity
 class TimeSeriesStorageType(StrEnum):
     """Defines the possible storage types for time series."""
 
-    MEMORY = "memory"
     TIME_SERIES_STORE = "time_series_store"
 
 
-class TimeSeriesData(InfraSysBaseModelWithIdentifers, abc.ABC):
-    """Base class for all time series models"""
+class TimeSeriesData(InfraSysBaseModel, abc.ABC):
+    """Base class for all time series models.
+
+    Time series identity is owned by the Rust ``time-series-store`` core (content hash plus
+    the owner/name/features association key); infrasys does not assign its own id/uuid.
+    """
 
     name: str
     normalization: NormalizationModel = None
@@ -60,11 +58,6 @@ class TimeSeriesData(InfraSysBaseModelWithIdentifers, abc.ABC):
     def summary(self) -> str:
         """Return the name of the time series array with its type."""
         return f"{self.__class__.__name__}.{self.name}"
-
-    @staticmethod
-    @abc.abstractmethod
-    def get_time_series_metadata_type() -> Type["TimeSeriesMetadata"]:
-        """Return the metadata type associated with this time series type."""
 
 
 class SingleTimeSeries(TimeSeriesData):
@@ -211,19 +204,11 @@ class SingleTimeSeries(TimeSeriesData):
             start=self.initial_timestamp, periods=len(self.data), freq=self.resolution
         ).values
 
-    @staticmethod
-    def get_time_series_metadata_type() -> Type["SingleTimeSeriesMetadata"]:
-        return SingleTimeSeriesMetadata
-
     @property
     def data_array(self) -> NDArray:
         if isinstance(self.data, pint.Quantity):
             return self.data.magnitude
         return self.data
-
-
-class SingleTimeSeriesScalingFactor(SingleTimeSeries):
-    """Defines a time array with a single dimension of floats that are 0-1 scaling factors."""
 
 
 class Forecast(TimeSeriesData):
@@ -241,10 +226,6 @@ class AbstractDeterministic(TimeSeriesData):
     horizon: timedelta
     interval: timedelta
     window_count: int
-
-    @staticmethod
-    def get_time_series_metadata_type() -> Type["DeterministicMetadata"]:
-        return DeterministicMetadata
 
     @property
     def data_array(self) -> NDArray:
@@ -361,253 +342,45 @@ class QuantityMetadata(InfraSysBaseModel):
         return values
 
 
-class TimeSeriesMetadata(InfraSysBaseModelWithIdentifers, abc.ABC):
-    """Defines common metadata for all time series."""
+def single_time_series_range(
+    initial_timestamp: datetime,
+    resolution: timedelta,
+    length: int,
+    start_time: datetime | None = None,
+    slice_length: int | None = None,
+) -> tuple[int, int]:
+    """Return the ``(index, length)`` slice into a SingleTimeSeries array.
 
-    name: str
-    time_series_id: int | None = None
-    time_series_uuid: UUID
-    features: dict[str, Any] = {}
-    units: Optional[QuantityMetadata] = None
-    normalization: NormalizationModel = None
-    type: Literal[
-        "SingleTimeSeries",
-        "SingleTimeSeriesScalingFactor",
-        "NonSequentialTimeSeries",
-        "Deterministic",
-    ]
-
-    @property
-    def label(self) -> str:
-        """Return the name of the time series array with its type."""
-        return f"{self.type}.{self.name}"
-
-    @staticmethod
-    @abc.abstractmethod
-    def get_time_series_data_type() -> Type:
-        """Return the data type associated with this metadata type."""
-        pass
-
-    @staticmethod
-    @abc.abstractmethod
-    def get_time_series_type_str() -> str:
-        """Return the time series type as a string."""
-
-    @classmethod
-    def from_data(cls, time_series: Any, **features) -> Any:
-        """Construct an instance of TimeSeriesMetadata."""
-
-
-class SingleTimeSeriesMetadataBase(TimeSeriesMetadata, abc.ABC):
-    """Base class for SingleTimeSeries metadata."""
-
-    length: int
-    initial_timestamp: datetime
-    resolution: timedelta
-    type: Literal["SingleTimeSeries", "SingleTimeSeriesScalingFactor"]
-
-    @classmethod
-    def from_data(cls, time_series: SingleTimeSeries, **features) -> Any:
-        """Construct a SingleTimeSeriesMetadata from a SingleTimeSeries."""
-        units = (
-            QuantityMetadata(
-                module=type(time_series.data).__module__,
-                quantity_type=type(time_series.data),
-                units=str(time_series.data.units),
-            )
-            if isinstance(time_series.data, pint.Quantity)
-            else None
-        )
-        return cls(
-            name=time_series.name,
-            resolution=time_series.resolution,
-            initial_timestamp=time_series.initial_timestamp,
-            length=time_series.length,  # type: ignore
-            time_series_id=time_series.id,
-            time_series_uuid=time_series.uuid,
-            features=features,
-            units=units,
-            normalization=time_series.normalization,
-            type=cls.get_time_series_type_str(),  # type: ignore
-        )
-
-    def get_range(
-        self, start_time: datetime | None = None, length: int | None = None
-    ) -> tuple[int, int]:
-        """Return the range to be used to index into the dataframe."""
-        if start_time is None and length is None:
-            return (0, self.length)
-
-        if start_time is None:
-            index = 0
-        else:
-            if start_time < self.initial_timestamp:
-                msg = "{start_time=} is less than {self.initial_time=}"
-                raise ISConflictingArguments(msg)
-            if start_time >= self.initial_timestamp + self.length * self.resolution:
-                msg = f"{start_time=} is too large: {self=}"
-                raise ISConflictingArguments(msg)
-            diff = start_time - self.initial_timestamp
-            if (diff % self.resolution).total_seconds() != 0.0:
-                msg = (
-                    f"{start_time=} conflicts with initial_time={self.initial_timestamp} and "
-                    f"resolution={self.resolution}"
-                )
-                raise ISConflictingArguments(msg)
-            index = int(diff / self.resolution)
-        if length is None:
-            length = self.length - index
-
-        if index + length > self.length:
-            msg = f"{start_time=} {length=} conflicts with {self=}"
-            raise ISConflictingArguments(msg)
-
-        return (index, length)
-
-    @staticmethod
-    def get_time_series_data_type() -> Type:
-        return SingleTimeSeries
-
-
-class SingleTimeSeriesMetadata(SingleTimeSeriesMetadataBase):
-    """Defines the metadata for a SingleTimeSeries."""
-
-    type: Literal["SingleTimeSeries"] = "SingleTimeSeries"
-
-    @staticmethod
-    def get_time_series_type_str() -> str:
-        return "SingleTimeSeries"
-
-
-class SingleTimeSeriesScalingFactorMetadata(SingleTimeSeriesMetadataBase):
-    """Defines the metadata for a SingleTimeSeriesScalingFactor."""
-
-    type: Literal["SingleTimeSeriesScalingFactor"] = "SingleTimeSeriesScalingFactor"
-
-    @staticmethod
-    def get_time_series_type_str() -> str:
-        return "SingleTimeSeriesScalingFactor"
-
-
-class DeterministicMetadata(TimeSeriesMetadata):
-    """Defines the metadata for Deterministic time series.
-
-    This metadata can represent either:
-    1. A regular Deterministic forecast with stored 2D data
-    2. A DeterministicSingleTimeSeries that references a SingleTimeSeries (like Julia's approach)
-
-    When the time_series_uuid points to a SingleTimeSeries (no separate Deterministic data file),
-    the data is loaded on-the-fly from that SingleTimeSeries instead of from stored Deterministic data.
-    This is detected by checking if the data file exists or by checking if there's a flag.
+    Extracted from the former ``SingleTimeSeriesMetadata.get_range``; the time-series-store
+    backend uses it to translate a ``start_time``/``length`` request into array indices.
     """
+    if start_time is None and slice_length is None:
+        return (0, length)
 
-    initial_timestamp: datetime
-    resolution: timedelta
-    interval: timedelta
-    horizon: timedelta
-    window_count: int
-    type: Literal["Deterministic"]
-
-    @staticmethod
-    def get_time_series_data_type() -> Type[TimeSeriesData]:
-        """Return the data type associated with this metadata type."""
-        return Deterministic
-
-    @staticmethod
-    def get_time_series_type_str() -> str:
-        """Return the time series type as a string."""
-        return "Deterministic"
-
-    @classmethod
-    def from_data(
-        cls, time_series: DeterministicTimeSeriesType, **features: Any
-    ) -> "DeterministicMetadata":
-        """Construct a DeterministicMetadata from a Deterministic time series."""
-        units = (
-            QuantityMetadata(
-                module=type(time_series.data).__module__,
-                quantity_type=type(time_series.data),
-                units=str(time_series.data.units),
-            )
-            if isinstance(time_series.data, pint.Quantity)
-            else None
-        )
-
-        return cls(
-            name=time_series.name,
-            initial_timestamp=time_series.initial_timestamp,
-            resolution=time_series.resolution,
-            interval=time_series.interval,
-            horizon=time_series.horizon,
-            window_count=time_series.window_count,
-            time_series_id=time_series.id,
-            time_series_uuid=time_series.uuid,
-            features=features,
-            units=units,
-            normalization=time_series.normalization,
-            type="Deterministic",
-        )
-
-    def get_range(
-        self, start_time: datetime | None = None, length: int | None = None
-    ) -> tuple[int, int]:
-        """Return the range to be used to index into the dataframe."""
-        horizon_steps = int(self.horizon / self.resolution)
-        interval_steps = int(self.interval / self.resolution)
-        total_steps = interval_steps * (self.window_count - 1) + horizon_steps
-
-        if start_time is None and length is None:
-            return (0, total_steps)
-
-        if start_time is None:
-            index = 0
-        else:
-            if start_time < self.initial_timestamp:
-                msg = f"{start_time=} is less than {self.initial_timestamp=}"
-                raise ISConflictingArguments(msg)
-
-            last_valid_time = (
-                self.initial_timestamp + (self.window_count - 1) * self.interval + self.horizon
-            )
-            if start_time > last_valid_time:
-                msg = f"{start_time=} is too large: {self=}"
-                raise ISConflictingArguments(msg)
-
-            diff = start_time - self.initial_timestamp
-            if (diff % self.resolution).total_seconds() != 0.0:
-                msg = (
-                    f"{start_time=} conflicts with initial_timestamp={self.initial_timestamp} and "
-                    f"resolution={self.resolution}"
-                )
-                raise ISConflictingArguments(msg)
-
-            index = int(diff / self.resolution)
-
-        if length is None:
-            length = total_steps - index
-
-        if index + length > total_steps:
-            msg = f"{start_time=} {length=} conflicts with {self=}"
+    if start_time is None:
+        index = 0
+    else:
+        if start_time < initial_timestamp:
+            msg = f"{start_time=} is less than {initial_timestamp=}"
             raise ISConflictingArguments(msg)
+        if start_time >= initial_timestamp + length * resolution:
+            msg = f"{start_time=} is too large for {initial_timestamp=}, {length=}"
+            raise ISConflictingArguments(msg)
+        diff = start_time - initial_timestamp
+        if (diff % resolution).total_seconds() != 0.0:
+            msg = (
+                f"{start_time=} conflicts with {initial_timestamp=} and {resolution=}"
+            )
+            raise ISConflictingArguments(msg)
+        index = int(diff / resolution)
+    if slice_length is None:
+        slice_length = length - index
 
-        return (index, length)
+    if index + slice_length > length:
+        msg = f"{start_time=} {slice_length=} conflicts with {length=}"
+        raise ISConflictingArguments(msg)
 
-    @property
-    def length(self) -> int:
-        """Return the total length of the deterministic time series."""
-        horizon_steps = int(self.horizon / self.resolution)
-        interval_steps = int(self.interval / self.resolution)
-        return interval_steps * (self.window_count - 1) + horizon_steps
-
-
-TimeSeriesMetadataUnion = Annotated[
-    Union[
-        SingleTimeSeriesMetadata,
-        SingleTimeSeriesScalingFactorMetadata,
-        DeterministicMetadata,
-    ],
-    Field(discriminator="type"),
-]
+    return (index, slice_length)
 
 
 class NonSequentialTimeSeries(TimeSeriesData):
@@ -716,11 +489,6 @@ class NonSequentialTimeSeries(TimeSeriesData):
             normalization=normalization,
         )
 
-    @staticmethod
-    def get_time_series_metadata_type() -> Type["NonSequentialTimeSeriesMetadata"]:
-        "Get the metadata type of the NonSequentialTimeSeries"
-        return NonSequentialTimeSeriesMetadata
-
     @property
     def data_array(self) -> NDArray:
         "Get the data array NonSequentialTimeSeries"
@@ -732,52 +500,6 @@ class NonSequentialTimeSeries(TimeSeriesData):
     def timestamps_array(self) -> NDArray:
         "Get the timestamps array NonSequentialTimeSeries"
         return self.timestamps
-
-
-class NonSequentialTimeSeriesMetadataBase(TimeSeriesMetadata, abc.ABC):
-    """Base class for NonSequentialTimeSeries metadata."""
-
-    length: int
-    type: Literal["NonSequentialTimeSeries"]
-
-    @classmethod
-    def from_data(
-        cls, time_series: NonSequentialTimeSeries, **features
-    ) -> "NonSequentialTimeSeriesMetadataBase":
-        """Construct a NonSequentialTimeSeriesMetadata from a NonSequentialTimeSeries."""
-        units = (
-            QuantityMetadata(
-                module=type(time_series.data).__module__,
-                quantity_type=type(time_series.data),
-                units=str(time_series.data.units),
-            )
-            if isinstance(time_series.data, pint.Quantity)
-            else None
-        )
-        return cls(
-            name=time_series.name,
-            length=time_series.length,  # type: ignore
-            time_series_id=time_series.id,
-            time_series_uuid=time_series.uuid,
-            features=features,
-            units=units,
-            normalization=time_series.normalization,
-            type=cls.get_time_series_type_str(),  # type: ignore
-        )
-
-    @staticmethod
-    def get_time_series_data_type() -> Type:
-        return NonSequentialTimeSeries
-
-
-class NonSequentialTimeSeriesMetadata(NonSequentialTimeSeriesMetadataBase):
-    """Defines the metadata for a NonSequentialTimeSeries."""
-
-    type: Literal["NonSequentialTimeSeries"] = "NonSequentialTimeSeries"
-
-    @staticmethod
-    def get_time_series_type_str() -> str:
-        return "NonSequentialTimeSeries"
 
 
 class TimeSeriesKey(InfraSysBaseModel):

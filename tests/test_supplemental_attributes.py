@@ -410,7 +410,7 @@ def test_supplemental_attribute_by_id():
 def test_migrate_supplemental_attribute_associations():
     """Test that migrate_legacy_uuid_table converts UUID-based associations to integer IDs."""
     import uuid as uuid_mod
-    from infrasys.utils.sqlite import create_in_memory_db, execute
+    from infrasys.utils.sqlite import create_in_memory_db
 
     con = create_in_memory_db()
 
@@ -457,46 +457,3 @@ def test_migrate_supplemental_attribute_associations():
     assert len(rows) == 1
     assert rows[0][1] == 99  # attribute_id
     assert rows[0][3] == 42  # component_id
-
-
-def test_normalize_insert_rows():
-    """Test _normalize_insert_rows converts legacy UUID fields to integer IDs."""
-    import uuid as uuid_mod
-    from infrasys.time_series_metadata_store import TimeSeriesMetadataStore
-    from infrasys.utils.sqlite import create_in_memory_db
-    store = TimeSeriesMetadataStore(create_in_memory_db())
-
-    ts_uuid = str(uuid_mod.uuid4())
-    md_uuid = str(uuid_mod.uuid4())
-    rows = [
-        {
-            "time_series_uuid": ts_uuid,
-            "time_series_type": "SingleTimeSeries",
-            "initial_timestamp": datetime(2020, 1, 1),
-            "resolution": "PT1H",
-            "horizon": None,
-            "interval": None,
-            "window_count": None,
-            "length": 100,
-            "name": "active_power",
-            "owner_uuid": str(uuid_mod.uuid4()),
-            "owner_type": "SimpleGenerator",
-            "owner_category": "Component",
-            "features": "[]",
-            "units": None,
-            "metadata_uuid": md_uuid,
-        },
-    ]
-    normalized = store._normalize_insert_rows(rows)
-    assert len(normalized) == 1
-    row = normalized[0]
-    # UUID fields should be renamed to storage_key variants
-    assert "time_series_uuid" not in row
-    assert row["time_series_storage_key"] == ts_uuid
-    assert "metadata_uuid" not in row
-    assert row["metadata_storage_key"] == md_uuid
-    assert "owner_uuid" not in row
-    # Integer IDs should be auto-generated
-    assert isinstance(row["time_series_id"], int)
-    assert isinstance(row["metadata_id"], int)
-    assert isinstance(row["owner_id"], int)

@@ -5,7 +5,7 @@ from uuid import uuid4
 import numpy as np
 import pytest
 
-from infrasys import TIME_SERIES_ASSOCIATIONS_TABLE, Component, Location, SingleTimeSeries
+from infrasys import Component, Location, SingleTimeSeries
 from infrasys.exceptions import (
     ISAlreadyAttached,
     ISConflictingArguments,
@@ -255,10 +255,7 @@ def test_single_time_series():
     assert not system.has_time_series(gen2, name=variable_name)
 
 
-TS_STORAGE_OPTIONS = (
-    TimeSeriesStorageType.TIME_SERIES_STORE,
-    TimeSeriesStorageType.MEMORY,
-)
+TS_STORAGE_OPTIONS = (TimeSeriesStorageType.TIME_SERIES_STORE,)
 
 
 @pytest.mark.parametrize(
@@ -377,14 +374,12 @@ def test_time_series_removal():
     system.add_components(bus, gen1, gen2)
 
     variable_names = ["active_power", "reactive_power"]
-    uuids = []
     for variable_name in variable_names:
         length = 8784
         data = range(length)
         start = datetime(year=2020, month=1, day=1)
         resolution = timedelta(hours=1)
         ts = SingleTimeSeries.from_array(data, variable_name, start, resolution)
-        uuids.append(ts.uuid)
         for gen in (gen1, gen2):
             system.add_time_series(ts, gen, scenario="high", model_year="2030")
             system.add_time_series(ts, gen, scenario="high", model_year="2035")
@@ -614,94 +609,21 @@ def test_system_to_dict():
     assert len(component_dicts) == 3  # 3 generators
 
 
-def test_time_series_metadata_sql():
-    system = SimpleSystem(name="test-system", auto_add_composed_components=True)
-    gen1 = SimpleGenerator.example()
-    system.add_components(gen1)
-    gen2 = system.copy_component(gen1, name="gen2", attach=True)
-    variable_name = "active_power"
-    length = 8784
-    data = range(length)
-    start = datetime(year=2020, month=1, day=1)
-    resolution = timedelta(hours=1)
-    ts1 = SingleTimeSeries.from_array(data, variable_name, start, resolution)
-    ts2 = SingleTimeSeries.from_array(data, variable_name, start, resolution)
-    system.add_time_series(ts1, gen1)
-    system.add_time_series(ts2, gen2)
-    rows = system.time_series.metadata_store.sql(
-        f"""
-        SELECT owner_type, time_series_type, owner_id, time_series_id, time_series_storage_key
-        FROM {TIME_SERIES_ASSOCIATIONS_TABLE}
-        WHERE owner_id = {gen1.id}
-    """
-    )
-    assert len(rows) == 1
-    row = rows[0]
-    assert row[0] == SimpleGenerator.__name__
-    assert row[1] == SingleTimeSeries.__name__
-    assert row[2] == gen1.id
-    assert row[3] == ts1.id
-    assert row[4] == str(ts1.uuid)
-
-
-def test_time_series_metadata_list_rows():
-    system = SimpleSystem(name="test-system", auto_add_composed_components=True)
-    gen1 = SimpleGenerator.example()
-    system.add_components(gen1)
-    gen2 = system.copy_component(gen1, name="gen2", attach=True)
-    variable_name = "active_power"
-    length = 8784
-    data = range(length)
-    start = datetime(year=2020, month=1, day=1)
-    resolution = timedelta(hours=1)
-    ts1 = SingleTimeSeries.from_array(data, variable_name, start, resolution)
-    ts2 = SingleTimeSeries.from_array(data, variable_name, start, resolution)
-    system.add_time_series(ts1, gen1)
-    system.add_time_series(ts2, gen2)
-    columns = [
-        "owner_type",
-        "time_series_type",
-        "owner_id",
-        "time_series_id",
-        "time_series_storage_key",
-    ]
-    rows = system.time_series.metadata_store.list_rows(
-        gen2,
-        name=variable_name,
-        time_series_type=SingleTimeSeries.__name__,
-        columns=columns,
-    )
-    assert len(rows) == 1
-    row = rows[0]
-    assert row[0] == SimpleGenerator.__name__
-    assert row[1] == SingleTimeSeries.__name__
-    assert row[2] == gen2.id
-    assert row[3] == ts2.id
-    assert row[4] == str(ts2.uuid)
-
-
 def test_system_counts():
     system = SimpleSystem(name="test-system", auto_add_composed_components=True)
     gen1 = SimpleGenerator.example()
     gen2 = SimpleGenerator.example()
     system.add_components(gen1, gen2)
     variable_name = "active_power"
-    data = range(10)
 
     def add_time_series(iteration, initial_time, resolution):
         for i in range(5):
-            ts1 = SingleTimeSeries.from_array(
-                data,
-                f"{variable_name}_{iteration}_{i}",
-                initial_time + resolution * i,
-                resolution,
-            )
-            ts2 = SingleTimeSeries.from_array(
-                data,
-                f"{variable_name}_{iteration}_{i}",
-                initial_time + resolution * i,
-                resolution,
-            )
+            # Distinct values per (iteration, i) so each is a distinct stored array;
+            # ts1 and ts2 share the same values, so they deduplicate to one array.
+            data = np.arange(10, dtype=float) + (iteration * 100 + i)
+            name = f"{variable_name}_{iteration}_{i}"
+            ts1 = SingleTimeSeries.from_array(data, name, initial_time + resolution * i, resolution)
+            ts2 = SingleTimeSeries.from_array(data, name, initial_time + resolution * i, resolution)
             system.add_time_series(ts1, gen1, gen2)
             system.add_time_series(ts2, gen1.bus)
 
@@ -713,8 +635,11 @@ def test_system_counts():
     components_by_type = system._components.get_num_components_by_type()
     assert components_by_type[SimpleGenerator] == 2
     assert components_by_type[SimpleBus] == 2
-    ts_counts = system.time_series.metadata_store.get_time_series_counts()
-    assert ts_counts.time_series_count == 2 * 10
+    ts_counts = system.time_series.get_time_series_counts()
+    # 2 iterations x 5 distinct value-arrays each = 10 unique stored arrays.
+    assert ts_counts.time_series_count == 10
+    # Each array is referenced by gen1, gen2 (via ts1) and gen1.bus (via ts2) = 3 references.
+    assert ts_counts.reference_count == 30
     assert (
         ts_counts.time_series_type_count[
             (
