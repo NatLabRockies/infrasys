@@ -292,3 +292,105 @@ def test_forecast_rejects_slicing(tmp_path):
             time_series_type=Deterministic,
             start_time=datetime(2024, 1, 1, 1),
         )
+
+
+# A "perfect forecast" window ``i`` is the slice of the underlying SingleTimeSeries starting at
+# ``i * interval_steps`` with length ``horizon_steps`` (resolution is 1 hour in these tests, so the
+# step counts equal the hour counts).
+@pytest.mark.parametrize(
+    "horizon_hours, interval_hours, length, expected_windows",
+    [
+        (4, 2, 12, 5),  # overlapping windows, interval > resolution
+        (3, 1, 10, 8),  # maximum overlap, interval == resolution
+        (2, 2, 8, 4),  # non-overlapping, contiguous windows
+        (6, 4, 14, 3),  # partial final stride
+    ],
+)
+def test_transform_single_time_series_window_values(
+    tmp_path, horizon_hours, interval_hours, length, expected_windows
+):
+    system, generator = make_system(tmp_path)
+    # Use random (non-monotonic) data so a transpose/orientation bug cannot pass by symmetry.
+    rng = np.random.default_rng(20240601)
+    underlying = rng.random(length)
+    single = SingleTimeSeries.from_array(
+        underlying, "load", datetime(2024, 1, 1), timedelta(hours=1)
+    )
+    system.add_time_series(single, generator)
+
+    horizon = timedelta(hours=horizon_hours)
+    interval = timedelta(hours=interval_hours)
+    count = system.transform_single_time_series(horizon=horizon, interval=interval)
+    assert count == 1
+
+    forecast = system.get_time_series(generator, name="load", time_series_type=Deterministic)
+    assert forecast.window_count == expected_windows
+    assert forecast.data_array.shape == (expected_windows, horizon_hours)
+    assert forecast.horizon == horizon
+    assert forecast.interval == interval
+    assert forecast.resolution == timedelta(hours=1)
+    assert forecast.initial_timestamp == datetime(2024, 1, 1)
+
+    # Each forecast window must equal the slice of the underlying array at its offset.
+    for window in range(expected_windows):
+        start = window * interval_hours
+        np.testing.assert_array_equal(
+            forecast.data_array[window],
+            underlying[start : start + horizon_hours],
+            err_msg=f"window {window} mismatch",
+        )
+
+    # The original SingleTimeSeries is untouched by the transform.
+    np.testing.assert_array_equal(
+        system.get_time_series(generator, name="load", time_series_type=SingleTimeSeries).data,
+        underlying,
+    )
+
+
+def test_transform_single_time_series_window_values_round_trip(tmp_path):
+    system, generator = make_system(tmp_path / "storage")
+    rng = np.random.default_rng(7)
+    underlying = rng.random(16)
+    single = SingleTimeSeries.from_array(
+        underlying, "load", datetime(2024, 1, 1), timedelta(hours=1)
+    )
+    system.add_time_series(single, generator)
+    system.transform_single_time_series(horizon=timedelta(hours=5), interval=timedelta(hours=3))
+
+    filename = tmp_path / "system.json"
+    system.to_json(filename)
+    loaded = SimpleSystem.from_json(filename)
+    loaded_generator = loaded.get_component(SimpleGenerator, generator.name)
+    forecast = loaded.get_time_series(
+        loaded_generator, name="load", time_series_type=Deterministic
+    )
+
+    expected_windows = (16 - 5) // 3 + 1
+    assert forecast.window_count == expected_windows
+    for window in range(expected_windows):
+        start = window * 3
+        np.testing.assert_array_equal(
+            forecast.data_array[window],
+            underlying[start : start + 5],
+            err_msg=f"window {window} mismatch after round trip",
+        )
+
+
+def test_transform_single_time_series_preserves_units(tmp_path):
+    system, generator = make_system(tmp_path)
+    underlying = np.arange(8, dtype=np.float64)
+    single = SingleTimeSeries.from_array(
+        ActivePower(underlying, "watts"), "load", datetime(2024, 1, 1), timedelta(hours=1)
+    )
+    system.add_time_series(single, generator)
+    system.transform_single_time_series(horizon=timedelta(hours=3), interval=timedelta(hours=1))
+
+    forecast = system.get_time_series(generator, name="load", time_series_type=Deterministic)
+    assert isinstance(forecast.data, ActivePower)
+    assert str(forecast.data.units) == "watt"
+    for window in range((8 - 3) // 1 + 1):
+        np.testing.assert_array_equal(
+            forecast.data_array[window],
+            underlying[window : window + 3],
+            err_msg=f"window {window} mismatch",
+        )
