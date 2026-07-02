@@ -282,6 +282,48 @@ def test_transform_single_time_series_round_trip(tmp_path):
     np.testing.assert_array_equal(forecast.data_array, expected)
 
 
+def test_deterministic_collides_with_transformed_view(tmp_path):
+    """Adding an explicit Deterministic must be rejected once a transform-derived
+    DeterministicSingleTimeSeries view of the same series exists; they are mutually exclusive.
+    """
+    from time_series_store import InvalidParameterError
+
+    system, generator = make_system(tmp_path)
+    single = SingleTimeSeries.from_array(
+        np.arange(12, dtype=np.float64),
+        "active_power",
+        datetime(2024, 1, 1),
+        timedelta(hours=1),
+    )
+    system.add_time_series(single, generator)
+    system.transform_single_time_series(horizon=timedelta(hours=4), interval=timedelta(hours=1))
+
+    with pytest.raises(InvalidParameterError, match="mutually exclusive"):
+        system.add_time_series(make_deterministic(), generator)
+
+
+def test_transform_collides_with_explicit_deterministic(tmp_path):
+    """transform_single_time_series must be rejected once an explicit Deterministic forecast of
+    the same series exists; the derived DeterministicSingleTimeSeries would collide with it.
+    """
+    from time_series_store import InvalidParameterError
+
+    system, generator = make_system(tmp_path)
+    system.add_time_series(make_deterministic(), generator)
+    single = SingleTimeSeries.from_array(
+        np.arange(12, dtype=np.float64),
+        "active_power",
+        datetime(2024, 1, 1),
+        timedelta(hours=1),
+    )
+    system.add_time_series(single, generator)
+
+    with pytest.raises(InvalidParameterError, match="mutually exclusive"):
+        system.transform_single_time_series(
+            horizon=timedelta(hours=4), interval=timedelta(hours=1)
+        )
+
+
 def test_forecast_rejects_slicing(tmp_path):
     system, generator = make_system(tmp_path)
     system.add_time_series(make_deterministic(), generator)

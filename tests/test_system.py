@@ -13,7 +13,11 @@ from infrasys.exceptions import (
     ISOperationNotAllowed,
 )
 from infrasys.quantities import ActivePower
-from infrasys.time_series_models import TimeSeriesStorageType
+from infrasys.time_series_models import (
+    Deterministic,
+    NonSequentialTimeSeries,
+    TimeSeriesStorageType,
+)
 from infrasys.utils.time_utils import to_iso_8601
 
 from .models.simple_system import (
@@ -817,6 +821,130 @@ def test_bulk_add_time_series_with_rollback(storage_type: TimeSeriesStorageType)
             system.add_time_series(ts, gen, context=conn)
 
     assert not system.has_time_series(gen, name=ts_name)
+
+
+def test_bulk_add_deterministic_time_series():
+    system = SimpleSystem()
+    bus = SimpleBus(name="test-bus", voltage=1.1)
+    gen = SimpleGenerator(name="gen", active_power=1.0, rating=1.0, bus=bus, available=True)
+    system.add_components(bus, gen)
+
+    initial_time = datetime(year=2020, month=9, day=1)
+    resolution = timedelta(hours=1)
+    horizon = timedelta(hours=8)
+    interval = timedelta(hours=1)
+    window_count = 3
+
+    time_series: list[Deterministic] = []
+    with system.open_time_series_store() as conn:
+        for i in range(5):
+            data = np.random.rand(window_count, 8)
+            ts = Deterministic.from_array(
+                data,
+                f"forecast_{i}",
+                initial_time,
+                resolution,
+                horizon,
+                interval,
+                window_count,
+            )
+            system.add_time_series(ts, gen, context=conn)
+            time_series.append(ts)
+
+    with system.open_time_series_store() as conn:
+        for expected_ts in time_series:
+            actual_ts = system.get_time_series(
+                gen,
+                time_series_type=Deterministic,
+                name=expected_ts.name,
+                context=conn,
+            )
+            assert isinstance(actual_ts, Deterministic)
+            np.testing.assert_array_equal(actual_ts.data_array, expected_ts.data_array)
+            assert actual_ts.horizon == horizon
+            assert actual_ts.interval == interval
+            assert actual_ts.window_count == window_count
+
+
+@pytest.mark.parametrize("storage_type", TS_STORAGE_OPTIONS)
+def test_bulk_add_deterministic_time_series_with_rollback(storage_type: TimeSeriesStorageType):
+    system = SimpleSystem(time_series_storage_type=storage_type)
+    bus = SimpleBus(name="test-bus", voltage=1.1)
+    gen = SimpleGenerator(name="gen", active_power=1.0, rating=1.0, bus=bus, available=True)
+    system.add_components(bus, gen)
+    ts_name = "forecast"
+    with pytest.raises(ISAlreadyAttached):
+        with system.open_time_series_store() as conn:
+            ts = Deterministic.from_array(
+                np.random.rand(3, 8),
+                ts_name,
+                datetime(year=2020, month=9, day=1),
+                timedelta(hours=1),
+                timedelta(hours=8),
+                timedelta(hours=1),
+                3,
+            )
+            system.add_time_series(ts, gen, context=conn)
+            assert system.has_time_series(gen, name=ts_name, time_series_type=Deterministic)
+            system.add_time_series(ts, gen, context=conn)
+
+    assert not system.has_time_series(gen, name=ts_name, time_series_type=Deterministic)
+
+
+def test_bulk_add_nonsequential_time_series():
+    system = SimpleSystem()
+    bus = SimpleBus(name="test-bus", voltage=1.1)
+    gen = SimpleGenerator(name="gen", active_power=1.0, rating=1.0, bus=bus, available=True)
+    system.add_components(bus, gen)
+
+    length = 4
+    timestamps = np.array(
+        [datetime(year=2020, month=1, day=1) + timedelta(hours=4 * i) for i in range(length)],
+        dtype=object,
+    )
+
+    time_series: list[NonSequentialTimeSeries] = []
+    with system.open_time_series_store() as conn:
+        for i in range(5):
+            data = np.random.rand(length)
+            ts = NonSequentialTimeSeries.from_array(data, timestamps, f"events_{i}")
+            system.add_time_series(ts, gen, context=conn)
+            time_series.append(ts)
+
+    with system.open_time_series_store() as conn:
+        for expected_ts in time_series:
+            actual_ts = system.get_time_series(
+                gen,
+                time_series_type=NonSequentialTimeSeries,
+                name=expected_ts.name,
+                context=conn,
+            )
+            assert isinstance(actual_ts, NonSequentialTimeSeries)
+            np.testing.assert_array_equal(actual_ts.data, expected_ts.data)
+            np.testing.assert_array_equal(actual_ts.timestamps, expected_ts.timestamps)
+
+
+@pytest.mark.parametrize("storage_type", TS_STORAGE_OPTIONS)
+def test_bulk_add_nonsequential_time_series_with_rollback(storage_type: TimeSeriesStorageType):
+    system = SimpleSystem(time_series_storage_type=storage_type)
+    bus = SimpleBus(name="test-bus", voltage=1.1)
+    gen = SimpleGenerator(name="gen", active_power=1.0, rating=1.0, bus=bus, available=True)
+    system.add_components(bus, gen)
+    ts_name = "events"
+    timestamps = np.array(
+        [datetime(year=2020, month=1, day=1) + timedelta(hours=4 * i) for i in range(4)],
+        dtype=object,
+    )
+    with pytest.raises(ISAlreadyAttached):
+        with system.open_time_series_store() as conn:
+            ts = NonSequentialTimeSeries.from_array(np.random.rand(4), timestamps, ts_name)
+            system.add_time_series(ts, gen, context=conn)
+            assert system.has_time_series(
+                gen, name=ts_name, time_series_type=NonSequentialTimeSeries
+            )
+            system.add_time_series(ts, gen, context=conn)
+
+    assert not system.has_time_series(gen, name=ts_name, time_series_type=NonSequentialTimeSeries)
 
 
 def test_component_associations_clear():
