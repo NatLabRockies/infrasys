@@ -1,19 +1,20 @@
 """Manages supplemental"""
 
-import sqlite3
 from contextlib import contextmanager
-from typing import Any, Callable, Generator, Iterable, Optional, Sequence, Type, TypeVar, cast
+from typing import Any, Callable, Generator, Iterable, Optional, Type, TypeVar, cast
 from uuid import UUID
 
 from loguru import logger
+from time_series_store import (
+    DuplicateAssociationError,
+    SupplementalAttributeAssociation,
+    TimeSeriesStore,
+)
 
 from infrasys.component import Component
 from infrasys.exceptions import ISAlreadyAttached, ISNotStored, ISOperationNotAllowed
 from infrasys.id_manager import IDManager
 from infrasys.supplemental_attribute import SupplementalAttribute
-from infrasys.supplemental_attribute_associations import (
-    SupplementalAttributeAssociationsStore,
-)
 
 T = TypeVar("T", bound="SupplementalAttribute")
 
@@ -21,13 +22,12 @@ T = TypeVar("T", bound="SupplementalAttribute")
 class SupplementalAttributeManager:
     """Manages supplemental attributes"""
 
-    def __init__(self, con: sqlite3.Connection, initialize: bool = True, **kwargs) -> None:
-        self._con = con
+    def __init__(self, store: TimeSeriesStore, **kwargs) -> None:
+        self._store = store
         self._attributes: dict[Type, dict[UUID, SupplementalAttribute]] = {}
         self._attributes_by_id: dict[int, SupplementalAttribute] = {}
         self._id_manager = IDManager(next_id=1)
-        self._associations = SupplementalAttributeAssociationsStore(con, initialize=initialize)
-        self._context: sqlite3.Connection | None = None
+        self._in_context = False
         self._context_new_attributes: list[SupplementalAttribute] = []
         self._context_removed_attributes: list[SupplementalAttribute] = []
 
@@ -67,17 +67,30 @@ class SupplementalAttributeManager:
 
         try:
             if component is not None:
-                self._associations.add(component, attribute, connection=self._context)
+                self._add_association(component, attribute)
         except Exception:
             if not already_attached:
                 self.rollback_attribute_addition(attribute)
             raise
 
-        if self._context is not None and not already_attached:
+        if self._in_context and not already_attached:
             self._context_new_attributes.append(attribute)
 
+    def _add_association(self, component: Component, attribute: SupplementalAttribute) -> None:
+        association = SupplementalAttributeAssociation(
+            _get_component_id(component),
+            type(component).__name__,
+            _get_attribute_id(attribute),
+            type(attribute).__name__,
+        )
+        try:
+            self._store.add_supplemental_attribute_association(association)
+        except DuplicateAssociationError:
+            msg = f"An association with {component=} {attribute=} is already stored."
+            raise ISAlreadyAttached(msg)
+
     @contextmanager
-    def open_metadata_store(self) -> Generator[sqlite3.Connection, None, None]:
+    def open_metadata_store(self) -> Generator[TimeSeriesStore, None, None]:
         """Open a transactional metadata context for supplemental attributes.
 
         Notes
@@ -85,34 +98,43 @@ class SupplementalAttributeManager:
         Nested metadata contexts are disallowed. If a nested context attempt raises
         and the exception escapes this context manager, all metadata updates already
         performed in this context are rolled back.
+
+        The backing store has no transaction primitive, so the association rows are
+        snapshotted on entry and restored verbatim if an exception escapes the context.
+        Association rows are small metadata, so a full snapshot is cheap.
         """
-        if self._context is not None:
+        if self._in_context:
             msg = "Cannot nest open_metadata_store contexts."
             raise ISOperationNotAllowed(msg)
 
-        self._context = self._con
+        snapshot = self._store.list_supplemental_attribute_associations()
+        self._in_context = True
         self._context_new_attributes = []
         self._context_removed_attributes = []
         try:
-            yield self._con
+            yield self._store
         except Exception:
-            self._con.rollback()
+            self._restore_associations(snapshot)
             self._rollback_new_attributes()
             self._rollback_removed_attributes()
             raise
-        else:
-            self._con.commit()
         finally:
-            self._context = None
+            self._in_context = False
             self._context_new_attributes = []
             self._context_removed_attributes = []
+
+    def _restore_associations(self, snapshot: list[SupplementalAttributeAssociation]) -> None:
+        """Replace all stored associations with the ones captured in the snapshot."""
+        self._store.remove_supplemental_attribute_associations()
+        if snapshot:
+            self._store.add_supplemental_attribute_associations(snapshot)
 
     def _rollback_new_attributes(self) -> None:
         for attribute in self._context_new_attributes:
             self.rollback_attribute_addition(attribute)
 
     def _rollback_removed_attributes(self) -> None:
-        # Database association rows are restored by self._con.rollback() before this
+        # Association rows are restored by self._restore_associations() before this
         # method runs. This only repairs in-memory attribute bookkeeping.
         for attribute in self._context_removed_attributes:
             attr_type = type(attribute)
@@ -136,15 +158,18 @@ class SupplementalAttributeManager:
 
     def get_attribute_counts_by_type(self) -> list[dict[str, Any]]:
         """Return a list of dicts of stored attribute counts by type."""
-        return self._associations.get_attribute_counts_by_type()
+        return [
+            {"type": type_, "count": count}
+            for type_, count in self._store.supplemental_attribute_counts_by_type()
+        ]
 
     def get_num_attributes(self) -> int:
         """Return the number of supplemental attributes."""
-        return self._associations.get_num_attributes()
+        return self._store.count_supplemental_attributes()
 
     def get_num_components_with_attributes(self) -> int:
         """Return the number of components with supplemental attributes."""
-        return self._associations.get_num_components_with_attributes()
+        return self._store.count_components_with_attributes()
 
     def get_by_uuid(self, uuid: UUID) -> SupplementalAttribute:
         """Return the supplemental with the given UUID."""
@@ -171,7 +196,9 @@ class SupplementalAttributeManager:
 
     def get_component_ids_with_attribute(self, attribute: SupplementalAttribute) -> list[int]:
         """Return all component IDs attached to the given attribute."""
-        return self._associations.list_associated_component_ids(attribute)
+        return self._store.list_components_with_attributes(
+            attribute_id=_get_attribute_id(attribute)
+        )
 
     def get_by_id(self, id_: int) -> SupplementalAttribute:
         """Return the supplemental attribute with the given integer ID.
@@ -193,9 +220,10 @@ class SupplementalAttributeManager:
         attribute_type: Optional[Type[T]] = None,
         filter_func: Optional[Callable[[T], bool]] = None,
     ) -> list[T]:
-        attribute_type_name = None if attribute_type is None else attribute_type.__name__
-        attribute_ids = self._associations.list_associated_supplemental_attribute_ids(
-            component, attribute_type=attribute_type_name
+        attribute_types = None if attribute_type is None else [attribute_type.__name__]
+        attribute_ids = self._store.list_supplemental_attribute_ids(
+            component_id=_get_component_id(component),
+            attribute_types=attribute_types,
         )
         attributes: list[T] = []
         for id_ in attribute_ids:
@@ -210,10 +238,9 @@ class SupplementalAttributeManager:
 
     def has_association(self, component: Component, attribute: SupplementalAttribute) -> bool:
         """Return True if the component and supplemental attribute have an association."""
-        return self._associations.has_association_by_component_and_attribute(
-            component,
-            attribute,
-            connection=self._context,
+        return self._store.has_supplemental_attribute_association(
+            component_id=_get_component_id(component),
+            attribute_id=_get_attribute_id(attribute),
         )
 
     def has_association_by_type(
@@ -224,15 +251,10 @@ class SupplementalAttributeManager:
         """Return true if the component has an association with a supplemental attribute,
         optionally with the given type.
         """
-        if attribute_type is None:
-            return self._associations.has_association_by_component(
-                component,
-                connection=self._context,
-            )
-        return self._associations.has_association_by_component_and_attribute_type(
-            component,
-            attribute_type.__name__,
-            connection=self._context,
+        attribute_types = None if attribute_type is None else [attribute_type.__name__]
+        return self._store.has_supplemental_attribute_association(
+            component_id=_get_component_id(component),
+            attribute_types=attribute_types,
         )
 
     def remove(
@@ -246,13 +268,14 @@ class SupplementalAttributeManager:
         so that time series is handled.
         """
         self.raise_if_not_attached(attribute)
-        self._associations.remove_association_by_attribute(
-            attribute,
-            must_exist=association_must_exist,
-            connection=self._context,
+        num_deleted = self._store.remove_supplemental_attribute_associations(
+            attribute_id=_get_attribute_id(attribute)
         )
+        if association_must_exist and num_deleted < 1:
+            msg = f"Bug: unexpected number of deletions: {num_deleted}. Should have been >= 1."
+            raise Exception(msg)
         attr_type = type(attribute)
-        if self._context is not None:
+        if self._in_context:
             self._context_removed_attributes.append(attribute)
         self._attributes[attr_type].pop(attribute.uuid)
         if attribute.id is not None:
@@ -273,11 +296,15 @@ class SupplementalAttributeManager:
         so that time series is handled.
         """
         self.raise_if_not_attached(attribute)
-        self._associations.remove_association(component, attribute, connection=self._context)
-        if not self._associations.has_association_by_attribute(
-            attribute,
-            connection=self._context,
-        ):
+        attribute_id = _get_attribute_id(attribute)
+        num_deleted = self._store.remove_supplemental_attribute_associations(
+            component_id=_get_component_id(component),
+            attribute_id=attribute_id,
+        )
+        if num_deleted != 1:
+            msg = f"Bug: unexpected number of deletions: {num_deleted}. Should have been 1."
+            raise Exception(msg)
+        if not self._store.has_supplemental_attribute_association(attribute_id=attribute_id):
             self.remove(attribute, association_must_exist=False)
 
     def iter(
@@ -321,6 +348,16 @@ class SupplementalAttributeManager:
             msg = f"{attribute.label} is not attached to the system"
             raise ISNotStored(msg)
 
-    def migrate_legacy_association_schema(self, components: Sequence[Component]) -> None:
-        """Migrate stored association rows from legacy UUID columns to integer ID columns."""
-        self._associations.migrate_legacy_uuid_table(list(components), list(self.iter_all()))
+
+def _get_component_id(component: Component) -> int:
+    if component.id is None:
+        msg = f"{component.label} does not have an id assigned."
+        raise ISOperationNotAllowed(msg)
+    return component.id
+
+
+def _get_attribute_id(attribute: SupplementalAttribute) -> int:
+    if attribute.id is None:
+        msg = f"{attribute.label} does not have an id assigned."
+        raise ISOperationNotAllowed(msg)
+    return attribute.id

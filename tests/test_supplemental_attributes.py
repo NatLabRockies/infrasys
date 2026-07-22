@@ -213,7 +213,7 @@ def test_add_supplemental_attribute_rejects_connection_kwarg():
     system.add_component(gen)
 
     with pytest.raises(TypeError):
-        system.add_supplemental_attribute(bus, attr1, **{"connection": system._con})
+        system.add_supplemental_attribute(bus, attr1, **{"connection": object()})
 
     assert not system.get_supplemental_attributes_with_component(bus)
     assert system.get_num_supplemental_attributes() == 0
@@ -284,15 +284,14 @@ def test_association_read_queries_accept_transaction_connection():
     system.add_component(gen)
     system.add_supplemental_attribute(bus, attr1)
 
-    with system.open_metadata_store() as connection:
-        associations = system._supplemental_attr_mgr._associations
-        assert associations.has_association_by_component_and_attribute(
-            bus, attr1, connection=connection
+    with system.open_metadata_store() as store:
+        assert store.has_supplemental_attribute_association(
+            component_id=bus.id, attribute_id=attr1.id
         )
-        assert associations.has_association_by_attribute(attr1, connection=connection)
-        assert associations.has_association_by_component(bus, connection=connection)
-        assert associations.has_association_by_component_and_attribute_type(
-            bus, GeographicInfo.__name__, connection=connection
+        assert store.has_supplemental_attribute_association(attribute_id=attr1.id)
+        assert store.has_supplemental_attribute_association(component_id=bus.id)
+        assert store.has_supplemental_attribute_association(
+            component_id=bus.id, attribute_types=[GeographicInfo.__name__]
         )
 
 
@@ -350,7 +349,7 @@ def test_list_associated_component_ids():
     system.add_supplemental_attribute(bus, attr1)
     system.add_supplemental_attribute(gen, attr1)
 
-    ids = system._supplemental_attr_mgr._associations.list_associated_component_ids(attr1)
+    ids = system._supplemental_attr_mgr.get_component_ids_with_attribute(attr1)
     assert len(ids) == 2
     assert bus.id in ids
     assert gen.id in ids
@@ -367,15 +366,17 @@ def test_list_associated_supplemental_attribute_ids_with_type_filter():
     system.add_supplemental_attribute(bus, attr1)
     system.add_supplemental_attribute(bus, attr2)
 
-    assoc = system._supplemental_attr_mgr._associations
+    store = system._supplemental_attr_mgr._store
     # Without type filter — both attributes
-    ids = assoc.list_associated_supplemental_attribute_ids(bus)
+    ids = store.list_supplemental_attribute_ids(component_id=bus.id)
     assert len(ids) == 2
     assert attr1.id in ids
     assert attr2.id in ids
 
     # With type filter — only GeographicInfo
-    ids = assoc.list_associated_supplemental_attribute_ids(bus, attribute_type="GeographicInfo")
+    ids = store.list_supplemental_attribute_ids(
+        component_id=bus.id, attribute_types=["GeographicInfo"]
+    )
     assert ids == [attr1.id]
 
 
@@ -407,53 +408,79 @@ def test_supplemental_attribute_by_id():
     assert system.get_supplemental_attribute_by_id(attr1.id) is attr1
 
 
-def test_migrate_supplemental_attribute_associations():
-    """Test that migrate_legacy_uuid_table converts UUID-based associations to integer IDs."""
-    import uuid as uuid_mod
-    from infrasys.utils.sqlite import create_in_memory_db
-
-    con = create_in_memory_db()
-
-    # Create a legacy UUID-based table
-    legacy_schema = [
-        "id INTEGER PRIMARY KEY",
-        "attribute_uuid TEXT NOT NULL",
-        "attribute_type TEXT NOT NULL",
-        "component_uuid TEXT NOT NULL",
-        "component_type TEXT NOT NULL",
-    ]
-    table = "supplemental_attribute_associations"
-    con.execute(f"CREATE TABLE {table}({','.join(legacy_schema)})")
-    con.commit()
-
-    # Insert a legacy association
-    comp_uuid = str(uuid_mod.uuid4())
-    attr_uuid = str(uuid_mod.uuid4())
-    con.execute(
-        f"INSERT INTO {table} VALUES(?,?,?,?,?)",
-        (None, attr_uuid, "GeographicInfo", comp_uuid, "SimpleBus"),
-    )
-    con.commit()
-
-    # Create components and attributes with IDs
+def test_add_duplicate_supplemental_attribute_association_raises():
+    """A second add of the same (component, attribute) pair raises ISAlreadyAttached."""
     bus = SimpleBus(name="test-bus", voltage=1.1)
-    bus.id = 42
-    bus.legacy_uuid = uuid_mod.UUID(comp_uuid)
+    gen = SimpleGenerator(name="gen1", active_power=1.0, rating=1.0, bus=bus, available=True)
     attr1 = GeographicInfo.example()
-    attr1.id = 99
-    attr1.legacy_uuid = uuid_mod.UUID(attr_uuid)
+    system = SimpleSystem(auto_add_composed_components=True)
+    system.add_component(gen)
+    system.add_supplemental_attribute(bus, attr1)
 
-    from infrasys.supplemental_attribute_associations import SupplementalAttributeAssociationsStore
-    store = SupplementalAttributeAssociationsStore(con, initialize=False)
-    store.migrate_legacy_uuid_table(components=[bus], attributes=[attr1])
+    with pytest.raises(ISAlreadyAttached):
+        system.add_supplemental_attribute(bus, attr1)
 
-    # Verify migration succeeded
-    columns = {row[1] for row in con.execute(f"PRAGMA table_info({table})")}
-    assert "attribute_id" in columns
-    assert "component_id" in columns
-    assert "attribute_uuid" not in columns
+    # The failed add must not have disturbed the stored state.
+    assert system.get_num_supplemental_attributes() == 1
+    assert len(system.get_supplemental_attributes_with_component(bus)) == 1
+    assert system.get_supplemental_attribute_by_uuid(attr1.uuid) is attr1
 
-    rows = con.execute(f"SELECT * FROM {table}").fetchall()
-    assert len(rows) == 1
-    assert rows[0][1] == 99  # attribute_id
-    assert rows[0][3] == 42  # component_id
+
+def test_metadata_context_restores_removed_associations():
+    """A failure inside open_metadata_store restores association rows that were removed."""
+    bus = SimpleBus(name="test-bus", voltage=1.1)
+    gen = SimpleGenerator(name="gen1", active_power=1.0, rating=1.0, bus=bus, available=True)
+    attr1 = GeographicInfo.example()
+    attr2 = Attribute(energy=Energy(10.0, "kWh"))
+    system = SimpleSystem(auto_add_composed_components=True)
+    system.add_component(gen)
+    system.add_supplemental_attribute(bus, attr1)
+    system.add_supplemental_attribute(gen, attr2)
+
+    store = system._supplemental_attr_mgr._store
+    before = store.list_supplemental_attribute_associations()
+    assert len(before) == 2
+
+    with pytest.raises(RuntimeError):
+        with system.open_metadata_store():
+            system.remove_supplemental_attribute(attr1)
+            system.remove_supplemental_attribute(attr2)
+            assert not store.list_supplemental_attribute_associations()
+            msg = "boom"
+            raise RuntimeError(msg)
+
+    assert set(store.list_supplemental_attribute_associations()) == set(before)
+    assert system.get_num_supplemental_attributes() == 2
+    assert system.get_supplemental_attribute_by_uuid(attr1.uuid) is attr1
+    assert system.get_supplemental_attributes_with_component(bus) == [attr1]
+    assert system.get_supplemental_attributes_with_component(gen) == [attr2]
+
+
+def test_supplemental_attribute_associations_survive_round_trip(tmp_path):
+    """Association rows persist in the store's SQLite catalog across save/load."""
+    bus = SimpleBus(name="test-bus", voltage=1.1)
+    gen = SimpleGenerator(name="gen1", active_power=1.0, rating=1.0, bus=bus, available=True)
+    attr1 = GeographicInfo.example()
+    attr2 = Attribute(energy=Energy(10.0, "kWh"))
+    system = SimpleSystem(auto_add_composed_components=True)
+    system.add_component(gen)
+    system.add_supplemental_attribute(bus, attr1)
+    system.add_supplemental_attribute(gen, attr1)
+    system.add_supplemental_attribute(gen, attr2)
+
+    save_dir = tmp_path / "test_system"
+    system.save(save_dir)
+    system2 = SimpleSystem.from_json(save_dir / "system.json")
+
+    bus2 = system2.get_component(SimpleBus, "test-bus")
+    gen2 = system2.get_component(SimpleGenerator, "gen1")
+    assert system2.get_num_supplemental_attributes() == 2
+    assert system2.get_num_components_with_supplemental_attributes() == 2
+    assert [x.id for x in system2.get_supplemental_attributes_with_component(bus2)] == [attr1.id]
+    assert sorted(
+        x.id for x in system2.get_supplemental_attributes_with_component(gen2)
+    ) == sorted([attr1.id, attr2.id])
+    attr1_in_system2 = system2.get_supplemental_attribute_by_id(attr1.id)
+    assert sorted(
+        x.id for x in system2.get_components_with_supplemental_attribute(attr1_in_system2)
+    ) == sorted([bus.id, gen.id])

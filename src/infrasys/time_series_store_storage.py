@@ -112,6 +112,14 @@ class TimeSeriesStoreStorage:
         # (owner_id, owner_category_name) -> {assoc_key -> _StoredSeries}
         self._index: dict[tuple[int, str], dict[tuple, _StoredSeries]] = {}
 
+    @property
+    def store(self) -> TimeSeriesStore:
+        """Return the underlying time-series-store object.
+
+        Component and supplemental attribute associations are stored in its SQLite catalog.
+        """
+        return self._store
+
     @contextmanager
     def open_time_series_store(
         self, mode: Literal["r", "r+", "a", "w", "w-"] = "a"
