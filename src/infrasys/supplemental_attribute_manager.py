@@ -5,10 +5,10 @@ from typing import Any, Callable, Generator, Iterable, Optional, Type, TypeVar, 
 from uuid import UUID
 
 from loguru import logger
-from time_series_store import (
+from castore import (
     DuplicateAssociationError,
     SupplementalAttributeAssociation,
-    TimeSeriesStore,
+    Store,
 )
 
 from infrasys.component import Component
@@ -22,7 +22,7 @@ T = TypeVar("T", bound="SupplementalAttribute")
 class SupplementalAttributeManager:
     """Manages supplemental attributes"""
 
-    def __init__(self, store: TimeSeriesStore, **kwargs) -> None:
+    def __init__(self, store: Store, **kwargs) -> None:
         self._store = store
         self._attributes: dict[Type, dict[UUID, SupplementalAttribute]] = {}
         self._attributes_by_id: dict[int, SupplementalAttribute] = {}
@@ -90,7 +90,7 @@ class SupplementalAttributeManager:
             raise ISAlreadyAttached(msg)
 
     @contextmanager
-    def open_metadata_store(self) -> Generator[TimeSeriesStore, None, None]:
+    def open_metadata_store(self) -> Generator[Store, None, None]:
         """Open a transactional metadata context for supplemental attributes.
 
         Notes

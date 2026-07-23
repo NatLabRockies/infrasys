@@ -12,7 +12,7 @@ from uuid import UUID, uuid4
 
 import orjson
 from loguru import logger
-from time_series_store import TimeSeriesStore
+from castore import Store
 from rich import print as _pprint
 from rich.table import Table
 
@@ -1494,7 +1494,7 @@ class System:
             yield conn
 
     @contextmanager
-    def open_metadata_store(self) -> Generator[TimeSeriesStore, None, None]:
+    def open_metadata_store(self) -> Generator[Store, None, None]:
         """Open a transactional context for supplemental attribute metadata.
 
         Any failure restores the supplemental attribute associations that were stored on
@@ -1502,7 +1502,7 @@ class System:
 
         Returns
         -------
-        TimeSeriesStore
+        Store
             The store that holds the supplemental attribute associations.
 
         Examples

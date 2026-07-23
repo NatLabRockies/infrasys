@@ -81,6 +81,21 @@ wheels = [
 ]
 
 [[package]]
+name = "castore"
+version = "0.1.0"
+source = { directory = "../castore/crates/castore-py" }
+dependencies = [
+    { name = "numpy" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "numpy", specifier = ">=1.24" },
+    { name = "pytest", marker = "extra == 'test'", specifier = ">=7" },
+]
+provides-extras = ["test"]
+
+[[package]]
 name = "certifi"
 version = "2025.8.3"
 source = { registry = "https://pypi.org/simple" }
@@ -344,6 +359,7 @@ name = "infrasys"
 version = "1.2.0"
 source = { editable = "." }
 dependencies = [
+    { name = "castore" },
     { name = "loguru" },
     { name = "numpy" },
     { name = "orjson" },
@@ -352,7 +368,6 @@ dependencies = [
     { name = "pydantic" },
     { name = "python-dateutil" },
     { name = "rich" },
-    { name = "time-series-store" },
 ]
 
 [package.dev-dependencies]
@@ -382,6 +397,7 @@ docs = [
 
 [package.metadata]
 requires-dist = [
+    { name = "castore", directory = "../castore/crates/castore-py" },
     { name = "loguru", specifier = ">=0.7,<0.8" },
     { name = "numpy", specifier = ">=2,<3" },
     { name = "orjson", specifier = ">=3.11.5,<4" },
@@ -390,7 +406,6 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "python-dateutil", specifier = ">=2.9,<3" },
     { name = "rich", specifier = ">=13.7,<14" },
-    { name = "time-series-store", directory = "../time-series-store/crates/time-series-store-py" },
 ]
 
 [package.metadata.requires-dev]
@@ -1398,21 +1413,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/28/e3/55dcc2cfbc3ca9c29
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f1/7b/ce1eafaf1a76852e2ec9b22edecf1daa58175c090266e9f6c64afcd81d91/stack_data-0.6.3-py3-none-any.whl", hash = "sha256:d5558e0c25a4cb0853cddad3d77da9891a08cb85dd9f9f91b9f8cd66e511e695", size = 24521, upload-time = "2023-09-30T13:58:03.53Z" },
 ]
-
-[[package]]
-name = "time-series-store"
-version = "0.1.0"
-source = { directory = "../time-series-store/crates/time-series-store-py" }
-dependencies = [
-    { name = "numpy" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "numpy", specifier = ">=1.24" },
-    { name = "pytest", marker = "extra == 'test'", specifier = ">=7" },
-]
-provides-extras = ["test"]
 
 [[package]]
 name = "tomli"

@@ -30,12 +30,12 @@ import numpy as np
 import orjson
 import pint
 from loguru import logger
-from time_series_store import (  # type: ignore[import-untyped]
+from castore import (  # type: ignore[import-untyped]
     Deterministic as RustDeterministic,
     NonSequentialTimeSeries as RustNonSequentialTimeSeries,
     OwnerCategory,
     SingleTimeSeries as RustSingleTimeSeries,
-    TimeSeriesStore,
+    Store,
 )
 
 from infrasys.component import Component
@@ -106,14 +106,14 @@ class TimeSeriesStoreStorage:
 
     STORAGE_FILE = "time_series_store.nc"
 
-    def __init__(self, directory: Path, store: TimeSeriesStore) -> None:
+    def __init__(self, directory: Path, store: Store) -> None:
         self._directory = directory
         self._store = store
         # (owner_id, owner_category_name) -> {assoc_key -> _StoredSeries}
         self._index: dict[tuple[int, str], dict[tuple, _StoredSeries]] = {}
 
     @property
-    def store(self) -> TimeSeriesStore:
+    def store(self) -> Store:
         """Return the underlying time-series-store object.
 
         Component and supplemental attribute associations are stored in its SQLite catalog.
@@ -158,7 +158,7 @@ class TimeSeriesStoreStorage:
         compression_level: int = 3,
         shuffle: bool = True,
     ) -> "TimeSeriesStoreStorage":
-        store = TimeSeriesStore.create(
+        store = Store.create(
             path=directory / cls.STORAGE_FILE,
             compression=compression,
             compression_level=compression_level,
@@ -184,7 +184,7 @@ class TimeSeriesStoreStorage:
             atexit.register(clean_tmp_folder, directory)
             cls._copy_store(time_series_dir, directory)
 
-        store = TimeSeriesStore.open(
+        store = Store.open(
             path=directory / cls.STORAGE_FILE,
             read_only=read_only,
         )

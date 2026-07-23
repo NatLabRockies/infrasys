@@ -6,7 +6,7 @@ from collections import defaultdict
 from typing import Any, Callable, Iterable, Optional, Type
 from uuid import UUID
 from loguru import logger
-from time_series_store import ParentChildAssociation, TimeSeriesStore
+from castore import ParentChildAssociation, Store
 
 from infrasys.component import Component
 from infrasys.exceptions import (
@@ -25,7 +25,7 @@ class ComponentManager:
     def __init__(
         self,
         auto_add_composed_components: bool,
-        store: TimeSeriesStore,
+        store: Store,
     ) -> None:
         self._components: dict[Type, dict[str | None, list[Component]]] = {}
         self._components_by_id: dict[int, Component] = {}
