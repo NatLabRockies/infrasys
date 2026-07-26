@@ -1,7 +1,6 @@
 """Defines a System"""
 
 import shutil
-import sqlite3
 import tempfile
 import zipfile
 from collections import defaultdict
@@ -13,6 +12,7 @@ from uuid import UUID, uuid4
 
 import orjson
 from loguru import logger
+from infrastore import Store
 from rich import print as _pprint
 from rich.table import Table
 
@@ -50,7 +50,6 @@ from .time_series_models import (
     TimeSeriesStorageContext,
 )
 from .utils.migrations import upgrade_legacy_component_ids
-from .utils.sqlite import backup, create_in_memory_db, restore
 from .utils.time_utils import from_iso_8601
 
 T = TypeVar("T", bound="Component")
@@ -61,14 +60,11 @@ FileMode: TypeAlias = Literal["r", "r+", "a"]
 class System:
     """Implements behavior for systems"""
 
-    DB_FILENAME = "time_series_metadata.db"
-
     def __init__(
         self,
         name: Optional[str] = None,
         description: Optional[str] = None,
         auto_add_composed_components: bool = False,
-        con: Optional[sqlite3.Connection] = None,
         time_series_manager: Optional[TimeSeriesManager] = None,
         supplemental_attribute_manager: Optional[SupplementalAttributeManager] = None,
         uuid: Optional[UUID] = None,
@@ -87,8 +83,6 @@ class System:
             The default behavior is to raise an ISOperationNotAllowed when this condition occurs.
             This handles values that are components, such as generator.bus, and lists of
             components, such as subsystem.generators, but not any other form of nested components.
-        con : None | sqlite3.Connection
-            Users should not pass this. De-serialization (from_json) will pass a Connection.
         time_series_manager : None | TimeSeriesManager
             Users should not pass this. De-serialization (from_json) will pass a constructed
             manager.
@@ -112,14 +106,14 @@ class System:
         self._uuid = uuid or uuid4()
         self._name = name
         self._description = description
-        self._component_mgr = ComponentManager(auto_add_composed_components)
-        self._con = con or create_in_memory_db()
         time_series_kwargs = {k: v for k, v in kwargs.items() if k in TIME_SERIES_KWARGS}
-        self._time_series_mgr = time_series_manager or TimeSeriesManager(
-            self._con, **time_series_kwargs
-        )
+        # The time series store owns the SQLite catalog that holds component and supplemental
+        # attribute associations, so it must exist before the managers that use it.
+        self._time_series_mgr = time_series_manager or TimeSeriesManager(**time_series_kwargs)
+        storage = self._time_series_mgr.storage
+        self._component_mgr = ComponentManager(auto_add_composed_components, storage)
         self._supplemental_attr_mgr = (
-            supplemental_attribute_manager or SupplementalAttributeManager(self._con)
+            supplemental_attribute_manager or SupplementalAttributeManager(storage)
         )
         self._closed = False
 
@@ -142,12 +136,6 @@ class System:
             self._time_series_mgr.close()
         except Exception:
             logger.debug("Error closing time series manager", exc_info=True)
-
-        if self._con is not None:
-            try:
-                self._con.close()
-            except Exception:
-                logger.debug("Error closing system SQLite connection", exc_info=True)
 
     def __enter__(self) -> "System":
         return self
@@ -235,7 +223,6 @@ class System:
                 raise ISConflictingArguments(msg)
             data["system"] = system_data
 
-        backup(self._con, time_series_dir / self.DB_FILENAME)
         self._time_series_mgr.serialize(system_data["time_series"], time_series_dir)
 
         data_dump = orjson.dumps(data)
@@ -450,17 +437,15 @@ class System:
             if isinstance(time_series_parent_dir, Path)
             else Path(time_series_parent_dir)
         )
-        con = create_in_memory_db()
-        restore(con, ts_path / data["time_series"]["directory"] / System.DB_FILENAME)
-
         time_series_manager = TimeSeriesManager.deserialize(
-            con, data["time_series"], ts_path, **ts_kwargs
+            data["time_series"], ts_path, **ts_kwargs
         )
-        supplemental_attribute_manager = SupplementalAttributeManager(con, initialize=False)
+        supplemental_attribute_manager = SupplementalAttributeManager(
+            time_series_manager.storage
+        )
         system = cls(
             name=system_data.get("name"),
             description=system_data.get("description"),
-            con=con,
             supplemental_attribute_manager=supplemental_attribute_manager,
             time_series_manager=time_series_manager,
             uuid=UUID(system_data["uuid"]),
@@ -1509,17 +1494,16 @@ class System:
             yield conn
 
     @contextmanager
-    def open_metadata_store(self) -> Generator[sqlite3.Connection, None, None]:
-        """Open a connection to the metadata store.
+    def open_metadata_store(self) -> Generator[Store, None, None]:
+        """Open a transactional context for supplemental attribute metadata.
 
-        This transaction applies to supplemental attribute metadata stored in SQLite.
-        Any failure rolls back the SQLite transaction and in-memory supplemental
-        attribute cache updates.
+        Any failure restores the supplemental attribute associations that were stored on
+        entry and rolls back in-memory supplemental attribute cache updates.
 
         Returns
         -------
-        sqlite3.Connection
-            SQLite connection for metadata operations.
+        Store
+            The store that holds the supplemental attribute associations.
 
         Examples
         --------
@@ -1749,9 +1733,6 @@ class System:
             attr = supplemental_attribute_type(**values)
             self._supplemental_attr_mgr.add(None, attr, deserialization_in_progress=True)
             cached_types.add_deserialized_type(supplemental_attribute_type)
-        self._supplemental_attr_mgr.migrate_legacy_association_schema(
-            list(self._component_mgr.iter_all())
-        )
 
     @staticmethod
     def _make_time_series_directory(filename: Path) -> Path:

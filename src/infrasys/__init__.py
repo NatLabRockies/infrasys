@@ -6,9 +6,6 @@ logger.disable("infrasys")
 
 __version__ = metadata.metadata("infrasys")["Version"]
 
-COMPONENT_ASSOCIATIONS_TABLE = "component_associations"
-SUPPLEMENTAL_ATTRIBUTE_ASSOCIATIONS_TABLE = "supplemental_attribute_associations"
-
 from .base_quantity import BaseQuantity
 from .component import Component
 from .device_parameter import DeviceParameter

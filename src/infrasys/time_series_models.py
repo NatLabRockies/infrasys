@@ -2,7 +2,6 @@
 
 import abc
 import importlib
-import sqlite3
 from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import (
@@ -538,7 +537,6 @@ class DeterministicTimeSeriesKey(TimeSeriesKey):
 
 
 class TimeSeriesStorageContext(InfraSysBaseModel):
-    """Stores connections to the metadata and data databases during transactions."""
+    """Stores the connection to the time series data store during transactions."""
 
-    metadata_conn: sqlite3.Connection
     data_context: Any = None

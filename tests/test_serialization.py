@@ -74,7 +74,6 @@ def test_serialization(tmp_path):
             "_component_mgr",
             "_supplemental_attr_mgr",
             "_time_series_mgr",
-            "_con",
         ):
             assert getattr(system2, key) == val
 

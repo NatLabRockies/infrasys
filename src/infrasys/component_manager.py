@@ -3,12 +3,15 @@
 import copy
 import itertools
 from collections import defaultdict
-from typing import Any, Callable, Iterable, Optional, Type
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Optional, Type
 from uuid import UUID
 from loguru import logger
+from infrastore import ParentChildAssociation, Store
+
+if TYPE_CHECKING:
+    from infrasys.time_series_store_storage import TimeSeriesStoreStorage
 
 from infrasys.component import Component
-from infrasys.component_associations import ComponentAssociations
 from infrasys.exceptions import (
     ISAlreadyAttached,
     ISNotStored,
@@ -16,6 +19,7 @@ from infrasys.exceptions import (
 )
 from infrasys.id_manager import IDManager
 from infrasys.models import make_label, get_class_and_name_from_label
+from infrasys.utils.classes import get_all_concrete_subclasses
 
 
 class ComponentManager:
@@ -24,13 +28,23 @@ class ComponentManager:
     def __init__(
         self,
         auto_add_composed_components: bool,
+        storage: "TimeSeriesStoreStorage",
     ) -> None:
         self._components: dict[Type, dict[str | None, list[Component]]] = {}
         self._components_by_id: dict[int, Component] = {}
         self._components_by_uuid: dict[UUID, Component] = {}
         self._id_manager = IDManager(next_id=1)
         self._auto_add_composed_components = auto_add_composed_components
-        self._associations = ComponentAssociations()
+        self._storage = storage
+
+    @property
+    def _store(self) -> Store:
+        """Resolve the store on every access rather than caching it.
+
+        The storage closes and reopens its files when serializing, which yields a new
+        handle, so a reference captured here would go stale after the first save.
+        """
+        return self._storage.store
 
     @property
     def auto_add_composed_components(self) -> bool:
@@ -56,7 +70,10 @@ class ComponentManager:
         for component in components:
             self._add(component, deserialization_in_progress)
 
-        self._associations.add(*components)
+        if not deserialization_in_progress:
+            # Associations are persisted alongside the time series data and so they are
+            # already present when a system is deserialized.
+            self.add_associations(*components)
 
     def get(self, component_type: Type[Component], name: str) -> Any:
         """Return the component with the passed type and name.
@@ -212,6 +229,67 @@ class ComponentManager:
         """Return an iterator over all components."""
         return self._components_by_id.values()
 
+    def add_associations(self, *components: Component) -> None:
+        """Store an association between each component and its directly attached subcomponents.
+
+        - Inspects the type of each field of each component's type. Looks for subtypes of
+          Component and lists of subtypes of Component.
+        - Does not consider component fields that are dictionaries or other data structures.
+        """
+        associations: list[ParentChildAssociation] = []
+        seen: set[tuple[int, int]] = set()
+        for component in components:
+            for field in type(component).model_fields:
+                val = getattr(component, field)
+                if isinstance(val, Component):
+                    children = [val]
+                elif isinstance(val, list) and val and isinstance(val[0], Component):
+                    children = val
+                else:
+                    continue
+                for child in children:
+                    association = self._make_association(component, child)
+                    # A component may reference the same child from more than one field.
+                    # The store rejects duplicates, so de-duplicate here.
+                    pair = (association.parent_id, association.child_id)
+                    if pair in seen:
+                        continue
+                    seen.add(pair)
+                    associations.append(association)
+
+        if associations:
+            self._store.add_parent_child_associations(associations)
+
+    def clear_associations(self) -> None:
+        """Clear all component associations."""
+        self._store.remove_parent_child_associations()
+        logger.info("Cleared all component associations.")
+
+    def remove_associations(self, component: Component) -> None:
+        """Remove all associations that reference this component in either direction."""
+        component_id = _get_id(component)
+        self._store.remove_parent_child_associations(parent_id=component_id)
+        self._store.remove_parent_child_associations(child_id=component_id)
+        logger.debug("Removed all associations with component {}", component.label)
+
+    def list_child_component_ids(
+        self, component: Component, component_type: Optional[Type[Component]] = None
+    ) -> list[int]:
+        """Return the IDs of all components that this component composes."""
+        return self._store.list_children(
+            parent_id=_get_id(component),
+            child_types=_make_type_names(component_type),
+        )
+
+    def list_parent_component_ids(
+        self, component: Component, component_type: Optional[Type[Component]] = None
+    ) -> list[int]:
+        """Return the IDs of all components that compose this component."""
+        return self._store.list_parents(
+            child_id=_get_id(component),
+            parent_types=_make_type_names(component_type),
+        )
+
     def list_child_components(
         self, component: Component, component_type: Optional[Type[Component]] = None
     ) -> list[Component]:
@@ -219,9 +297,7 @@ class ComponentManager:
         self.raise_if_not_attached(component)
         return [
             self.get_by_id(x)
-            for x in self._associations.list_child_components(
-                component, component_type=component_type
-            )
+            for x in self.list_child_component_ids(component, component_type=component_type)
         ]
 
     def list_parent_components(
@@ -231,10 +307,17 @@ class ComponentManager:
         self.raise_if_not_attached(component)
         return [
             self.get_by_id(x)
-            for x in self._associations.list_parent_components(
-                component, component_type=component_type
-            )
+            for x in self.list_parent_component_ids(component, component_type=component_type)
         ]
+
+    @staticmethod
+    def _make_association(parent: Component, child: Component) -> ParentChildAssociation:
+        return ParentChildAssociation(
+            _get_id(parent),
+            type(parent).__name__,
+            _get_id(child),
+            type(child).__name__,
+        )
 
     def to_records(
         self,
@@ -298,10 +381,10 @@ class ComponentManager:
             self._components.pop(component_type)
         logger.debug("Removed component {}", matched_component.label)
         if cascade_down:
-            child_components = self._associations.list_child_components(matched_component)
+            child_components = self.list_child_component_ids(matched_component)
         else:
             child_components = []
-        self._associations.remove(matched_component)
+        self.remove_associations(matched_component)
         for child_id in child_components:
             child = self.get_by_id(child_id)
             parent_components = self.list_parent_components(child)
@@ -368,8 +451,8 @@ class ComponentManager:
         """Clear the component associations and rebuild the table. This may be necessary
         if a user reassigns connected components that are part of a system.
         """
-        self._associations.clear()
-        self._associations.add(*self.iter_all())
+        self.clear_associations()
+        self.add_associations(*self.iter_all())
         logger.info("Rebuilt all component associations.")
 
     def update(
@@ -461,11 +544,11 @@ class ComponentManager:
             raise ISOperationNotAllowed(msg)
 
     def close(self) -> None:
-        """Release resources held by the component manager."""
-        try:
-            self._associations.close()
-        except Exception:
-            logger.debug("Error closing component associations", exc_info=True)
+        """Release resources held by the component manager.
+
+        Associations live in the time series store, which is closed by its own manager, so
+        there is nothing to release here.
+        """
 
     def raise_if_attached(self, component: Component):
         """Raise an exception if this component is attached to a system."""
@@ -484,6 +567,22 @@ class ComponentManager:
         if not self.has_component(component):
             msg = f"{component.label} is not attached to the system"
             raise ISNotStored(msg)
+
+
+def _get_id(component: Component) -> int:
+    """Return the component's ID, raising if one has not been assigned."""
+    if component.id is None:
+        msg = f"{component.label} does not have an id assigned."
+        raise ISOperationNotAllowed(msg)
+    return component.id
+
+
+def _make_type_names(component_type: Optional[Type[Component]]) -> list[str] | None:
+    """Expand a possibly-abstract component type into concrete type names."""
+    if component_type is None:
+        return None
+    subclasses = get_all_concrete_subclasses(component_type) or [component_type]
+    return [cls.__name__ for cls in subclasses]
 
 
 def _component_matches(a: Component, b: Component) -> bool:

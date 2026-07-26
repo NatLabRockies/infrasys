@@ -186,7 +186,7 @@ def test_component_associations(tmp_path):
     check_attached_components(system, SimpleGenerator, SimpleBus)
     check_attached_components(system, GeneratorBase, Component)
     check_attached_components(system, Component, Component)
-    system._component_mgr._associations.clear()
+    system._component_mgr.clear_associations()
     for component in system.iter_all_components():
         assert not system.list_parent_components(component)
 
@@ -626,8 +626,12 @@ def test_system_counts():
             # ts1 and ts2 share the same values, so they deduplicate to one array.
             data = np.arange(10, dtype=float) + (iteration * 100 + i)
             name = f"{variable_name}_{iteration}_{i}"
-            ts1 = SingleTimeSeries.from_array(data, name, initial_time + resolution * i, resolution)
-            ts2 = SingleTimeSeries.from_array(data, name, initial_time + resolution * i, resolution)
+            ts1 = SingleTimeSeries.from_array(
+                data, name, initial_time + resolution * i, resolution
+            )
+            ts2 = SingleTimeSeries.from_array(
+                data, name, initial_time + resolution * i, resolution
+            )
             system.add_time_series(ts1, gen1, gen2)
             system.add_time_series(ts2, gen1.bus)
 
@@ -955,13 +959,13 @@ def test_component_associations_clear():
     system.add_components(bus, gen)
 
     # Verify associations exist — generator composes bus
-    children = system._component_mgr._associations.list_child_components(gen)
+    children = system._component_mgr.list_child_component_ids(gen)
     assert len(children) > 0
     assert bus.id in children
 
     # Clear all associations
-    system._component_mgr._associations.clear()
-    children = system._component_mgr._associations.list_child_components(gen)
+    system._component_mgr.clear_associations()
+    children = system._component_mgr.list_child_component_ids(gen)
     assert len(children) == 0
 
 
@@ -974,17 +978,13 @@ def test_component_associations_list_with_type_filter():
     gen = SimpleGenerator(name="gen2", active_power=1.0, rating=1.0, bus=bus, available=True)
     system.add_components(bus, gen)
 
-    # list_child_components with matching type filter — generator composes bus
-    children = system._component_mgr._associations.list_child_components(
-        gen, component_type=Component
-    )
+    # list_child_component_ids with matching type filter — generator composes bus
+    children = system._component_mgr.list_child_component_ids(gen, component_type=Component)
     assert len(children) >= 1
     assert bus.id in children
 
-    # list_parent_components with matching type filter — gen's parent
-    parents = system._component_mgr._associations.list_parent_components(
-        bus, component_type=Component
-    )
+    # list_parent_component_ids with matching type filter — gen's parent
+    parents = system._component_mgr.list_parent_component_ids(bus, component_type=Component)
     assert len(parents) >= 1
     assert gen.id in parents
 
@@ -1184,7 +1184,7 @@ def test_example_not_implemented():
 
 
 def test_component_associations_error_no_id():
-    """Test that ComponentAssociations methods raise when component has no id."""
+    """Test that the association lookups raise when a component has no id."""
     system = SimpleSystem()
     gen = SimpleGenerator(
         name="unattached",
@@ -1193,29 +1193,29 @@ def test_component_associations_error_no_id():
         bus=SimpleBus(name="bus", voltage=1.1),
         available=True,
     )
-    assoc = system._component_mgr._associations
+    mgr = system._component_mgr
 
     with pytest.raises(ISOperationNotAllowed, match="does not have an id"):
-        assoc.list_child_components(gen)
+        mgr.list_child_component_ids(gen)
     with pytest.raises(ISOperationNotAllowed, match="does not have an id"):
-        assoc.list_parent_components(gen)
+        mgr.list_parent_component_ids(gen)
     with pytest.raises(ISOperationNotAllowed, match="does not have an id"):
-        assoc.remove(gen)
+        mgr.remove_associations(gen)
 
 
-def test_component_associations_make_row_no_id():
-    """Test that _make_row raises when component or attached_component has no id."""
+def test_component_associations_make_association_no_id():
+    """Test that _make_association raises when either component has no id."""
     system = SimpleSystem()
     bus = SimpleBus(name="bus1", voltage=1.1)
     gen = SimpleGenerator(name="gen1", active_power=1.0, rating=1.0, bus=bus, available=True)
-    assoc = system._component_mgr._associations
+    mgr = system._component_mgr
 
     with pytest.raises(ISOperationNotAllowed, match="does not have an id"):
-        assoc._make_row(gen, bus)
+        mgr._make_association(gen, bus)
 
     system.add_component(bus)
     with pytest.raises(ISOperationNotAllowed, match="does not have an id"):
-        assoc._make_row(gen, bus)
+        mgr._make_association(gen, bus)
 
 
 def test_component_add_with_preexisting_id():
@@ -1234,3 +1234,44 @@ def test_supplemental_attribute_get_by_id_not_found():
     system = SimpleSystem()
     with pytest.raises(ISNotStored, match="No supplemental attribute"):
         system.get_supplemental_attribute_by_id(999)
+
+
+def test_component_associations_duplicate_child_references():
+    """A component may reference the same child from two fields without a duplicate error."""
+    from infrasys import Component
+
+    class TwoBusBranch(Component):
+        from_bus: SimpleBus
+        to_bus: SimpleBus
+
+    system = SimpleSystem(auto_add_composed_components=True)
+    bus = SimpleBus(name="shared-bus", voltage=1.1)
+    branch = TwoBusBranch(name="branch1", from_bus=bus, to_bus=bus)
+    system.add_component(branch)
+
+    assert system._component_mgr.list_child_component_ids(branch) == [bus.id]
+    assert system.list_parent_components(bus) == [branch]
+
+    # The rebuild path must tolerate the same duplication.
+    system.rebuild_component_associations()
+    assert system._component_mgr.list_child_component_ids(branch) == [bus.id]
+
+
+def test_component_associations_survive_round_trip(tmp_path):
+    """Component associations persist in the store's SQLite catalog across save/load."""
+    system = SimpleSystem()
+    geo = Location(x=1.0, y=2.0)
+    bus = SimpleBus(name="bus1", voltage=1.1, coordinates=geo)
+    gen = SimpleGenerator(name="gen1", active_power=1.0, rating=1.0, bus=bus, available=True)
+    system.add_components(geo, bus, gen)
+
+    save_dir = tmp_path / "test_system"
+    system.save(save_dir)
+    system2 = SimpleSystem.from_json(save_dir / "system.json")
+
+    bus2 = system2.get_component(SimpleBus, "bus1")
+    gen2 = system2.get_component(SimpleGenerator, "gen1")
+    assert system2.list_parent_components(bus2) == [gen2]
+    assert system2.list_child_components(gen2) == [bus2]
+    # The rows must not have been duplicated by deserialization.
+    assert len(system2._component_mgr._store.list_parent_child_associations()) == 2

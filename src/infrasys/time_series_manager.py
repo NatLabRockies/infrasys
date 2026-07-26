@@ -1,6 +1,5 @@
 """Manages time series arrays"""
 
-import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from functools import singledispatch
@@ -49,12 +48,10 @@ class TimeSeriesManager:
 
     def __init__(
         self,
-        con: sqlite3.Connection,
         storage: Optional[TimeSeriesStoreStorage] = None,
         initialize: bool = True,
         **kwargs,
     ) -> None:
-        self._con = con
         self._read_only = _process_time_series_kwarg("time_series_read_only", **kwargs)
         self._storage: TimeSeriesStoreStorage = storage or self.create_new_storage(**kwargs)
         self._context: TimeSeriesStorageContext | None = None
@@ -343,7 +340,6 @@ class TimeSeriesManager:
     @classmethod
     def deserialize(
         cls,
-        con: sqlite3.Connection,
         data: dict[str, Any],
         parent_dir: Path | str,
         **kwargs: Any,
@@ -363,7 +359,7 @@ class TimeSeriesManager:
             read_only=read_only,
             **kwargs,
         )
-        return cls(con, storage=storage, initialize=False, **kwargs)
+        return cls(storage=storage, initialize=False, **kwargs)
 
     @contextmanager
     def open_time_series_store(
@@ -373,9 +369,7 @@ class TimeSeriesManager:
         with self.storage.open_time_series_store(mode=mode) as context:
             snapshot = self._storage.snapshot_index()
             try:
-                self._context = TimeSeriesStorageContext(
-                    metadata_conn=self._con, data_context=context
-                )
+                self._context = TimeSeriesStorageContext(data_context=context)
                 yield self._context
             except Exception as e:
                 # Undo any time series added during the failed batch.
