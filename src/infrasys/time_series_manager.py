@@ -216,12 +216,13 @@ class TimeSeriesManager:
             time_series_type=time_series_type.__name__,
             **features,
         )
-        return [
-            self._get_by_metadata(
-                x, owner, start_time=start_time, length=length, context=connection
-            )
-            for x in records
-        ]
+        return self._storage.get_time_series_bulk(
+            records,
+            owner,
+            start_time=start_time,
+            length=length,
+            context=_get_data_context(connection),
+        )
 
     def list_time_series_keys(
         self,

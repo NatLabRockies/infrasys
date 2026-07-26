@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 import numpy as np
 import pytest
 
-from infrasys.exceptions import ISNotStored
+from infrasys.exceptions import ISAlreadyAttached, ISNotStored
 from infrasys.quantities import ActivePower
 from infrasys.time_series_store_storage import TimeSeriesStoreStorage
 from infrasys.time_series_models import (
@@ -436,3 +436,217 @@ def test_transform_single_time_series_preserves_units(tmp_path):
             underlying[window : window + 3],
             err_msg=f"window {window} mismatch",
         )
+
+
+def test_open_time_series_store_defers_writes(tmp_path):
+    system, generator = make_system(tmp_path)
+    storage = system.time_series.storage
+    time_series = [
+        SingleTimeSeries.from_array(
+            np.arange(8, dtype=np.float64), f"load_{i}", datetime(2024, 1, 1), timedelta(hours=1)
+        )
+        for i in range(3)
+    ]
+
+    with system.open_time_series_store() as conn:
+        for ts in time_series:
+            system.add_time_series(ts, generator, context=conn)
+        # The index sees the additions immediately, but the store has not been written yet.
+        for ts in time_series:
+            assert system.has_time_series(generator, name=ts.name)
+        assert storage.store.list_time_series() == []
+
+    assert len(storage.store.list_time_series()) == len(time_series)
+    for expected in time_series:
+        actual = system.get_time_series(generator, name=expected.name)
+        np.testing.assert_array_equal(actual.data, expected.data)
+
+
+def test_reading_inside_batch_flushes_pending(tmp_path):
+    system, generator = make_system(tmp_path)
+    expected = SingleTimeSeries.from_array(
+        np.arange(8, dtype=np.float64), "load", datetime(2024, 1, 1), timedelta(hours=1)
+    )
+
+    with system.open_time_series_store() as conn:
+        system.add_time_series(expected, generator, context=conn)
+        actual = system.get_time_series(generator, name="load", context=conn)
+        np.testing.assert_array_equal(actual.data, expected.data)
+        # A read forces the flush but leaves the batch open for more additions.
+        second = SingleTimeSeries.from_array(
+            np.arange(8, dtype=np.float64), "load2", datetime(2024, 1, 1), timedelta(hours=1)
+        )
+        system.add_time_series(second, generator, context=conn)
+
+    assert len(system.time_series.storage.store.list_time_series()) == 2
+
+
+def test_add_time_series_multiple_owners_is_atomic(tmp_path):
+    system, generator = make_system(tmp_path)
+    other = SimpleGenerator(
+        name="generator2",
+        active_power=1.0,
+        rating=1.0,
+        bus=system.get_component(SimpleBus, "bus"),
+        available=True,
+    )
+    system.add_component(other)
+    time_series = SingleTimeSeries.from_array(
+        np.arange(8, dtype=np.float64), "load", datetime(2024, 1, 1), timedelta(hours=1)
+    )
+    system.add_time_series(time_series, other)
+
+    with pytest.raises(ISAlreadyAttached):
+        system.add_time_series(time_series, generator, other)
+
+    # The duplicate on the second owner must not leave the series attached to the first.
+    assert not system.has_time_series(generator, name="load")
+    assert system.has_time_series(other, name="load")
+
+
+def test_rehydrate_does_not_read_arrays(tmp_path):
+    system, generator = make_system(tmp_path)
+    system.add_time_series(make_deterministic(), generator)
+    system.add_time_series(
+        SingleTimeSeries.from_array(
+            np.arange(8, dtype=np.float64), "load", datetime(2024, 1, 1), timedelta(hours=1)
+        ),
+        generator,
+    )
+    filename = tmp_path / "system.json"
+    system.to_json(filename)
+
+    loaded = SimpleSystem.from_json(filename)
+    storage = loaded.time_series.storage
+
+    class NoArrayReads:
+        """Forwards to the real store but fails any attempt to read array data."""
+
+        def __init__(self, store):
+            self._store = store
+
+        def get_time_series(self, *args, **kwargs):
+            msg = "rehydrate must not read array data"
+            raise AssertionError(msg)
+
+        def __getattr__(self, name):
+            return getattr(self._store, name)
+
+    original = storage._store
+    storage._store = NoArrayReads(original)
+    try:
+        storage.rehydrate()
+    finally:
+        storage._store = original
+
+    loaded_generator = loaded.get_component(SimpleGenerator, generator.name)
+    forecast = loaded.get_time_series(
+        loaded_generator, name="active_power", time_series_type=Deterministic
+    )
+    assert forecast.window_count == 3
+    assert forecast.horizon == timedelta(hours=4)
+    assert forecast.interval == timedelta(hours=1)
+    assert forecast.initial_timestamp == datetime(2024, 1, 1)
+
+
+def test_list_time_series_matches_per_series_reads(tmp_path):
+    system, generator = make_system(tmp_path)
+    initial_timestamp = datetime(2024, 1, 1)
+    expected = []
+    with system.open_time_series_store() as conn:
+        for i in range(4):
+            time_series = SingleTimeSeries.from_array(
+                np.arange(i, i + 8, dtype=np.float64),
+                f"load_{i}",
+                initial_timestamp,
+                timedelta(hours=1),
+            )
+            system.add_time_series(time_series, generator, context=conn)
+            expected.append(time_series)
+
+    listed = system.list_time_series(generator)
+    assert len(listed) == len(expected)
+    by_name = {x.name: x for x in listed}
+    for time_series in expected:
+        np.testing.assert_array_equal(by_name[time_series.name].data, time_series.data)
+        assert by_name[time_series.name].initial_timestamp == initial_timestamp
+
+    sliced = {
+        x.name: x
+        for x in system.list_time_series(
+            generator, start_time=initial_timestamp + timedelta(hours=3), length=2
+        )
+    }
+    for time_series in expected:
+        actual = sliced[time_series.name]
+        assert actual.initial_timestamp == initial_timestamp + timedelta(hours=3)
+        np.testing.assert_array_equal(actual.data, time_series.data[3:5])
+
+
+def test_list_time_series_reads_forecasts(tmp_path):
+    system, generator = make_system(tmp_path)
+    expected = make_deterministic()
+    system.add_time_series(expected, generator)
+
+    listed = system.list_time_series(generator, time_series_type=Deterministic)
+    assert len(listed) == 1
+    np.testing.assert_array_equal(listed[0].data_array, expected.data_array)
+    assert listed[0].window_count == expected.window_count
+
+
+def test_reads_do_not_scan_for_keys(tmp_path):
+    system, generator = make_system(tmp_path)
+    with system.open_time_series_store() as conn:
+        for i in range(3):
+            system.add_time_series(
+                SingleTimeSeries.from_array(
+                    np.arange(8, dtype=np.float64),
+                    f"load_{i}",
+                    datetime(2024, 1, 1),
+                    timedelta(hours=1),
+                ),
+                generator,
+                context=conn,
+            )
+    filename = tmp_path / "system.json"
+    system.to_json(filename)
+    loaded = SimpleSystem.from_json(filename)
+    loaded_generator = loaded.get_component(SimpleGenerator, generator.name)
+    storage = loaded.time_series.storage
+
+    class NoKeyScans:
+        """Forwards to the real store but fails any per-owner key scan."""
+
+        def __init__(self, store):
+            self._store = store
+
+        def get_time_series_keys(self, *args, **kwargs):
+            msg = "reads must use the cached store key"
+            raise AssertionError(msg)
+
+        def __getattr__(self, name):
+            return getattr(self._store, name)
+
+    original = storage._store
+    storage._store = NoKeyScans(original)
+    try:
+        assert len(loaded.list_time_series(loaded_generator)) == 3
+        for i in range(3):
+            loaded.get_time_series(loaded_generator, name=f"load_{i}")
+    finally:
+        storage._store = original
+
+
+def test_list_time_series_reads_non_sequential(tmp_path):
+    system, generator = make_system(tmp_path)
+    timestamps = np.array(
+        [datetime(2024, 1, 1) + timedelta(minutes=x) for x in (0, 5, 30)],
+        dtype=object,
+    )
+    expected = NonSequentialTimeSeries.from_array(np.array([1.0, 2.0, 3.0]), timestamps, "load")
+    system.add_time_series(expected, generator)
+
+    listed = system.list_time_series(generator, time_series_type=NonSequentialTimeSeries)
+    assert len(listed) == 1
+    np.testing.assert_array_equal(listed[0].data, expected.data)
+    np.testing.assert_array_equal(listed[0].timestamps, timestamps)

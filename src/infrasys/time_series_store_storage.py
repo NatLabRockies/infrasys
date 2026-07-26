@@ -9,10 +9,16 @@ no ids/uuids of its own.
 This class keeps an in-memory index of lightweight :class:`_StoredSeries`
 records so metadata queries (``get``/``list``/``has``/counts) do not read array
 data. The index is populated as series are added and rehydrated from the store
-on deserialization. Reconstructing a ``SingleTimeSeries`` ``initial_timestamp``
-on rehydration requires reading the series header, so :meth:`rehydrate` reads
-each stored series once; this is the only path that touches array data for
-metadata.
+on deserialization. The store's own metadata records carry everything a
+:class:`_StoredSeries` needs, so no path here reads array data for metadata.
+
+Writes go through the store's bulk API. A single :meth:`add_time_series` call
+commits all of its owners in one batch, and :meth:`open_time_series_store`
+buffers additions so that a whole block of them commits together --- the store
+pays one catalog transaction per batch instead of one per series. The in-memory
+index is updated as soon as a series is staged, so metadata queries inside a
+batch see pending additions; any operation that must touch the store flushes the
+buffer first.
 """
 
 import atexit
@@ -99,6 +105,19 @@ class _StoredSeries:
     horizon: timedelta | None = None
     interval: timedelta | None = None
     window_count: int | None = None
+    # The store's key for this association, cached to avoid re-scanning the owner's keys on
+    # every read. None until the series is committed and the key is known.
+    store_key: Any = None
+
+
+@dataclass
+class _PendingAdd:
+    """One staged addition: the store's bulk item plus where it lives in the index."""
+
+    item: dict[str, Any]
+    stored: _StoredSeries
+    owner_key: tuple[int, str]
+    assoc_key: tuple
 
 
 class TimeSeriesStoreStorage:
@@ -111,6 +130,8 @@ class TimeSeriesStoreStorage:
         self._store = store
         # (owner_id, owner_category_name) -> {assoc_key -> _StoredSeries}
         self._index: dict[tuple[int, str], dict[tuple, _StoredSeries]] = {}
+        # Additions staged by open_time_series_store; None when no batch is open.
+        self._pending: list[_PendingAdd] | None = None
 
     @property
     def store(self) -> Store:
@@ -124,8 +145,28 @@ class TimeSeriesStoreStorage:
     def open_time_series_store(
         self, mode: Literal["r", "r+", "a", "w", "w-"] = "a"
     ) -> Generator[Any, None, None]:
-        """Open a connection to the time series store for batched operations."""
-        yield None
+        """Buffer additions made inside the block and commit them in one batch.
+
+        The in-memory index is updated as each series is staged, so ``has``/``list``/``get``
+        behave the same inside the block as outside; a read or any other store operation
+        flushes the buffer first. If the block raises, staged additions are dropped without
+        ever reaching the store.
+        """
+        if self._pending is not None:
+            # Nested block; the outermost one owns the flush.
+            yield None
+            return
+
+        self._pending = []
+        try:
+            yield None
+        except Exception:
+            self._pending = None
+            raise
+        try:
+            self._flush_pending()
+        finally:
+            self._pending = None
 
     @classmethod
     def create_with_temp_directory(
@@ -207,6 +248,9 @@ class TimeSeriesStoreStorage:
     ) -> None:
         """Add a time series for one or more owners.
 
+        All owners are committed in one batch, so nothing is stored if any of them
+        already holds a matching association.
+
         Raises
         ------
         ISAlreadyAttached
@@ -220,6 +264,11 @@ class TimeSeriesStoreStorage:
         units = _units_from_data(time_series)
         units_str = _serialize_units(units)
         ts_type = _data_type_name(time_series)
+
+        # Validate every owner before touching the index so that a duplicate on the last
+        # owner does not leave the earlier ones half-added.
+        staged: list[_PendingAdd] = []
+        seen: set[tuple[tuple[int, str], tuple]] = set()
         for owner in owners:
             owner_id, category = _owner_identity(owner)
             stored = _StoredSeries(
@@ -235,33 +284,62 @@ class TimeSeriesStoreStorage:
                 interval=getattr(time_series, "interval", None),
                 window_count=getattr(time_series, "window_count", None),
             )
-            self._add_record(stored, rust_time_series, units_str, owner_id, category)
-
-    def _add_record(
-        self,
-        stored: _StoredSeries,
-        rust_time_series: Any,
-        units_str: str | None,
-        owner_id: int,
-        category: OwnerCategory,
-    ) -> None:
-        assoc_map = self._index.setdefault((owner_id, _category_name(category)), {})
-        assoc_key = _assoc_key(stored.name, stored.time_series_type, stored.features)
-        if assoc_key in assoc_map:
-            msg = (
-                f"Time series {stored.time_series_type}.{stored.name} with "
-                f"features={stored.features} is already stored for owner id {owner_id}."
+            owner_key = (owner_id, _category_name(category))
+            assoc_key = _assoc_key(stored.name, stored.time_series_type, stored.features)
+            if (owner_key, assoc_key) in seen or assoc_key in self._index.get(owner_key, {}):
+                msg = (
+                    f"Time series {stored.time_series_type}.{stored.name} with "
+                    f"features={stored.features} is already stored for owner id {owner_id}."
+                )
+                raise ISAlreadyAttached(msg)
+            seen.add((owner_key, assoc_key))
+            item = {
+                "owner_id": owner_id,
+                "owner_type": stored.owner_type,
+                "owner_category": category,
+                "time_series": rust_time_series,
+                "features": dict(stored.features),
+                "units": units_str,
+            }
+            staged.append(
+                _PendingAdd(item=item, stored=stored, owner_key=owner_key, assoc_key=assoc_key)
             )
-            raise ISAlreadyAttached(msg)
-        self._store.add_time_series(
-            owner_id=owner_id,
-            owner_type=stored.owner_type,
-            owner_category=category,
-            time_series=rust_time_series,
-            features=dict(stored.features),
-            units=units_str,
-        )
-        assoc_map[assoc_key] = stored
+
+        for entry in staged:
+            self._index.setdefault(entry.owner_key, {})[entry.assoc_key] = entry.stored
+
+        if self._pending is not None:
+            self._pending.extend(staged)
+        else:
+            self._commit(staged)
+
+    def _commit(self, pending: list[_PendingAdd]) -> None:
+        """Write staged additions to the store, undoing the index entries on failure."""
+        if not pending:
+            return
+        try:
+            keys = self._store.add_time_series_bulk([entry.item for entry in pending])
+        except Exception:
+            # The store batch is all-or-nothing, so drop every index entry it covered.
+            for entry in pending:
+                assoc_map = self._index.get(entry.owner_key)
+                if assoc_map is not None:
+                    assoc_map.pop(entry.assoc_key, None)
+            raise
+        # The store returns the new keys in input order; caching them here spares every
+        # later read a scan of the owner's keys.
+        for entry, key in zip(pending, keys):
+            entry.stored.store_key = key
+
+    def _flush_pending(self) -> None:
+        """Commit anything staged by an open batch. No-op when nothing is buffered."""
+        if not self._pending:
+            return
+        pending = self._pending
+        # Reset before committing so that the batch stays open for further additions and a
+        # failed commit cannot leave the entries staged a second time.
+        self._pending = []
+        self._commit(pending)
 
     def get_metadata(
         self,
@@ -365,7 +443,14 @@ class TimeSeriesStoreStorage:
         }
 
     def rollback_to(self, snapshot: set[tuple[tuple[int, str], tuple]]) -> None:
-        """Remove every association added since ``snapshot`` was taken."""
+        """Remove every association added since ``snapshot`` was taken.
+
+        Additions still staged in an open batch never reached the store, so they are
+        dropped from the index without a store round trip.
+        """
+        staged = {(entry.owner_key, entry.assoc_key) for entry in self._pending or ()}
+        if self._pending:
+            self._pending = []
         for owner_key, assoc_map in list(self._index.items()):
             owner_id, category_name = owner_key
             category = (
@@ -377,6 +462,8 @@ class TimeSeriesStoreStorage:
                 if (owner_key, assoc_key) in snapshot:
                     continue
                 stored = assoc_map.pop(assoc_key)
+                if (owner_key, assoc_key) in staged:
+                    continue
                 try:
                     rust_key = self._resolve_key(owner_id, category, stored)
                 except ISNotStored:
@@ -393,6 +480,7 @@ class TimeSeriesStoreStorage:
         Unique arrays come from the store's content-addressed array groups; the
         per-type breakdown counts associations from the in-memory index.
         """
+        self._flush_pending()
         groups = self._store.list_array_groups()
         unique_arrays = len(groups)
         references = sum(len(group["keys"]) for group in groups)
@@ -414,14 +502,26 @@ class TimeSeriesStoreStorage:
         )
 
     def rehydrate(self) -> None:
-        """Rebuild the in-memory index from the persisted store."""
+        """Rebuild the in-memory index from the persisted store.
+
+        The store's keys are fetched once for the whole catalog and attached to the
+        descriptors, so later reads never have to scan for them.
+        """
+        self._flush_pending()
         self._index.clear()
+        keys = {
+            (
+                (key.owner_id, _category_name(key.owner_category)),
+                _assoc_key(key.name, _ts_type_name(key.time_series_type), dict(key.features)),
+            ): key
+            for key in self._store.list_keys()
+        }
         for record in self._store.list_time_series():
             stored = self._record_from_store(record)
-            owner_id = record["owner_id"]
-            category_name = record["owner_category"]
-            assoc_map = self._index.setdefault((owner_id, category_name), {})
-            assoc_map[_assoc_key(stored.name, stored.time_series_type, stored.features)] = stored
+            owner_key = (record["owner_id"], record["owner_category"])
+            assoc_key = _assoc_key(stored.name, stored.time_series_type, stored.features)
+            stored.store_key = keys.get((owner_key, assoc_key))
+            self._index.setdefault(owner_key, {})[assoc_key] = stored
 
     def transform_single_time_series(self, horizon: timedelta, interval: timedelta) -> int:
         """Derive ``Deterministic`` forecasts from every stored ``SingleTimeSeries``.
@@ -429,6 +529,7 @@ class TimeSeriesStoreStorage:
         Mirrors the Rust store's store-wide transform: each ``SingleTimeSeries`` gains a forecast
         association sharing the same underlying array. Returns the number of series transformed.
         """
+        self._flush_pending()
         count = self._store.transform_single_time_series(horizon=horizon, interval=interval)
         self.rehydrate()
         return count
@@ -445,26 +546,86 @@ class TimeSeriesStoreStorage:
         context: Any = None,
     ) -> TimeSeriesData:
         owner_id, category = _owner_identity(owner)
+        key, time_range, result_initial_timestamp = self._plan_read(
+            stored, owner_id, category, start_time, length
+        )
+        rust_result = self._store.get_time_series(key, time_range=time_range)
+        return self._build_result(stored, rust_result, result_initial_timestamp)
+
+    def get_time_series_bulk(
+        self,
+        records: list[_StoredSeries],
+        owner: Any,
+        start_time: datetime | None = None,
+        length: int | None = None,
+        context: Any = None,
+    ) -> list[TimeSeriesData]:
+        """Return the arrays for several stored series belonging to one owner.
+
+        Reads that share a time range are fetched in a single store call, which lets the
+        store decompress each dataset once instead of once per series.
+        """
+        if not records:
+            return []
+        owner_id, category = _owner_identity(owner)
+        plans = [
+            self._plan_read(stored, owner_id, category, start_time, length) for stored in records
+        ]
+        # bulk_read applies one time range to every key, so read each distinct range as its
+        # own batch. Unsliced reads all share a range of None and go out together.
+        batches: dict[Any, list[int]] = {}
+        for position, (_, time_range, _) in enumerate(plans):
+            batches.setdefault(time_range, []).append(position)
+
+        results: list[Any] = [None] * len(records)
+        for time_range, positions in batches.items():
+            rust_results = self._store.bulk_read(
+                [plans[position][0] for position in positions], time_range=time_range
+            )
+            for position, rust_result in zip(positions, rust_results):
+                results[position] = self._build_result(
+                    records[position], rust_result, plans[position][2]
+                )
+        return results
+
+    def _plan_read(
+        self,
+        stored: _StoredSeries,
+        owner_id: int,
+        category: OwnerCategory,
+        start_time: datetime | None,
+        length: int | None,
+    ) -> tuple[Any, tuple[datetime, datetime] | None, datetime | None]:
+        """Return the store key, time range, and resulting start time for one read."""
         key = self._resolve_key(owner_id, category, stored)
         if stored.time_series_type in _FORECAST_TYPES and (
             start_time is not None or length is not None
         ):
             msg = "start_time/length slicing is not supported for forecast time series"
             raise NotImplementedError(msg)
-        time_range = None
-        result_initial_timestamp = None
-        if stored.time_series_type == "SingleTimeSeries":
-            assert stored.initial_timestamp is not None and stored.resolution is not None
-            index, result_length = single_time_series_range(
-                stored.initial_timestamp, stored.resolution, stored.length, start_time, length
-            )
-            result_initial_timestamp = stored.initial_timestamp + index * stored.resolution
-            time_range = (
-                _as_utc(result_initial_timestamp),
-                _as_utc(result_initial_timestamp + result_length * stored.resolution),
-            )
+        if stored.time_series_type != "SingleTimeSeries":
+            return key, None, None
+        assert stored.initial_timestamp is not None and stored.resolution is not None
+        if start_time is None and length is None:
+            # No range keeps unsliced reads in one batch and returns the whole series.
+            return key, None, stored.initial_timestamp
+        index, result_length = single_time_series_range(
+            stored.initial_timestamp, stored.resolution, stored.length, start_time, length
+        )
+        result_initial_timestamp = stored.initial_timestamp + index * stored.resolution
+        time_range = (
+            _as_utc(result_initial_timestamp),
+            _as_utc(result_initial_timestamp + result_length * stored.resolution),
+        )
+        return key, time_range, result_initial_timestamp
 
-        rust_result = self._store.get_time_series(key, time_range=time_range)
+    def _build_result(
+        self,
+        stored: _StoredSeries,
+        rust_result: Any,
+        result_initial_timestamp: datetime | None,
+    ) -> TimeSeriesData:
+        """Convert one store result into the infrasys time series model."""
         data = np.asarray(rust_result.data)
         if stored.units is not None:
             data = stored.units.quantity_type(data, stored.units.units)
@@ -505,6 +666,7 @@ class TimeSeriesStoreStorage:
     def serialize(
         self, data: dict[str, Any], dst: Path | str, src: Path | str | None = None
     ) -> None:
+        self._flush_pending()
         self._store.flush()
         source = self._directory if src is None else Path(src)
         destination = Path(dst)
@@ -545,6 +707,10 @@ class TimeSeriesStoreStorage:
     # Internal helpers
     # ------------------------------------------------------------------
     def _resolve_key(self, owner_id: int, category: OwnerCategory, stored: _StoredSeries):
+        # A staged series has no key until it is committed.
+        self._flush_pending()
+        if stored.store_key is not None:
+            return stored.store_key
         keys = self._store.get_time_series_keys(owner_id, category)
         for key in keys:
             if (
@@ -552,6 +718,7 @@ class TimeSeriesStoreStorage:
                 and _ts_type_name(key.time_series_type) == stored.time_series_type
                 and dict(key.features) == dict(stored.features)
             ):
+                stored.store_key = key
                 return key
         msg = (
             f"No time series {stored.time_series_type}.{stored.name} is stored "
@@ -560,21 +727,23 @@ class TimeSeriesStoreStorage:
         raise ISNotStored(msg)
 
     def _record_from_store(self, record: dict[str, Any]) -> _StoredSeries:
+        """Build a stored-series descriptor from a store metadata record.
+
+        The record carries every field the descriptor needs, including the forecast
+        parameters, so this never reads array data.
+        """
         ts_type = record["time_series_type"]
         units = _deserialize_units(record.get("units"))
         resolution = _parse_resolution(record["resolution"]) if record.get("resolution") else None
         initial_timestamp = None
         horizon = interval = None
         window_count = None
-        if ts_type == "SingleTimeSeries":
-            initial_timestamp = _as_naive_utc(self._read_rust_object(record).initial_timestamp)
-        elif ts_type in _FORECAST_TYPES:
-            obj = self._read_rust_object(record)
-            initial_timestamp = _as_naive_utc(obj.initial_timestamp)
-            resolution = _parse_resolution(obj.resolution)
-            horizon = _parse_resolution(obj.horizon)
-            interval = _parse_resolution(obj.interval)
-            window_count = obj.count
+        if record.get("initial_timestamp"):
+            initial_timestamp = _as_naive_utc(datetime.fromisoformat(record["initial_timestamp"]))
+        if ts_type in _FORECAST_TYPES:
+            horizon = _parse_resolution(record["horizon"])
+            interval = _parse_resolution(record["interval"])
+            window_count = record["count"]
         return _StoredSeries(
             name=record["name"],
             time_series_type=ts_type,
@@ -588,29 +757,6 @@ class TimeSeriesStoreStorage:
             interval=interval,
             window_count=window_count,
         )
-
-    def _read_rust_object(self, record: dict[str, Any]) -> Any:
-        """Fetch the Rust time-series object for a store metadata record.
-
-        Matches on name, type, and features so that a ``SingleTimeSeries`` and a
-        ``DeterministicSingleTimeSeries`` sharing the same name (post-transform) are
-        distinguished.
-        """
-        category = (
-            OwnerCategory.Component
-            if record["owner_category"] == "Component"
-            else OwnerCategory.SupplementalAttribute
-        )
-        keys = self._store.get_time_series_keys(record["owner_id"], category)
-        for key in keys:
-            if (
-                key.name == record["name"]
-                and _ts_type_name(key.time_series_type) == record["time_series_type"]
-                and dict(key.features) == dict(record.get("features") or {})
-            ):
-                return self._store.get_time_series(key)
-        msg = f"Could not read stored object for {record['name']}"
-        raise ISNotStored(msg)
 
     @classmethod
     def _copy_store(cls, source: Path, destination: Path) -> None:
