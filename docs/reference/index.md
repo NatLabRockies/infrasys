@@ -10,4 +10,5 @@
 
     api/index
     system_json
+    benchmarks
 ```

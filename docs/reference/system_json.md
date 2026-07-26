@@ -1,4 +1,4 @@
-## Viewing System Data in JSON Format
+# Viewing System Data in JSON Format
 
 System data can be serialized to JSON files with `system.to_json("system.json")`.
 

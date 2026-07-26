@@ -24,6 +24,7 @@
 ```{eval-rst}
 .. autopydantic_model:: infrasys.time_series_models.NonSequentialTimeSeries
    :members:
+   :model-show-json: False
 ```
 
 ```{eval-rst}

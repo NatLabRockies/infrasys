@@ -22,6 +22,7 @@ extensions = [
     "sphinx.ext.todo",
     "sphinx_copybutton",
     "sphinxcontrib.autodoc_pydantic",
+    "sphinxcontrib.mermaid",
     "sphinx_tabs.tabs",
 ]
 
@@ -42,7 +43,6 @@ html_title = "Infrastructure Systems Documentation"
 html_theme_options = {
     "navigation_with_keys": True,
 }
-html_static_path = ["_static"]
 
 todo_include_todos = True
 autoclass_content = "both"

@@ -129,6 +129,7 @@ docs = [
     "sphinx-click",
     "sphinx-copybutton",
     "sphinx-tabs~=3.4",
+    "sphinxcontrib-mermaid",
 ]
 
 [tool.ruff.lint.per-file-ignores]
