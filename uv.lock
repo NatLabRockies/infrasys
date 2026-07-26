@@ -341,18 +341,16 @@ wheels = [
 
 [[package]]
 name = "infrastore"
-version = "0.1.0"
-source = { directory = "../castore/crates/infrastore-py" }
+version = "0.1.1"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "numpy", specifier = ">=1.24" },
-    { name = "pytest", marker = "extra == 'test'", specifier = ">=7" },
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b3/c6/7bc75884af45f688c5976945d6a485e430c3f193a0c04e9c03a4f71a2688/infrastore-0.1.1-cp311-abi3-macosx_14_0_arm64.whl", hash = "sha256:a30379d99b0e19c3fa2d0add91a776a4d74f06c7f7404db6b2d596218bc03880", size = 3458800, upload-time = "2026-07-26T02:14:12.601Z" },
+    { url = "https://files.pythonhosted.org/packages/c9/0c/ad16f8cc07eaccc5f2d94207b3b2cbbbee2c0e904e7ee3cec2ba5d6b7361/infrastore-0.1.1-cp311-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:abaaf820117d707b8a77014b037b85857d82dcde9136099244b961fa8fd7cc14", size = 4384817, upload-time = "2026-07-26T02:14:14.329Z" },
+    { url = "https://files.pythonhosted.org/packages/2b/72/d5610391894d908caf0dac694a55e8ecbcb88d11988f00285792f2ca9ed7/infrastore-0.1.1-cp311-abi3-win_amd64.whl", hash = "sha256:28f765cdcf2e105eedb3b1ccfa631634acdf3b1b42d7ecbb1fc53f7bccbf0b44", size = 5738478, upload-time = "2026-07-26T02:14:16.411Z" },
 ]
-provides-extras = ["test"]
 
 [[package]]
 name = "infrasys"
@@ -397,7 +395,7 @@ docs = [
 
 [package.metadata]
 requires-dist = [
-    { name = "infrastore", directory = "../castore/crates/infrastore-py" },
+    { name = "infrastore", specifier = ">=0.1.1,<0.2" },
     { name = "loguru", specifier = ">=0.7,<0.8" },
     { name = "numpy", specifier = ">=2,<3" },
     { name = "orjson", specifier = ">=3.11.5,<4" },
