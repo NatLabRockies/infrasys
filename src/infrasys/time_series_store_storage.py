@@ -27,7 +27,7 @@ import re
 import shutil
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from pathlib import Path
 from tempfile import mkdtemp
 from typing import Any, Generator, Literal
@@ -42,6 +42,7 @@ from infrastore import (  # type: ignore[import-untyped]
     OwnerCategory,
     SingleTimeSeries as RustSingleTimeSeries,
     Store,
+    TimeSeriesType as RustTimeSeriesType,
 )
 
 from infrasys.component import Component
@@ -66,8 +67,9 @@ from infrasys.time_series_models import (
     TimeSeriesStorageType,
     single_time_series_range,
 )
+from infrasys.time_series_reader import ForecastReader, TimeSeriesReader
 from infrasys.utils.path_utils import clean_tmp_folder
-from infrasys.utils.time_utils import to_iso_8601
+from infrasys.utils.time_utils import as_naive_utc, as_utc, to_iso_8601
 
 # Store-side time-series type names that infrasys exposes as ``Deterministic``.
 _FORECAST_TYPES = frozenset({"Deterministic", "DeterministicSingleTimeSeries"})
@@ -535,6 +537,72 @@ class TimeSeriesStoreStorage:
         return count
 
     # ------------------------------------------------------------------
+    # Readers
+    # ------------------------------------------------------------------
+    def build_reader(
+        self,
+        resolution: timedelta,
+        *,
+        name: str | None = None,
+        name_glob: str | None = None,
+        owner_type: str | None = None,
+        **features: Any,
+    ) -> TimeSeriesReader:
+        """Build a cross-sectional reader over the matching ``SingleTimeSeries``."""
+        self._flush_pending()
+        reader = self._store.build_static_reader(
+            resolution,
+            owner_category=OwnerCategory.Component,
+            owner_type=owner_type,
+            name=name,
+            name_glob=name_glob,
+            features=features or None,
+        )
+        group_component_ids = [
+            tuple(key.owner_id for key in group["keys"]) for group in reader.groups()
+        ]
+        units = {
+            key.owner_id: self._units_for_key(key)
+            for group in reader.groups()
+            for key in group["keys"]
+        }
+        return TimeSeriesReader(self._store, reader, group_component_ids, units)
+
+    def build_forecast_reader(
+        self,
+        resolution: timedelta,
+        *,
+        time_series_type: str = "Deterministic",
+        name: str | None = None,
+        name_glob: str | None = None,
+        owner_type: str | None = None,
+        **features: Any,
+    ) -> ForecastReader:
+        """Build a cross-sectional reader over the matching forecasts."""
+        self._flush_pending()
+        reader = self._store.build_forecast_reader(
+            _rust_time_series_type(time_series_type),
+            resolution,
+            owner_category=OwnerCategory.Component,
+            owner_type=owner_type,
+            name=name,
+            name_glob=name_glob,
+            features=features or None,
+        )
+        entries = reader.entries()
+        component_ids = tuple(key.owner_id for key in entries)
+        slots = tuple(reader.entry_slot(index) for index in range(len(entries)))
+        units = {key.owner_id: self._units_for_key(key) for key in entries}
+        return ForecastReader(self._store, reader, component_ids, slots, units)
+
+    def _units_for_key(self, key: Any) -> QuantityMetadata | None:
+        """Return the units recorded for a store key, or None if it is not indexed."""
+        assoc_map = self._index.get((key.owner_id, "Component"), {})
+        assoc_key = _assoc_key(key.name, _ts_type_name(key.time_series_type), dict(key.features))
+        stored = assoc_map.get(assoc_key)
+        return stored.units if stored is not None else None
+
+    # ------------------------------------------------------------------
     # Data operations
     # ------------------------------------------------------------------
     def get_time_series(
@@ -614,8 +682,8 @@ class TimeSeriesStoreStorage:
         )
         result_initial_timestamp = stored.initial_timestamp + index * stored.resolution
         time_range = (
-            _as_utc(result_initial_timestamp),
-            _as_utc(result_initial_timestamp + result_length * stored.resolution),
+            as_utc(result_initial_timestamp),
+            as_utc(result_initial_timestamp + result_length * stored.resolution),
         )
         return key, time_range, result_initial_timestamp
 
@@ -643,7 +711,7 @@ class TimeSeriesStoreStorage:
                 name=stored.name,
                 data=data,
                 timestamps=np.asarray(
-                    [_as_naive_utc(x) for x in rust_result.timestamps],
+                    [as_naive_utc(x) for x in rust_result.timestamps],
                     dtype=object,
                 ),
             )
@@ -653,7 +721,7 @@ class TimeSeriesStoreStorage:
             return Deterministic(
                 name=stored.name,
                 data=data.T,
-                initial_timestamp=_as_naive_utc(rust_result.initial_timestamp),
+                initial_timestamp=as_naive_utc(rust_result.initial_timestamp),
                 resolution=_parse_resolution(rust_result.resolution),
                 horizon=_parse_resolution(rust_result.horizon),
                 interval=_parse_resolution(rust_result.interval),
@@ -739,7 +807,7 @@ class TimeSeriesStoreStorage:
         horizon = interval = None
         window_count = None
         if record.get("initial_timestamp"):
-            initial_timestamp = _as_naive_utc(datetime.fromisoformat(record["initial_timestamp"]))
+            initial_timestamp = as_naive_utc(datetime.fromisoformat(record["initial_timestamp"]))
         if ts_type in _FORECAST_TYPES:
             horizon = _parse_resolution(record["horizon"])
             interval = _parse_resolution(record["interval"])
@@ -820,14 +888,14 @@ def _data_type_name(time_series: TimeSeriesData) -> str:
 def _to_rust_time_series(time_series: TimeSeriesData):
     if isinstance(time_series, SingleTimeSeries):
         return RustSingleTimeSeries(
-            _as_utc(time_series.initial_timestamp),
+            as_utc(time_series.initial_timestamp),
             time_series.resolution,
             np.asarray(time_series.data_array, dtype=np.float64),
             time_series.name,
         )
     if isinstance(time_series, NonSequentialTimeSeries):
         return RustNonSequentialTimeSeries(
-            [_as_utc(x) for x in time_series.timestamps.astype("datetime64[us]").tolist()],
+            [as_utc(x) for x in time_series.timestamps.astype("datetime64[us]").tolist()],
             np.asarray(time_series.data_array, dtype=np.float64),
             time_series.name,
         )
@@ -836,7 +904,7 @@ def _to_rust_time_series(time_series: TimeSeriesData):
         # the transpose (horizon_steps, count).
         data = np.ascontiguousarray(np.asarray(time_series.data_array, dtype=np.float64).T)
         return RustDeterministic(
-            _as_utc(time_series.initial_timestamp),
+            as_utc(time_series.initial_timestamp),
             time_series.resolution,
             time_series.horizon,
             time_series.interval,
@@ -871,6 +939,15 @@ def _category_name(category: OwnerCategory) -> str:
 
 def _ts_type_name(rust_type: Any) -> str:
     return str(rust_type).rsplit(".", 1)[-1]
+
+
+def _rust_time_series_type(name: str) -> Any:
+    """Return the store's time-series-type enum member for an infrasys type name."""
+    rust_type = getattr(RustTimeSeriesType, name, None)
+    if rust_type is None:
+        msg = f"Unsupported time series type for readers: {name}"
+        raise ISInvalidParameter(msg)
+    return rust_type
 
 
 def _owner_identity(owner: Any) -> tuple[int, OwnerCategory]:
@@ -956,13 +1033,3 @@ def _parse_resolution(resolution: str | None) -> timedelta:
         minutes=parts.get("minutes", 0),
         seconds=parts.get("seconds", 0),
     )
-
-
-def _as_utc(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
-
-
-def _as_naive_utc(value: datetime) -> datetime:
-    return value.astimezone(timezone.utc).replace(tzinfo=None)

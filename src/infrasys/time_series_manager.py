@@ -23,6 +23,7 @@ from .time_series_models import (
     TimeSeriesStorageContext,
     TimeSeriesStorageType,
 )
+from .time_series_reader import ForecastReader, TimeSeriesReader
 from .time_series_store_storage import TimeSeriesCounts, TimeSeriesStoreStorage
 
 
@@ -255,6 +256,44 @@ class TimeSeriesManager:
     def get_time_series_counts(self) -> TimeSeriesCounts:
         """Return summary counts of stored time series."""
         return self._storage.get_time_series_counts()
+
+    def build_reader(
+        self,
+        resolution: timedelta,
+        *,
+        name: str | None = None,
+        name_glob: str | None = None,
+        component_type: Type[Component] | None = None,
+        **features: Any,
+    ) -> TimeSeriesReader:
+        """Build a cross-sectional reader over the matching ``SingleTimeSeries``."""
+        return self._storage.build_reader(
+            resolution,
+            name=name,
+            name_glob=name_glob,
+            owner_type=None if component_type is None else component_type.__name__,
+            **features,
+        )
+
+    def build_forecast_reader(
+        self,
+        resolution: timedelta,
+        *,
+        time_series_type: Type[TimeSeriesData] = Deterministic,
+        name: str | None = None,
+        name_glob: str | None = None,
+        component_type: Type[Component] | None = None,
+        **features: Any,
+    ) -> ForecastReader:
+        """Build a cross-sectional reader over the matching forecasts."""
+        return self._storage.build_forecast_reader(
+            resolution,
+            time_series_type=time_series_type.__name__,
+            name=name,
+            name_glob=name_glob,
+            owner_type=None if component_type is None else component_type.__name__,
+            **features,
+        )
 
     def remove(
         self,

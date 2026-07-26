@@ -44,11 +44,13 @@ from .supplemental_attribute import SupplementalAttribute
 from .supplemental_attribute_manager import SupplementalAttributeManager
 from .time_series_manager import TIME_SERIES_KWARGS, TimeSeriesManager
 from .time_series_models import (
+    Deterministic,
     SingleTimeSeries,
     TimeSeriesData,
     TimeSeriesKey,
     TimeSeriesStorageContext,
 )
+from .time_series_reader import ForecastReader, TimeSeriesReader
 from .utils.migrations import upgrade_legacy_component_ids
 from .utils.time_utils import from_iso_8601
 
@@ -440,9 +442,7 @@ class System:
         time_series_manager = TimeSeriesManager.deserialize(
             data["time_series"], ts_path, **ts_kwargs
         )
-        supplemental_attribute_manager = SupplementalAttributeManager(
-            time_series_manager.storage
-        )
+        supplemental_attribute_manager = SupplementalAttributeManager(time_series_manager.storage)
         system = cls(
             name=system_data.get("name"),
             description=system_data.get("description"),
@@ -1469,6 +1469,139 @@ class System:
         >>> forecast = system.get_time_series(gen1, "active_power", time_series_type=Deterministic)
         """
         return self._time_series_mgr.transform_single_time_series(horizon, interval)
+
+    def build_time_series_reader(
+        self,
+        resolution: timedelta,
+        *,
+        name: str | None = None,
+        name_glob: str | None = None,
+        component_type: Type[Component] | None = None,
+        **features: Any,
+    ) -> TimeSeriesReader:
+        """Build a reader that returns every matching component's value at one timestamp.
+
+        This is the access pattern for stepping a simulation through time. The other read
+        methods return one component's whole array; a reader returns one timestamp's value
+        across components, without holding the arrays in memory.
+
+        All matched series must share one grid (initial timestamp, resolution, and length).
+        The reader covers the associations that match at build time; add or remove time
+        series afterwards and you need a new reader.
+
+        Parameters
+        ----------
+        resolution
+            Resolution of the series to read. One resolution per reader.
+        name
+            Only read series with this name.
+        name_glob
+            Only read series whose name matches this glob pattern (``*`` and ``?``).
+        component_type
+            Only read series owned by components of this type.
+        features
+            Only read series carrying these feature key/value pairs.
+
+        Returns
+        -------
+        TimeSeriesReader
+            Reader whose ``read(timestamp)`` returns ``{component id: value}``.
+
+        Raises
+        ------
+        InvalidParameterError
+            Raised by the store if no series match, or if the matched series do not share
+            one grid.
+
+        Examples
+        --------
+        >>> reader = system.build_time_series_reader(timedelta(hours=1), name="active_power")
+        >>> for timestamp in reader.timestamps:
+        ...     for component_id, value in reader.read(timestamp).items():
+        ...         ...
+
+        See Also
+        --------
+        build_forecast_reader
+        """
+        return self._time_series_mgr.build_reader(
+            resolution,
+            name=name,
+            name_glob=name_glob,
+            component_type=component_type,
+            **features,
+        )
+
+    def build_forecast_reader(
+        self,
+        resolution: timedelta,
+        *,
+        time_series_type: Type[TimeSeriesData] = Deterministic,
+        name: str | None = None,
+        name_glob: str | None = None,
+        component_type: Type[Component] | None = None,
+        **features: Any,
+    ) -> ForecastReader:
+        """Build a reader that returns every matching component's forecast window at one time.
+
+        Components whose forecasts share a backing array collapse to a single slot, and the
+        store reads each slot once per step rather than once per component. This matters
+        after :meth:`transform_single_time_series`, and wherever many components were given
+        the same profile. ``reader.num_slots`` reports how many distinct windows a step
+        actually reads.
+
+        Parameters
+        ----------
+        resolution
+            Resolution of the forecasts to read. One resolution per reader.
+        time_series_type
+            Forecast type to read. A ``Deterministic`` reader also covers the forecasts
+            derived by :meth:`transform_single_time_series`.
+        name
+            Only read forecasts with this name.
+        name_glob
+            Only read forecasts whose name matches this glob pattern (``*`` and ``?``).
+        component_type
+            Only read forecasts owned by components of this type.
+        features
+            Only read forecasts carrying these feature key/value pairs.
+
+        Returns
+        -------
+        ForecastReader
+            Reader whose ``read(timestamp)`` returns ``{component id: window array}``.
+
+        Raises
+        ------
+        InvalidParameterError
+            Raised by the store if no forecasts match, or if the matched forecasts do not
+            share one window timeline.
+
+        Examples
+        --------
+        >>> reader = system.build_forecast_reader(timedelta(hours=1), name="active_power")
+        >>> for timestamp in reader.timestamps:
+        ...     windows = reader.read(timestamp)
+
+        Drive work per distinct window rather than per component:
+
+        >>> components_by_slot = reader.components_by_slot()
+        >>> for slot, window in reader.read_slots(timestamp).items():
+        ...     for component_id in components_by_slot[slot]:
+        ...         ...
+
+        See Also
+        --------
+        build_time_series_reader
+        """
+        return self._time_series_mgr.build_forecast_reader(
+            resolution,
+            time_series_type=time_series_type,
+            name=name,
+            name_glob=name_glob,
+            component_type=component_type,
+            **features,
+        )
 
     @contextmanager
     def open_time_series_store(

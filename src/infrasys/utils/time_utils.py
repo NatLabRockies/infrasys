@@ -1,6 +1,6 @@
 import re
 from collections import OrderedDict
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 from dateutil.relativedelta import relativedelta
 
@@ -189,3 +189,19 @@ def str_timedelta_to_iso_8601(delta_str: str) -> str:
     delta = timedelta(days=days, hours=hours, minutes=minutes, seconds=seconds)
 
     return to_iso_8601(delta)
+
+
+def as_utc(value: datetime) -> datetime:
+    """Return ``value`` as a timezone-aware UTC datetime.
+
+    infrasys models carry naive timestamps that are understood to be UTC; the time series
+    store requires them to be aware.
+    """
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def as_naive_utc(value: datetime) -> datetime:
+    """Return ``value`` as a naive UTC datetime, the form infrasys models use."""
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
