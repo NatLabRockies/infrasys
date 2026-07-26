@@ -10,4 +10,5 @@
     :caption: Contents:
 
     list_time_series
+    read_time_series_by_timestamp
 ```

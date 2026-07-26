@@ -34,3 +34,25 @@
 .. autopydantic_model:: infrasys.time_series_models.Deterministic
    :members:
 ```
+
+```{eval-rst}
+.. _time-series-readers-api:
+```
+
+## Readers
+
+Readers return every matched component's data at one timestamp, which is the transpose of
+what the other read methods provide. Build them with
+{py:meth}`infrasys.system.System.build_time_series_reader` and
+{py:meth}`infrasys.system.System.build_forecast_reader`. See
+[How to read time series by timestamp](#read-time-series-by-timestamp) for a worked example.
+
+```{eval-rst}
+.. autoclass:: infrasys.time_series_reader.TimeSeriesReader
+   :members:
+```
+
+```{eval-rst}
+.. autoclass:: infrasys.time_series_reader.ForecastReader
+   :members:
+```

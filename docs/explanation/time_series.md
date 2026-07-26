@@ -117,6 +117,25 @@ forecast = system.get_time_series(generator, name="active_power", time_series_ty
 `SingleTimeSeries` remains retrievable with `time_series_type=SingleTimeSeries`; the forecast view
 is returned as a `Deterministic` whose data is a 2D array with one forecast window per row.
 
+## Reading by Timestamp
+
+`get_time_series` and its variants are series-oriented: they return one component's whole
+array. Simulations need the transpose — every component's value at one timestamp, then the
+next — and cannot afford to hold every array in memory to get it.
+
+`System.build_time_series_reader(resolution, ...)` returns a reader whose
+`read(timestamp)` is `{component id: value}`, and
+`System.build_forecast_reader(resolution, ...)` returns one whose `read(timestamp)` is
+`{component id: forecast window}`. Build a reader once against a filter (`name`,
+`name_glob`, `component_type`, or feature key/value pairs) and drive it forward through
+time; each read touches only the values for the requested timestamp.
+
+Forecast readers additionally collapse components that share a backing array into a single
+*slot* and perform one physical read per slot, which matters after
+`transform_single_time_series` and wherever many components were given the same profile.
+
+See [How to read time series by timestamp](#read-time-series-by-timestamp).
+
 ## Resolution
 
 Infrastructure systems support two types of objects for passing the resolution:
