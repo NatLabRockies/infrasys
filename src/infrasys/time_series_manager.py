@@ -4,13 +4,14 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta
 from functools import singledispatch
 from pathlib import Path
-from typing import Any, Generator, Literal, Optional, Type
+from typing import Any, Generator, Optional, Type
 
 from loguru import logger
 
 from .component import Component
 from .exceptions import ISInvalidParameter, ISOperationNotAllowed
 from .supplemental_attribute import SupplementalAttribute
+from .time_series_context import TimeSeriesStorageContext
 from .time_series_models import (
     Deterministic,
     DeterministicTimeSeriesKey,
@@ -20,7 +21,6 @@ from .time_series_models import (
     SingleTimeSeriesKey,
     TimeSeriesData,
     TimeSeriesKey,
-    TimeSeriesStorageContext,
     TimeSeriesStorageType,
 )
 from .time_series_reader import ForecastReader, TimeSeriesReader
@@ -55,7 +55,6 @@ class TimeSeriesManager:
     ) -> None:
         self._read_only = _process_time_series_kwarg("time_series_read_only", **kwargs)
         self._storage: TimeSeriesStoreStorage = storage or self.create_new_storage(**kwargs)
-        self._context: TimeSeriesStorageContext | None = None
 
     def close(self) -> None:
         """Release resources held by the storage backend."""
@@ -90,6 +89,30 @@ class TimeSeriesManager:
         """Return the time series storage object."""
         return self._storage
 
+    @contextmanager
+    def _ensure_context(
+        self, context: TimeSeriesStorageContext | None
+    ) -> Generator[TimeSeriesStorageContext, None, None]:
+        """Yield the caller's context, or a transient one covering just this operation.
+
+        A caller-supplied context is left open: the block that created it decides when to
+        commit. A transient context is committed on success and discarded on failure, so
+        an operation invoked without a batch behaves exactly as it did before contexts
+        became explicit.
+        """
+        if context is not None:
+            context.check_owns(self._storage)
+            yield context
+            return
+
+        transient = self._storage.new_context()
+        try:
+            yield transient
+        except Exception:
+            transient.discard()
+            raise
+        transient.commit()
+
     def add(
         self,
         time_series: TimeSeriesData,
@@ -117,7 +140,6 @@ class TimeSeriesManager:
             Raised if the manager was created in read-only mode.
         """
         self._handle_read_only()
-        context = context or self._context
         if not owners:
             msg = "add_time_series requires at least one component or supplemental attribute"
             raise ISOperationNotAllowed(msg)
@@ -130,9 +152,8 @@ class TimeSeriesManager:
             msg = f"Time-series persistence is not implemented for {ts_type.__name__}"
             raise NotImplementedError(msg)
 
-        self._storage.add_time_series(
-            time_series, *owners, context=_get_data_context(context), **features
-        )
+        with self._ensure_context(context) as ctx:
+            self._storage.add_time_series(time_series, *owners, context=ctx, **features)
         return make_time_series_key(time_series, features)
 
     def get(
@@ -158,47 +179,54 @@ class TimeSeriesManager:
         --------
         list_time_series
         """
-        metadata = self._storage.get_metadata(
-            owner,
-            name=name,
-            time_series_type=time_series_type.__name__ if time_series_type else None,
-            **features,
-        )
-        return self._get_by_metadata(
-            metadata, owner, start_time=start_time, length=length, context=context
-        )
+        with self._ensure_context(context) as ctx:
+            metadata = self._storage.get_metadata(
+                owner,
+                name=name,
+                time_series_type=time_series_type.__name__ if time_series_type else None,
+                context=ctx,
+                **features,
+            )
+            return self._get_by_metadata(
+                metadata, owner, start_time=start_time, length=length, context=ctx
+            )
 
     def get_by_key(
         self,
         owner: Component | SupplementalAttribute,
         key: TimeSeriesKey,
-        connection: TimeSeriesStorageContext | None = None,
+        context: TimeSeriesStorageContext | None = None,
     ) -> TimeSeriesData:
         """Return a time series array by key."""
-        metadata = self._storage.get_metadata(
-            owner,
-            name=key.name,
-            time_series_type=key.time_series_type.__name__,
-            **key.features,
-        )
-        return self._get_by_metadata(metadata, owner, context=connection)
+        with self._ensure_context(context) as ctx:
+            metadata = self._storage.get_metadata(
+                owner,
+                name=key.name,
+                time_series_type=key.time_series_type.__name__,
+                context=ctx,
+                **key.features,
+            )
+            return self._get_by_metadata(metadata, owner, context=ctx)
 
     def has_time_series(
         self,
         owner: Component | SupplementalAttribute,
         name: str | None = None,
         time_series_type: Type[TimeSeriesData] = SingleTimeSeries,
+        context: TimeSeriesStorageContext | None = None,
         **features,
     ) -> bool:
         """Return True if the component or supplemental atttribute has time series matching the
         inputs.
         """
-        return self._storage.has_metadata(
-            owner,
-            name=name,
-            time_series_type=time_series_type.__name__,
-            **features,
-        )
+        with self._ensure_context(context) as ctx:
+            return self._storage.has_metadata(
+                owner,
+                name=name,
+                time_series_type=time_series_type.__name__,
+                context=ctx,
+                **features,
+            )
 
     def list_time_series(
         self,
@@ -207,55 +235,66 @@ class TimeSeriesManager:
         time_series_type: Type[TimeSeriesData] = SingleTimeSeries,
         start_time: datetime | None = None,
         length: int | None = None,
-        connection: TimeSeriesStorageContext | None = None,
+        context: TimeSeriesStorageContext | None = None,
         **features: Any,
     ) -> list[TimeSeriesData]:
         """Return all time series that match the inputs."""
-        records = self._storage.list_metadata(
-            owner,
-            name=name,
-            time_series_type=time_series_type.__name__,
-            **features,
-        )
-        return self._storage.get_time_series_bulk(
-            records,
-            owner,
-            start_time=start_time,
-            length=length,
-            context=_get_data_context(connection),
-        )
+        with self._ensure_context(context) as ctx:
+            records = self._storage.list_metadata(
+                owner,
+                name=name,
+                time_series_type=time_series_type.__name__,
+                context=ctx,
+                **features,
+            )
+            return self._storage.get_time_series_bulk(
+                records,
+                owner,
+                start_time=start_time,
+                length=length,
+                context=ctx,
+            )
 
     def list_time_series_keys(
         self,
         owner: Component | SupplementalAttribute,
         name: str | None = None,
         time_series_type: Type[TimeSeriesData] = SingleTimeSeries,
+        context: TimeSeriesStorageContext | None = None,
         **features: Any,
     ) -> list[TimeSeriesKey]:
         """Return all time series keys that match the inputs."""
-        return self.list_time_series_metadata(owner, name, time_series_type, **features)
+        return self.list_time_series_metadata(
+            owner, name, time_series_type, context=context, **features
+        )
 
     def list_time_series_metadata(
         self,
         owner: Component | SupplementalAttribute,
         name: str | None = None,
         time_series_type: Type[TimeSeriesData] = SingleTimeSeries,
+        context: TimeSeriesStorageContext | None = None,
         **features: Any,
     ) -> list[TimeSeriesKey]:
         """Return the keys describing all time series that match the inputs."""
-        return [
-            self._storage.key_for(record)
-            for record in self._storage.list_metadata(
-                owner,
-                name=name,
-                time_series_type=time_series_type.__name__,
-                **features,
-            )
-        ]
+        with self._ensure_context(context) as ctx:
+            return [
+                self._storage.key_for(record)
+                for record in self._storage.list_metadata(
+                    owner,
+                    name=name,
+                    time_series_type=time_series_type.__name__,
+                    context=ctx,
+                    **features,
+                )
+            ]
 
-    def get_time_series_counts(self) -> TimeSeriesCounts:
+    def get_time_series_counts(
+        self, context: TimeSeriesStorageContext | None = None
+    ) -> TimeSeriesCounts:
         """Return summary counts of stored time series."""
-        return self._storage.get_time_series_counts()
+        with self._ensure_context(context) as ctx:
+            return self._storage.get_time_series_counts(ctx)
 
     def build_reader(
         self,
@@ -264,16 +303,19 @@ class TimeSeriesManager:
         name: str | None = None,
         name_glob: str | None = None,
         component_type: Type[Component] | None = None,
+        context: TimeSeriesStorageContext | None = None,
         **features: Any,
     ) -> TimeSeriesReader:
         """Build a cross-sectional reader over the matching ``SingleTimeSeries``."""
-        return self._storage.build_reader(
-            resolution,
-            name=name,
-            name_glob=name_glob,
-            owner_type=None if component_type is None else component_type.__name__,
-            **features,
-        )
+        with self._ensure_context(context) as ctx:
+            return self._storage.build_reader(
+                resolution,
+                name=name,
+                name_glob=name_glob,
+                owner_type=None if component_type is None else component_type.__name__,
+                context=ctx,
+                **features,
+            )
 
     def build_forecast_reader(
         self,
@@ -283,17 +325,20 @@ class TimeSeriesManager:
         name: str | None = None,
         name_glob: str | None = None,
         component_type: Type[Component] | None = None,
+        context: TimeSeriesStorageContext | None = None,
         **features: Any,
     ) -> ForecastReader:
         """Build a cross-sectional reader over the matching forecasts."""
-        return self._storage.build_forecast_reader(
-            resolution,
-            time_series_type=time_series_type.__name__,
-            name=name,
-            name_glob=name_glob,
-            owner_type=None if component_type is None else component_type.__name__,
-            **features,
-        )
+        with self._ensure_context(context) as ctx:
+            return self._storage.build_forecast_reader(
+                resolution,
+                time_series_type=time_series_type.__name__,
+                name=name,
+                name_glob=name_glob,
+                owner_type=None if component_type is None else component_type.__name__,
+                context=ctx,
+                **features,
+            )
 
     def remove(
         self,
@@ -313,13 +358,14 @@ class TimeSeriesManager:
             Raised if the manager was created in read-only mode.
         """
         self._handle_read_only()
-        self._storage.remove(
-            *owners,
-            name=name,
-            time_series_type=time_series_type.__name__,
-            context=_get_data_context(context),
-            **features,
-        )
+        with self._ensure_context(context) as ctx:
+            self._storage.remove(
+                *owners,
+                name=name,
+                time_series_type=time_series_type.__name__,
+                context=ctx,
+                **features,
+            )
         logger.info("Removed time series {}.{}", time_series_type, name)
 
     def copy(
@@ -327,6 +373,7 @@ class TimeSeriesManager:
         dst: Component | SupplementalAttribute,
         src: Component | SupplementalAttribute,
         name_mapping: dict[str, str] | None = None,
+        context: TimeSeriesStorageContext | None = None,
     ) -> None:
         """Copy all time series from src to dst.
 
@@ -337,7 +384,12 @@ class TimeSeriesManager:
         self._handle_read_only()
         raise NotImplementedError
 
-    def transform_single_time_series(self, horizon: timedelta, interval: timedelta) -> int:
+    def transform_single_time_series(
+        self,
+        horizon: timedelta,
+        interval: timedelta,
+        context: TimeSeriesStorageContext | None = None,
+    ) -> int:
         """Derive ``Deterministic`` forecasts from every stored ``SingleTimeSeries``.
 
         Each ``SingleTimeSeries`` gains a forecast view sharing the same underlying array.
@@ -350,7 +402,8 @@ class TimeSeriesManager:
             Raised if the manager was created in read-only mode.
         """
         self._handle_read_only()
-        return self._storage.transform_single_time_series(horizon, interval)
+        with self._ensure_context(context) as ctx:
+            return self._storage.transform_single_time_series(horizon, interval, ctx)
 
     def _get_by_metadata(
         self,
@@ -358,14 +411,15 @@ class TimeSeriesManager:
         owner: Component | SupplementalAttribute,
         start_time: datetime | None = None,
         length: int | None = None,
-        context: TimeSeriesStorageContext | None = None,
+        *,
+        context: TimeSeriesStorageContext,
     ) -> TimeSeriesData:
         return self._storage.get_time_series(
             record,
             owner,
             start_time=start_time,
             length=length,
-            context=_get_data_context(context),
+            context=context,
         )
 
     def serialize(
@@ -373,9 +427,11 @@ class TimeSeriesManager:
         data: dict[str, Any],
         dst: Path | str,
         src: Path | str | None = None,
+        context: TimeSeriesStorageContext | None = None,
     ) -> None:
         """Serialize the time series data to dst."""
-        self._storage.serialize(data, dst, src=src)
+        with self._ensure_context(context) as ctx:
+            self._storage.serialize(data, dst, src=src, context=ctx)
 
     @classmethod
     def deserialize(
@@ -402,22 +458,22 @@ class TimeSeriesManager:
         return cls(storage=storage, initialize=False, **kwargs)
 
     @contextmanager
-    def open_time_series_store(
-        self, mode: Literal["r", "r+", "a", "w", "w-"] = "a"
-    ) -> Generator[TimeSeriesStorageContext, None, None]:
-        """Open a connection to the time series store for batched operations."""
-        with self.storage.open_time_series_store(mode=mode) as context:
-            snapshot = self._storage.snapshot_index()
-            try:
-                self._context = TimeSeriesStorageContext(data_context=context)
-                yield self._context
-            except Exception as e:
-                # Undo any time series added during the failed batch.
-                logger.error(e)
-                self._storage.rollback_to(snapshot)
-                raise
-            finally:
-                self._context = None
+    def open_time_series_store(self) -> Generator[TimeSeriesStorageContext, None, None]:
+        """Open a context that batches every operation passed to it.
+
+        The context commits on a clean exit. If the block raises, it is discarded: staged
+        additions are dropped and anything the block had already flushed is removed from
+        the store. Only this context's own writes are undone, so a concurrent batch is
+        untouched.
+        """
+        context = self._storage.new_context()
+        try:
+            yield context
+        except Exception as e:
+            logger.error(e)
+            context.discard()
+            raise
+        context.commit()
 
     def _handle_read_only(self) -> None:
         if self._read_only:
@@ -465,7 +521,3 @@ def _(time_series: Deterministic, features: dict[str, Any]) -> TimeSeriesKey:
         name=time_series.name,
         time_series_type=Deterministic,
     )
-
-
-def _get_data_context(conn: TimeSeriesStorageContext | None) -> Any:
-    return None if conn is None else conn.data_context

@@ -36,6 +36,21 @@
 ```
 
 ```{eval-rst}
+.. _time-series-context-api:
+```
+
+## Context
+
+The transaction object for time series operations, returned by
+{py:meth}`infrasys.system.System.open_time_series_store`. Pass it as ``context=`` to batch
+calls together and to make them share one unit of rollback.
+
+```{eval-rst}
+.. autoclass:: infrasys.time_series_context.TimeSeriesStorageContext
+   :members:
+```
+
+```{eval-rst}
 .. _time-series-readers-api:
 ```
 

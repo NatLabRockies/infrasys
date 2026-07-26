@@ -451,9 +451,9 @@ def test_open_time_series_store_defers_writes(tmp_path):
     with system.open_time_series_store() as conn:
         for ts in time_series:
             system.add_time_series(ts, generator, context=conn)
-        # The index sees the additions immediately, but the store has not been written yet.
+        # The context sees its own staged additions, but the store has not been written yet.
         for ts in time_series:
-            assert system.has_time_series(generator, name=ts.name)
+            assert system.has_time_series(generator, name=ts.name, context=conn)
         assert storage.store.list_time_series() == []
 
     assert len(storage.store.list_time_series()) == len(time_series)

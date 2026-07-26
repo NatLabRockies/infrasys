@@ -822,7 +822,8 @@ def test_bulk_add_time_series_with_rollback(storage_type: TimeSeriesStorageType)
             data = np.random.rand(length)
             ts = SingleTimeSeries.from_array(data, ts_name, initial_time, resolution)
             system.add_time_series(ts, gen, context=conn)
-            assert system.has_time_series(gen, name=ts_name)
+            # Staged additions are visible through the context that staged them.
+            assert system.has_time_series(gen, name=ts_name, context=conn)
             system.add_time_series(ts, gen, context=conn)
 
     assert not system.has_time_series(gen, name=ts_name)
@@ -890,7 +891,9 @@ def test_bulk_add_deterministic_time_series_with_rollback(storage_type: TimeSeri
                 3,
             )
             system.add_time_series(ts, gen, context=conn)
-            assert system.has_time_series(gen, name=ts_name, time_series_type=Deterministic)
+            assert system.has_time_series(
+                gen, name=ts_name, time_series_type=Deterministic, context=conn
+            )
             system.add_time_series(ts, gen, context=conn)
 
     assert not system.has_time_series(gen, name=ts_name, time_series_type=Deterministic)
@@ -945,7 +948,7 @@ def test_bulk_add_nonsequential_time_series_with_rollback(storage_type: TimeSeri
             ts = NonSequentialTimeSeries.from_array(np.random.rand(4), timestamps, ts_name)
             system.add_time_series(ts, gen, context=conn)
             assert system.has_time_series(
-                gen, name=ts_name, time_series_type=NonSequentialTimeSeries
+                gen, name=ts_name, time_series_type=NonSequentialTimeSeries, context=conn
             )
             system.add_time_series(ts, gen, context=conn)
 

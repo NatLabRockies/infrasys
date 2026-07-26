@@ -534,9 +534,3 @@ class DeterministicTimeSeriesKey(TimeSeriesKey):
     interval: timedelta
     horizon: timedelta
     window_count: int
-
-
-class TimeSeriesStorageContext(InfraSysBaseModel):
-    """Stores the connection to the time series data store during transactions."""
-
-    data_context: Any = None

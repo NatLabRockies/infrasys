@@ -7,7 +7,7 @@ from collections import defaultdict
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Callable, Generator, Iterable, Literal, Optional, Type, TypeAlias, TypeVar
+from typing import Any, Callable, Generator, Iterable, Optional, Type, TypeVar
 from uuid import UUID, uuid4
 
 import orjson
@@ -43,12 +43,12 @@ from .serialization import (
 from .supplemental_attribute import SupplementalAttribute
 from .supplemental_attribute_manager import SupplementalAttributeManager
 from .time_series_manager import TIME_SERIES_KWARGS, TimeSeriesManager
+from .time_series_context import TimeSeriesStorageContext
 from .time_series_models import (
     Deterministic,
     SingleTimeSeries,
     TimeSeriesData,
     TimeSeriesKey,
-    TimeSeriesStorageContext,
 )
 from .time_series_reader import ForecastReader, TimeSeriesReader
 from .utils.migrations import upgrade_legacy_component_ids
@@ -56,7 +56,6 @@ from .utils.time_utils import from_iso_8601
 
 T = TypeVar("T", bound="Component")
 U = TypeVar("U", bound="SupplementalAttribute")
-FileMode: TypeAlias = Literal["r", "r+", "a"]
 
 
 class System:
@@ -161,7 +160,14 @@ class System:
         """Set auto_add_composed_components."""
         self._component_mgr.auto_add_composed_components = val
 
-    def to_json(self, filename: Path | str, overwrite=False, indent=None, data=None) -> None:
+    def to_json(
+        self,
+        filename: Path | str,
+        overwrite=False,
+        indent=None,
+        data=None,
+        context: TimeSeriesStorageContext | None = None,
+    ) -> None:
         """Write the contents of a system to a JSON file. Time series will be written to a
         directory at the same level as filename.
 
@@ -178,12 +184,22 @@ class System:
             class. If set, it will be the outer object in the JSON file. It must not set the
             key 'system'. Packages that derive a custom instance of this class should leave this
             field unset.
+        context : TimeSeriesStorageContext | None
+            Pass the context returned by :meth:`open_time_series_store` when serializing from
+            inside that block, so its staged time series are flushed and included. Without it
+            only committed time series are written.
 
         Examples
         --------
         >>> system.to_json("systems/system1.json")
         INFO: Wrote system data to systems/system1.json
         INFO: Copied time series data to systems/system1_time_series
+
+        Serialize from inside an open batch:
+
+        >>> with system.open_time_series_store() as context:
+        ...     system.add_time_series(ts, gen, context=context)
+        ...     system.to_json("systems/system1.json", context=context)
         """
         # TODO: how to get all python package info from environment?
         if isinstance(filename, str):
@@ -225,7 +241,9 @@ class System:
                 raise ISConflictingArguments(msg)
             data["system"] = system_data
 
-        self._time_series_mgr.serialize(system_data["time_series"], time_series_dir)
+        self._time_series_mgr.serialize(
+            system_data["time_series"], time_series_dir, context=context
+        )
 
         data_dump = orjson.dumps(data)
         with open(filename, "wb") as f_out:
@@ -1147,6 +1165,7 @@ class System:
         dst: Component | SupplementalAttribute,
         src: Component | SupplementalAttribute,
         name_mapping: dict[str, str] | None = None,
+        context: TimeSeriesStorageContext | None = None,
     ) -> None:
         """Copy all time series from src to dst.
 
@@ -1172,7 +1191,7 @@ class System:
         >>> gen2 = system.get_component(Generator, "gen2")
         >>> system.copy_time_series(gen1, gen2)
         """
-        return self._time_series_mgr.copy(dst, src, name_mapping=name_mapping)
+        return self._time_series_mgr.copy(dst, src, name_mapping=name_mapping, context=context)
 
     def get_time_series(
         self,
@@ -1239,16 +1258,20 @@ class System:
         )
 
     def get_time_series_by_key(
-        self, owner: Component | SupplementalAttribute, key: TimeSeriesKey
+        self,
+        owner: Component | SupplementalAttribute,
+        key: TimeSeriesKey,
+        context: TimeSeriesStorageContext | None = None,
     ) -> Any:
         """Return a time series array by key."""
-        return self._time_series_mgr.get_by_key(owner, key)
+        return self._time_series_mgr.get_by_key(owner, key, context=context)
 
     def has_time_series(
         self,
         owner: Component | SupplementalAttribute,
         name: Optional[str] = None,
         time_series_type: Type[TimeSeriesData] = SingleTimeSeries,
+        context: TimeSeriesStorageContext | None = None,
         **features: str,
     ) -> bool:
         """Return True if the component has time series matching the inputs.
@@ -1268,6 +1291,7 @@ class System:
             owner,
             name=name,
             time_series_type=time_series_type,
+            context=context,
             **features,
         )
 
@@ -1278,6 +1302,7 @@ class System:
         time_series_type: Type[TimeSeriesData] = SingleTimeSeries,
         start_time: datetime | None = None,
         length: int | None = None,
+        context: TimeSeriesStorageContext | None = None,
         **features: Any,
     ) -> list[TimeSeriesData]:
         """Return all time series that match the inputs.
@@ -1309,6 +1334,7 @@ class System:
             time_series_type=time_series_type,
             start_time=start_time,
             length=length,
+            context=context,
             **features,
         )
 
@@ -1317,6 +1343,7 @@ class System:
         owner: Component | SupplementalAttribute,
         name: str | None = None,
         time_series_type: Type[TimeSeriesData] = SingleTimeSeries,
+        context: TimeSeriesStorageContext | None = None,
         **features: Any,
     ) -> list[TimeSeriesKey]:
         """Return all time series keys that match the inputs.
@@ -1342,6 +1369,7 @@ class System:
             owner,
             name=name,
             time_series_type=time_series_type,
+            context=context,
             **features,
         )
 
@@ -1350,6 +1378,7 @@ class System:
         component: Component,
         name: str | None = None,
         time_series_type: Type[TimeSeriesData] = SingleTimeSeries,
+        context: TimeSeriesStorageContext | None = None,
         **features: Any,
     ) -> list[TimeSeriesKey]:
         """Return all time series keys that match the inputs.
@@ -1375,6 +1404,7 @@ class System:
             component,
             name=name,
             time_series_type=time_series_type,
+            context=context,
             **features,
         )
 
@@ -1383,6 +1413,7 @@ class System:
         *owners: Component | SupplementalAttribute,
         name: str | None = None,
         time_series_type: Type[TimeSeriesData] = SingleTimeSeries,
+        context: TimeSeriesStorageContext | None = None,
         **features: Any,
     ) -> None:
         """Remove all time series arrays attached to the components or supplemental attributes
@@ -1415,10 +1446,16 @@ class System:
             *owners,
             name=name,
             time_series_type=time_series_type,
+            context=context,
             **features,
         )
 
-    def transform_single_time_series(self, horizon: timedelta, interval: timedelta) -> int:
+    def transform_single_time_series(
+        self,
+        horizon: timedelta,
+        interval: timedelta,
+        context: TimeSeriesStorageContext | None = None,
+    ) -> int:
         """Derive ``Deterministic`` forecasts from every stored ``SingleTimeSeries``.
 
         Each ``SingleTimeSeries`` gains a forecast view that shares the same underlying array
@@ -1445,7 +1482,9 @@ class System:
         ... )
         >>> forecast = system.get_time_series(gen1, "active_power", time_series_type=Deterministic)
         """
-        return self._time_series_mgr.transform_single_time_series(horizon, interval)
+        return self._time_series_mgr.transform_single_time_series(
+            horizon, interval, context=context
+        )
 
     def build_time_series_reader(
         self,
@@ -1454,6 +1493,7 @@ class System:
         name: str | None = None,
         name_glob: str | None = None,
         component_type: Type[Component] | None = None,
+        context: TimeSeriesStorageContext | None = None,
         **features: Any,
     ) -> TimeSeriesReader:
         """Build a reader that returns every matching component's value at one timestamp.
@@ -1506,6 +1546,7 @@ class System:
             name=name,
             name_glob=name_glob,
             component_type=component_type,
+            context=context,
             **features,
         )
 
@@ -1517,6 +1558,7 @@ class System:
         name: str | None = None,
         name_glob: str | None = None,
         component_type: Type[Component] | None = None,
+        context: TimeSeriesStorageContext | None = None,
         **features: Any,
     ) -> ForecastReader:
         """Build a reader that returns every matching component's forecast window at one time.
@@ -1577,31 +1619,35 @@ class System:
             name=name,
             name_glob=name_glob,
             component_type=component_type,
+            context=context,
             **features,
         )
 
     @contextmanager
-    def open_time_series_store(
-        self, mode: FileMode = "r+"
-    ) -> Generator[TimeSeriesStorageContext, None, None]:
-        """Open a connection to the time series store. This can improve performance when
-        reading or writing many time series arrays.
-        It will also rollback any changes if an exception is raised.
+    def open_time_series_store(self) -> Generator[TimeSeriesStorageContext, None, None]:
+        """Open a context that batches every time series operation passed to it.
+
+        Batching lets the store pay one catalog transaction for the whole block instead of
+        one per call, which matters when adding many arrays. The context is also the unit
+        of rollback: if the block raises, everything it added is undone.
+
+        Pass the yielded context to each call you want in the batch. A call that omits it
+        runs on its own and sees only committed data --- including data this block has
+        staged but not yet flushed.
 
         Returns
         -------
-        Any
-            An opaque object specific to the type of store being used. The object should be
-            passed to all add_time_series/get_time_series methods.
+        TimeSeriesStorageContext
+            Context to pass as ``context=`` to time series methods.
 
         Examples
         --------
-        >>> with system.open_time_series_store() as conn:
-        ...     system.add_time_series(ts1, gen1)
-        ...     system.add_time_series(ts2, gen1)
+        >>> with system.open_time_series_store() as context:
+        ...     system.add_time_series(ts1, gen1, context=context)
+        ...     system.add_time_series(ts2, gen1, context=context)
         """
-        with self._time_series_mgr.open_time_series_store(mode=mode) as conn:
-            yield conn
+        with self._time_series_mgr.open_time_series_store() as context:
+            yield context
 
     @contextmanager
     def open_metadata_store(self) -> Generator[Store, None, None]:

@@ -158,8 +158,9 @@ def test_reader_sees_series_staged_in_an_open_batch(tmp_path):
             late,
             context=conn,
         )
-        # Building a reader must flush the batch, or the new series would be invisible.
-        reader = system.build_time_series_reader(RESOLUTION)
+        # The store builds readers from its own catalog, so passing the context flushes
+        # the batch; without it the staged series would be invisible to the reader.
+        reader = system.build_time_series_reader(RESOLUTION, context=conn)
         assert reader.read(INITIAL_TIMESTAMP)[late.id] == 7.0
 
 

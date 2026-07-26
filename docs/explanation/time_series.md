@@ -136,6 +136,38 @@ Forecast readers additionally collapse components that share a backing array int
 
 See [How to read time series by timestamp](#read-time-series-by-timestamp).
 
+## Batching and Contexts
+
+`System.open_time_series_store()` yields a context that batches every operation you pass it
+to. Without it, each call commits on its own; with it, the store pays one catalog
+transaction for the whole block instead of one per series. This matters when adding many
+arrays.
+
+```python
+with system.open_time_series_store() as context:
+    for generator, profile in profiles.items():
+        system.add_time_series(profile, generator, context=context)
+```
+
+The context is also the unit of rollback. If the block raises, everything it added is
+undone — including anything it had already been forced to write, since operations that need
+the arrays physically present (reading a series, building a reader, serializing) flush the
+context first.
+
+Passing the context is what puts a call in the batch. A call that omits it runs on its own
+and sees **committed** data only:
+
+```python
+with system.open_time_series_store() as context:
+    system.add_time_series(ts, generator, context=context)
+
+    system.has_time_series(generator, name="load", context=context)  # True
+    system.has_time_series(generator, name="load")                   # False - not committed yet
+```
+
+This isolation means two open contexts never observe or disturb each other's staged work,
+and discarding one leaves the other's writes intact.
+
 ## Resolution
 
 Infrastructure systems support two types of objects for passing the resolution:
