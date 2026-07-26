@@ -4,6 +4,7 @@ from uuid import uuid4
 
 import numpy as np
 import pytest
+from pydantic import ValidationError
 
 from infrasys import Component, Location, SingleTimeSeries
 from infrasys.exceptions import (
@@ -95,9 +96,9 @@ def test_get_components(simple_system: SimpleSystem):
     assert len(list(system.list_components_by_name(RenewableGenerator, "renewable-gen"))) == 5
 
     generator = all_components[0]
-    assert system.get_component_by_uuid(generator.uuid) is generator
+    assert system.get_component_by_id(generator.id) is generator
     with pytest.raises(ISNotStored):
-        system.get_component_by_uuid(uuid4())
+        system.get_component_by_id(999999)
 
     stored_types = sorted((x.__name__ for x in system.get_component_types()))
     assert stored_types == [
@@ -512,7 +513,7 @@ def test_copy_component(simple_system_with_time_series: SimpleSystem):
     gen1 = system.get_component(SimpleGenerator, "test-gen")
 
     gen2 = system.copy_component(gen1)
-    assert gen2.uuid != gen1.uuid
+    assert gen2.id is None
     assert gen2.name == gen1.name
     assert gen2.bus is gen1.bus
 
@@ -530,8 +531,8 @@ def test_deepcopy_component(simple_system_with_time_series: SimpleSystem):
     system.add_component(subsystem)
     gen2 = system.deepcopy_component(gen1)
     assert gen2.name == gen1.name
-    assert gen2.uuid == gen1.uuid
-    assert gen2.bus.uuid == gen1.bus.uuid
+    assert gen2.id == gen1.id
+    assert gen2.bus.id == gen1.bus.id
     assert gen2.bus is not gen1.bus
 
 
@@ -561,7 +562,7 @@ def test_remove_component(inputs):
     assert not system.has_time_series(gen1)
     assert system.has_time_series(gen2)
 
-    system.remove_component_by_uuid(gen2.uuid, cascade_down=cascade_down)
+    system.remove_component_by_id(gen2.id, cascade_down=cascade_down)
     assert system.has_component(bus) != cascade_down
     assert not system.has_time_series(gen2)
 
@@ -678,7 +679,7 @@ def test_system_printing(simple_system_with_time_series):
 
 def test_system_show_components(simple_system_with_time_series):
     simple_system_with_time_series.show_components(SimpleBus)
-    simple_system_with_time_series.show_components(SimpleBus, show_uuid=True)
+    simple_system_with_time_series.show_components(SimpleBus, show_id=True)
     simple_system_with_time_series.show_components(SimpleBus, show_time_series=True)
     simple_system_with_time_series.show_components(SimpleBus, show_supplemental=True)
 
@@ -989,20 +990,6 @@ def test_component_associations_list_with_type_filter():
     assert gen.id in parents
 
 
-def test_get_by_label_with_uuid():
-    """Test that get_by_label works with UUID-based labels."""
-    system = SimpleSystem(auto_add_composed_components=True)
-    bus = SimpleBus(name="uuid-bus", voltage=1.1)
-    system.add_component(bus)
-
-    # Lookup by uuid (via label constructed from uuid)
-    from infrasys.models import make_label
-
-    label = make_label("SimpleBus", str(bus.uuid))
-    found = system.get_component_by_label(label)
-    assert found.id == bus.id
-
-
 def test_remove_component_cleans_up_indexes():
     """Test that removing a component cleans up ID/UUID indexes even when other
     components share the same type/name key (multi-component container)."""
@@ -1060,9 +1047,9 @@ def test_rejects_foreign_component_with_colliding_system_local_id():
     assert foreign_gen.id is not None
     assert local_gen.id is not None
     assert foreign_gen.id == local_gen.id
-    assert foreign_gen.uuid != local_gen.uuid
+    assert foreign_gen is not local_gen
     assert foreign_bus.id == local_bus.id
-    assert foreign_bus.uuid != local_bus.uuid
+    assert foreign_bus is not local_bus
     assert not system.has_component(foreign_gen)
 
     with pytest.raises(ISNotStored):
@@ -1073,7 +1060,6 @@ def test_rejects_foreign_component_with_colliding_system_local_id():
         system.list_parent_components(foreign_bus)
 
     assert system.get_component_by_id(local_gen.id) is local_gen
-    assert system.get_component_by_uuid(local_gen.uuid) is local_gen
     assert system.list_child_components(local_gen) == [local_bus]
     assert system.list_parent_components(local_bus) == [local_gen]
 
@@ -1088,7 +1074,7 @@ def test_rejects_foreign_composed_component_with_colliding_system_local_id():
     foreign_system.add_component(foreign_bus)
 
     assert foreign_bus.id == local_bus.id
-    assert foreign_bus.uuid != local_bus.uuid
+    assert foreign_bus is not local_bus
 
     gen = SimpleGenerator(
         name="gen",
@@ -1153,26 +1139,10 @@ def test_serialize_component_reference_without_id():
         serialize_component_reference(gen)
 
 
-def test_assign_new_uuid():
-    """Test that assign_new_uuid generates a new legacy UUID."""
-    system = SimpleSystem(auto_add_composed_components=True)
-    gen = SimpleGenerator.example()
-    system.add_component(gen)
-    original_uuid = gen.uuid
-    gen.assign_new_uuid()
-    assert gen.uuid != original_uuid
-
-
-def test_uuid_setter():
-    """Test the uuid property setter."""
-    from uuid import uuid4
-
-    system = SimpleSystem(auto_add_composed_components=True)
-    gen = SimpleGenerator.example()
-    system.add_component(gen)
-    new_uuid = uuid4()
-    gen.uuid = new_uuid
-    assert gen.uuid == new_uuid
+def test_component_rejects_uuid_field():
+    """Components no longer carry a UUID; passing one must be rejected."""
+    with pytest.raises(ValidationError):
+        SimpleBus(name="bus", voltage=1.1, uuid=uuid4())
 
 
 def test_example_not_implemented():

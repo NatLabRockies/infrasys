@@ -25,11 +25,12 @@ def upgrade_legacy_component_ids(system_data: dict[str, Any]) -> None:
             item["id"] = existing_id
         next_id = max(next_id, int(existing_id) + 1)
 
-        legacy_uuid = item.get("legacy_uuid") or item.get("uuid")
+        # UUIDs are no longer part of the data model. Drop them, but first record the
+        # mapping so that legacy references to them can be resolved to integer IDs.
+        legacy_uuid = item.pop("legacy_uuid", None)
+        legacy_uuid = item.pop("uuid", None) or legacy_uuid
         if legacy_uuid is not None:
-            item["legacy_uuid"] = legacy_uuid
             uuid_to_id[str(legacy_uuid)] = int(existing_id)
-            item.pop("uuid", None)
 
     for component in components:
         _upgrade_component_reference_ids(component, uuid_to_id)
@@ -50,12 +51,12 @@ def _upgrade_component_reference_ids(data: Any, uuid_to_id: dict[str, int]) -> N
                 isinstance(metadata, dict)
                 and metadata.get("serialized_type") == SerializedType.COMPOSED_COMPONENT.value
             ):
-                if "id" not in metadata:
-                    legacy_uuid = metadata.get("legacy_uuid") or metadata.get("uuid")
-                    if legacy_uuid is not None and str(legacy_uuid) in uuid_to_id:
-                        metadata["id"] = uuid_to_id[str(legacy_uuid)]
-                if "uuid" in metadata:
-                    metadata["legacy_uuid"] = metadata.pop("uuid")
+                legacy_uuid = metadata.pop("legacy_uuid", None)
+                legacy_uuid = metadata.pop("uuid", None) or legacy_uuid
+                if "id" not in metadata and legacy_uuid is not None:
+                    id_ = uuid_to_id.get(str(legacy_uuid))
+                    if id_ is not None:
+                        metadata["id"] = id_
                 continue
 
             for value in current.values():

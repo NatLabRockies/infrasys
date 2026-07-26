@@ -52,7 +52,7 @@ def test_supplemental_attribute_manager(tmp_path):
         attrs = list(system.get_supplemental_attributes(attr_type))
         check_attrs(attrs)
 
-    assert system.get_supplemental_attribute_by_uuid(attr1.uuid) is attr1
+    assert system.get_supplemental_attribute_by_id(attr1.id) is attr1
 
     components = system.get_components_with_supplemental_attribute(attr1)
     assert len(components) == 1
@@ -116,7 +116,7 @@ def test_supplemental_attribute_removals():
     system.remove_supplemental_attribute_from_component(bus, attr2)
     assert not list(system.get_supplemental_attributes(GeographicInfo))
     with pytest.raises(ISNotStored):
-        system.get_supplemental_attribute_by_uuid(attr1.uuid)
+        system.get_supplemental_attribute_by_id(attr1.id)
     with pytest.raises(ISNotStored):
         system.remove_supplemental_attribute(attr1)
     with pytest.raises(ISNotStored):
@@ -202,7 +202,7 @@ def test_add_supplemental_attribute_with_metadata_context_rolls_back_on_error():
     assert system.get_num_supplemental_attributes() == 0
     assert system.get_num_components_with_supplemental_attributes() == 0
     with pytest.raises(ISNotStored):
-        system.get_supplemental_attribute_by_uuid(attr1.uuid)
+        system.get_supplemental_attribute_by_id(attr1.id)
 
 
 def test_add_supplemental_attribute_rejects_connection_kwarg():
@@ -218,8 +218,7 @@ def test_add_supplemental_attribute_rejects_connection_kwarg():
     assert not system.get_supplemental_attributes_with_component(bus)
     assert system.get_num_supplemental_attributes() == 0
     assert system.get_num_components_with_supplemental_attributes() == 0
-    with pytest.raises(ISNotStored):
-        system.get_supplemental_attribute_by_uuid(attr1.uuid)
+    assert attr1.id is None
 
 
 def test_supplemental_attribute_manager_metadata_context_rolls_back_on_error():
@@ -270,7 +269,7 @@ def test_remove_supplemental_attribute_in_metadata_context_rolls_back():
             msg = "boom"
             raise RuntimeError(msg)
 
-    assert system.get_supplemental_attribute_by_uuid(attr1.uuid) is attr1
+    assert system.get_supplemental_attribute_by_id(attr1.id) is attr1
     attrs = system.get_supplemental_attributes_with_component(bus)
     assert len(attrs) == 1
     assert attrs[0] is attr1
@@ -309,7 +308,7 @@ def test_remove_supplemental_attribute_from_component_in_metadata_context_rolls_
             msg = "boom"
             raise RuntimeError(msg)
 
-    assert system.get_supplemental_attribute_by_uuid(attr1.uuid) is attr1
+    assert system.get_supplemental_attribute_by_id(attr1.id) is attr1
     attrs = system.get_supplemental_attributes_with_component(bus)
     assert len(attrs) == 1
     assert attrs[0] is attr1
@@ -322,7 +321,8 @@ def test_rollback_attribute_addition_handles_missing_and_empty_type_maps():
 
     manager.rollback_attribute_addition(attr1)
 
-    manager._attributes[type(attr1)] = {attr1.uuid: attr1}
+    attr1.id = 1
+    manager._attributes[type(attr1)] = {attr1.id: attr1}
     manager.rollback_attribute_addition(attr1)
 
     assert type(attr1) not in manager._attributes
@@ -423,7 +423,7 @@ def test_add_duplicate_supplemental_attribute_association_raises():
     # The failed add must not have disturbed the stored state.
     assert system.get_num_supplemental_attributes() == 1
     assert len(system.get_supplemental_attributes_with_component(bus)) == 1
-    assert system.get_supplemental_attribute_by_uuid(attr1.uuid) is attr1
+    assert system.get_supplemental_attribute_by_id(attr1.id) is attr1
 
 
 def test_metadata_context_restores_removed_associations():
@@ -451,7 +451,7 @@ def test_metadata_context_restores_removed_associations():
 
     assert set(store.list_supplemental_attribute_associations()) == set(before)
     assert system.get_num_supplemental_attributes() == 2
-    assert system.get_supplemental_attribute_by_uuid(attr1.uuid) is attr1
+    assert system.get_supplemental_attribute_by_id(attr1.id) is attr1
     assert system.get_supplemental_attributes_with_component(bus) == [attr1]
     assert system.get_supplemental_attributes_with_component(gen) == [attr2]
 

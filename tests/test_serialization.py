@@ -83,8 +83,6 @@ def test_serialization(tmp_path):
     for component in components:
         component2 = system2.get_component_by_id(component.id)
         for key, val in component.__dict__.items():
-            if key == "legacy_uuid":
-                continue
             if isinstance(val, Component):
                 assert getattr(component2, key).id == val.id
             elif isinstance(val, list) and val and isinstance(val[0], Component):
@@ -463,35 +461,14 @@ def test_system_save_load_with_storage_backends(tmp_path, time_series_storage_ty
         assert loaded_ts.resolution == orig_ts.resolution
 
 
-def test_serialized_component_reference_uuid_property_raises():
-    """Test that SerializedComponentReference.uuid raises when legacy_uuid is None."""
+def test_serialized_component_reference_has_no_uuid():
+    """SerializedComponentReference is keyed by integer ID only."""
     from infrasys.serialization import SerializedComponentReference
 
     ref = SerializedComponentReference(id=1, module="test", type="TestType")
-    with pytest.raises(AttributeError, match="does not contain a legacy UUID"):
-        _ = ref.uuid  # noqa
-
-
-def test_serialized_component_reference_uuid_property_returns_value():
-    """Test that SerializedComponentReference.uuid returns the legacy UUID."""
-    from uuid import UUID
-    from infrasys.serialization import SerializedComponentReference
-
-    uuid_val = UUID("a1b2c3d4-0000-0000-0000-000000000001")
-    ref = SerializedComponentReference(id=1, legacy_uuid=uuid_val, module="test", type="TestType")
-    assert ref.uuid == uuid_val
-
-
-def test_get_class_and_name_from_label_with_uuid():
-    """Test that get_class_and_name_from_label parses UUID labels correctly."""
-    from infrasys.models import get_class_and_name_from_label
-    from uuid import UUID
-
-    uuid_str = "a1b2c3d4-0000-0000-0000-000000000001"
-    class_name, name = get_class_and_name_from_label(f"SimpleBus.{uuid_str}")
-    assert class_name == "SimpleBus"
-    assert isinstance(name, UUID)
-    assert str(name) == uuid_str
+    assert ref.id == 1
+    assert not hasattr(ref, "uuid")
+    assert "uuid" not in ref.model_dump()
 
 
 def test_get_class_and_name_from_label_with_unknown_string():
@@ -552,14 +529,20 @@ def test_upgrade_legacy_component_ids_migration():
     assert components[0]["id"] == 1
     assert components[1]["id"] == 2
 
-    # UUID field should be replaced by legacy_uuid
+    # UUID fields should be dropped entirely
     assert "uuid" not in components[0]
-    assert components[0]["legacy_uuid"] == "a1b2c3d4-0000-0000-0000-000000000001"
+    assert "legacy_uuid" not in components[0]
     assert "uuid" not in components[1]
-    assert components[1]["legacy_uuid"] == "a1b2c3d4-0000-0000-0000-000000000002"
+    assert "legacy_uuid" not in components[1]
 
-    # Composed component reference should have integer ID instead of UUID
+    # Composed component reference should have an integer ID instead of a UUID
     bus_metadata = components[1]["bus"]["__metadata__"]
     assert bus_metadata["id"] == 1
     assert "uuid" not in bus_metadata
-    assert bus_metadata["legacy_uuid"] == "a1b2c3d4-0000-0000-0000-000000000001"
+    assert "legacy_uuid" not in bus_metadata
+
+    # The migrated fields must be constructible; the models forbid extra fields, so a
+    # leftover UUID key would raise here.
+    bus = SimpleBus(**{k: v for k, v in components[0].items() if k != "__metadata__"})
+    assert bus.id == 1
+    assert bus.name == "bus1"

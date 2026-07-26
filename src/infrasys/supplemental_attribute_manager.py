@@ -2,7 +2,6 @@
 
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Callable, Generator, Iterable, Optional, Type, TypeVar, cast
-from uuid import UUID
 
 from loguru import logger
 from infrastore import (
@@ -27,7 +26,7 @@ class SupplementalAttributeManager:
 
     def __init__(self, storage: "TimeSeriesStoreStorage", **kwargs) -> None:
         self._storage = storage
-        self._attributes: dict[Type, dict[UUID, SupplementalAttribute]] = {}
+        self._attributes: dict[Type, dict[int, SupplementalAttribute]] = {}
         self._attributes_by_id: dict[int, SupplementalAttribute] = {}
         self._id_manager = IDManager(next_id=1)
         self._in_context = False
@@ -65,17 +64,7 @@ class SupplementalAttributeManager:
             attribute.check_supplemental_attribute_addition()
 
         if not already_attached:
-            if attribute.id is None:
-                attribute.id = self._id_manager.get_next_id()
-            else:
-                self._id_manager.advance_past(attribute.id)
-            attr_type = type(attribute)
-            if attr_type not in self._attributes:
-                self._attributes[attr_type] = {}
-
-            self._attributes[attr_type][attribute.uuid] = attribute
-            assert attribute.id is not None
-            self._attributes_by_id[attribute.id] = attribute
+            self._store_attribute(attribute)
 
         try:
             if component is not None:
@@ -87,6 +76,19 @@ class SupplementalAttributeManager:
 
         if self._in_context and not already_attached:
             self._context_new_attributes.append(attribute)
+
+    def _store_attribute(self, attribute: SupplementalAttribute) -> None:
+        """Assign an ID if needed and index the attribute in memory."""
+        if attribute.id is None:
+            attribute.id = self._id_manager.get_next_id()
+        elif attribute.id in self._attributes_by_id:
+            msg = f"{attribute.label} with id={attribute.id} is already stored"
+            raise ISAlreadyAttached(msg)
+        else:
+            self._id_manager.advance_past(attribute.id)
+
+        self._attributes.setdefault(type(attribute), {})[attribute.id] = attribute
+        self._attributes_by_id[attribute.id] = attribute
 
     def _add_association(self, component: Component, attribute: SupplementalAttribute) -> None:
         association = SupplementalAttributeAssociation(
@@ -152,8 +154,8 @@ class SupplementalAttributeManager:
             attr_type = type(attribute)
             if attr_type not in self._attributes:
                 self._attributes[attr_type] = {}
-            self._attributes[attr_type][attribute.uuid] = attribute
             assert attribute.id is not None
+            self._attributes[attr_type][attribute.id] = attribute
             self._attributes_by_id[attribute.id] = attribute
 
     def rollback_attribute_addition(self, attribute: SupplementalAttribute) -> None:
@@ -162,8 +164,8 @@ class SupplementalAttributeManager:
         attrs = self._attributes.get(attr_type)
         if attrs is None:
             return
-        attrs.pop(attribute.uuid, None)
         if attribute.id is not None:
+            attrs.pop(attribute.id, None)
             self._attributes_by_id.pop(attribute.id, None)
         if not attrs:
             self._attributes.pop(attr_type, None)
@@ -182,29 +184,6 @@ class SupplementalAttributeManager:
     def get_num_components_with_attributes(self) -> int:
         """Return the number of components with supplemental attributes."""
         return self._store.count_components_with_attributes()
-
-    def get_by_uuid(self, uuid: UUID) -> SupplementalAttribute:
-        """Return the supplemental with the given UUID."""
-        for attr_dict in self._attributes.values():
-            attr = attr_dict.get(uuid)
-            if attr is not None:
-                return attr
-        msg = f"No supplemental attribute with {uuid=} is stored"
-        raise ISNotStored(msg)
-
-    def get_component_uuids_with_attribute(self, attribute: SupplementalAttribute) -> list[UUID]:
-        """Return all component UUIDs attached to the given attribute.
-
-        .. deprecated::
-            Use :meth:`get_component_ids_with_attribute` instead. This method
-            now raises :exc:`NotImplementedError` because UUID-based lookup is
-            no longer supported.
-        """
-        msg = (
-            "get_component_uuids_with_attribute is deprecated; "
-            "use get_component_ids_with_attribute instead"
-        )
-        raise NotImplementedError(msg)
 
     def get_component_ids_with_attribute(self, attribute: SupplementalAttribute) -> list[int]:
         """Return all component IDs attached to the given attribute."""
@@ -245,8 +224,12 @@ class SupplementalAttributeManager:
         return attributes
 
     def has_attribute(self, attribute: SupplementalAttribute) -> bool:
+        # IDs are only unique within one system, so an attribute from a different system
+        # can collide with a local ID. Identity is the discriminator.
+        if attribute.id is None:
+            return False
         attributes = self._attributes.get(type(attribute))
-        return attributes is not None and attribute.uuid in attributes
+        return attributes is not None and attributes.get(attribute.id) is attribute
 
     def has_association(self, component: Component, attribute: SupplementalAttribute) -> bool:
         """Return True if the component and supplemental attribute have an association."""
@@ -289,9 +272,9 @@ class SupplementalAttributeManager:
         attr_type = type(attribute)
         if self._in_context:
             self._context_removed_attributes.append(attribute)
-        self._attributes[attr_type].pop(attribute.uuid)
-        if attribute.id is not None:
-            self._attributes_by_id.pop(attribute.id, None)
+        assert attribute.id is not None
+        self._attributes[attr_type].pop(attribute.id)
+        self._attributes_by_id.pop(attribute.id, None)
         if not self._attributes[attr_type]:
             self._attributes.pop(attr_type)
         logger.debug("Removed supplemental attribute {}", attribute.label)

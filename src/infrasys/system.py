@@ -617,15 +617,6 @@ class System:
         """
         self._supplemental_attr_mgr.add(component, attribute)
 
-    def change_component_uuid(self, component: Component) -> None:
-        """Change the component UUID.
-
-        Parameters
-        ----------
-        component : Component
-        """
-        return self._component_mgr.change_uuid(component)
-
     def copy_component(
         self,
         component: Component,
@@ -634,7 +625,7 @@ class System:
     ) -> Any:
         """Create a copy of the component. Time series data is excluded.
 
-        - The new component will have a different UUID than the original.
+        - The new component will have a different ID than the original.
         - The copied component will have shared references to any composed components.
 
         The intention of this method is to provide a way to create variants of a component that
@@ -664,7 +655,7 @@ class System:
 
     def deepcopy_component(self, component: Component) -> Any:
         """Create a deep copy of the component and all composed components. All attributes,
-        including names and UUIDs, will be identical to the original. Unlike
+        including names and IDs, will be identical to the original. Unlike
         :meth:`copy_component`, there will be no shared references to composed components.
 
         The intention of this method is to provide a way to create variants of a component that
@@ -726,7 +717,7 @@ class System:
         Raises
         ------
         ISNotStored
-            Raised if the UUID is not stored.
+            Raised if the label does not match a stored component.
         ISOperationNotAllowed
             Raised if there is more than one matching component.
 
@@ -736,27 +727,18 @@ class System:
         """
         return self._component_mgr.get_by_label(label)
 
-    def get_component_by_uuid(self, uuid: UUID) -> Any:
-        """Return the component with the input UUID.
-
-        Parameters
-        ----------
-        uuid : UUID
+    def get_component_by_id(self, id_: int) -> Any:
+        """Return the component with the input integer ID.
 
         Raises
         ------
         ISNotStored
-            Raised if the UUID is not stored.
+            Raised if the ID is not stored.
 
         Examples
         --------
-        >>> uuid = UUID("714c8311-8dff-4ae2-aa2e-30779a317d42")
-        >>> component = system.get_component_by_uuid(uuid)
+        >>> component = system.get_component_by_id(5)
         """
-        return self._component_mgr.get_by_uuid(uuid)
-
-    def get_component_by_id(self, id_: int) -> Any:
-        """Return the component with the input integer ID."""
         return self._component_mgr.get_by_id(id_)
 
     def get_components(
@@ -833,10 +815,6 @@ class System:
             attribute_type=supplemental_attribute_type,
             filter_func=filter_func,
         )
-
-    def get_supplemental_attribute_by_uuid(self, uuid: UUID) -> SupplementalAttribute:
-        """Return the supplemental attribute with the given UUID."""
-        return self._supplemental_attr_mgr.get_by_uuid(uuid)
 
     def get_supplemental_attribute_by_id(self, id_: int) -> SupplementalAttribute:
         """Return the supplemental attribute with the given integer ID."""
@@ -1042,14 +1020,14 @@ class System:
         component = self.get_component(component_type, name)
         return self.remove_component(component, cascade_down=cascade_down, force=force)
 
-    def remove_component_by_uuid(
-        self, uuid: UUID, cascade_down: bool = True, force: bool = False
+    def remove_component_by_id(
+        self, id_: int, cascade_down: bool = True, force: bool = False
     ) -> None:
-        """Remove the component with uuid from the system.
+        """Remove the component with the given integer ID from the system.
 
         Parameters
         ----------
-        uuid : UUID
+        id_ : int
         cascade_down : bool
             Refer :meth:`remove_component`.
         force : bool
@@ -1058,14 +1036,13 @@ class System:
         Raises
         ------
         ISNotStored
-            Raised if the UUID is not stored in the system.
+            Raised if the ID is not stored in the system.
 
         Examples
         --------
-        >>> uuid = UUID("714c8311-8dff-4ae2-aa2e-30779a317d42")
-        >>> generator = system.remove_component_by_uuid(uuid)
+        >>> generator = system.remove_component_by_id(5)
         """
-        component = self.get_component_by_uuid(uuid)
+        component = self.get_component_by_id(id_)
         return self.remove_component(component, cascade_down=cascade_down, force=force)
 
     def remove_supplemental_attribute(self, attribute: SupplementalAttribute) -> None:
@@ -1874,7 +1851,7 @@ class System:
     def show_components(
         self,
         component_type: Type[Component],
-        show_uuid: bool = False,
+        show_id: bool = False,
         show_time_series: bool = False,
         show_supplemental: bool = False,
     ) -> None:
@@ -1885,8 +1862,8 @@ class System:
         component_type : Type[Component]
             The type of components to display. If component_type is an abstract type,
             all matching subtypes will be included.
-        show_uuid : bool
-            Whether to include the UUID column in the table. Defaults to False.
+        show_id : bool
+            Whether to include the ID column in the table. Defaults to False.
         show_time_series : bool
             Whether to include the Time Series count column in the table. Defaults to False.
         show_time_series : bool
@@ -1895,7 +1872,7 @@ class System:
         Examples
         --------
         >>> system.show_components(Generator)  # Shows only names
-        >>> system.show_components(Bus, show_uuid=True)
+        >>> system.show_components(Bus, show_id=True)
         >>> system.show_components(Generator, show_time_series=True)
         >>> system.show_components(Generator, show_supplemental=True)
         """
@@ -1913,8 +1890,8 @@ class System:
         )
         table.add_column("Name", min_width=20, justify="left")
 
-        if show_uuid:
-            table.add_column("UUID", min_width=36, justify="left")
+        if show_id:
+            table.add_column("ID", min_width=8, justify="right")
         if show_time_series:
             table.add_column("Has Time Series", min_width=12, justify="right")
         if show_supplemental:
@@ -1925,8 +1902,8 @@ class System:
         for component in sorted_components:
             row_data = [component.name]
 
-            if show_uuid:
-                row_data.append(str(component.uuid))
+            if show_id:
+                row_data.append(str(component.id))
             if show_time_series:
                 row_data.append(str(len(self.list_time_series_metadata(component))))
             if show_supplemental:
