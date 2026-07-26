@@ -650,3 +650,62 @@ def test_list_time_series_reads_non_sequential(tmp_path):
     assert len(listed) == 1
     np.testing.assert_array_equal(listed[0].data, expected.data)
     np.testing.assert_array_equal(listed[0].timestamps, timestamps)
+
+
+def test_system_close_closes_store(tmp_path):
+    system, _ = make_system(tmp_path)
+    store = system.time_series.storage.store
+    system.close()
+    with pytest.raises(Exception, match="closed"):
+        store.list_keys()
+
+
+def make_single(name: str = "active_power") -> SingleTimeSeries:
+    return SingleTimeSeries.from_array(
+        np.arange(4, dtype=np.float64), name, datetime(2024, 1, 1), timedelta(hours=1)
+    )
+
+
+def test_remove_component_removes_all_time_series_types(tmp_path):
+    system, generator = make_system(tmp_path)
+    timestamps = np.array(
+        [datetime(2024, 1, 1) + timedelta(minutes=x) for x in (0, 5, 30)],
+        dtype=object,
+    )
+    system.add_time_series(make_single(), generator)
+    system.add_time_series(make_deterministic("forecast"), generator)
+    system.add_time_series(
+        NonSequentialTimeSeries.from_array(np.array([1.0, 2.0, 3.0]), timestamps, "events"),
+        generator,
+    )
+    owner_id = generator.id
+    store = system.time_series.storage.store
+
+    system.remove_component(generator, cascade_down=False)
+    assert not store.list_keys(owner_id=owner_id)
+
+
+def test_remove_component_with_feature_subset_series(tmp_path):
+    system, generator = make_system(tmp_path)
+    system.add_time_series(make_single(), generator, scenario="a")
+    system.add_time_series(make_single(), generator, scenario="a", year=2030)
+    owner_id = generator.id
+    store = system.time_series.storage.store
+
+    system.remove_component(generator, cascade_down=False)
+    assert not store.list_keys(owner_id=owner_id)
+
+
+def test_time_series_type_none_matches_all_types(tmp_path):
+    system, generator = make_system(tmp_path)
+    system.add_time_series(make_single(), generator)
+    system.add_time_series(make_deterministic("forecast"), generator)
+
+    assert system.has_time_series(generator, time_series_type=None)
+    keys = system.list_time_series_keys(generator, time_series_type=None)
+    assert len(keys) == 2
+    listed = system.list_time_series(generator, time_series_type=None)
+    assert len(listed) == 2
+
+    system.remove_time_series(generator, time_series_type=None)
+    assert not system.has_time_series(generator, time_series_type=None)

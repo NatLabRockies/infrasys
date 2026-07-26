@@ -226,6 +226,10 @@ class TimeSeriesStoreStorage:
     def get_time_series_directory(self) -> Path:
         return self._directory
 
+    def close(self) -> None:
+        """Close the underlying store, releasing its file handles."""
+        self._store.close()
+
     # ------------------------------------------------------------------
     # Metadata operations
     # ------------------------------------------------------------------
@@ -407,24 +411,30 @@ class TimeSeriesStoreStorage:
         """
         context.check_owns(self)
         context.flush()
-        removed: list[_StoredSeries] = []
+        # Resolve every matching association before touching anything, then remove them
+        # from the store in one bulk call. The index is updated only after the store
+        # accepts the batch, so a failure leaves the two consistent.
+        doomed: list[tuple[OwnerKey, AssocKey, _StoredSeries]] = []
+        rust_keys = []
+        seen: set[tuple[OwnerKey, AssocKey]] = set()
         for owner in owners:
             owner_id, category = _owner_identity(owner)
-            assoc_map = self._index.get((owner_id, _category_name(category)), {})
-            to_remove = [
-                key
-                for key, stored in assoc_map.items()
-                if _matches(stored, name, time_series_type, features)
-            ]
-            for key in to_remove:
-                stored = assoc_map.pop(key)
-                rust_key = self._resolve_committed_key(owner_id, category, stored)
-                self._store.remove_time_series(rust_key)
-                removed.append(stored)
-        if not removed:
+            owner_key = (owner_id, _category_name(category))
+            for assoc_key, stored in self._index.get(owner_key, {}).items():
+                if (owner_key, assoc_key) in seen or not _matches(
+                    stored, name, time_series_type, features
+                ):
+                    continue
+                seen.add((owner_key, assoc_key))
+                doomed.append((owner_key, assoc_key, stored))
+                rust_keys.append(self._resolve_committed_key(owner_id, category, stored))
+        if not doomed:
             msg = "No metadata matching the inputs is stored"
             raise ISNotStored(msg)
-        return removed
+        self._store.remove_time_series_bulk(rust_keys)
+        for owner_key, assoc_key, _ in doomed:
+            self._index[owner_key].pop(assoc_key)
+        return [stored for _, _, stored in doomed]
 
     def key_for(self, stored: _StoredSeries) -> TimeSeriesKey:
         """Build the public :class:`TimeSeriesKey` for a stored-series descriptor."""

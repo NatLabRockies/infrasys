@@ -169,6 +169,9 @@ class TimeSeriesStorageContext:
         this context already flushed --- a read or a reader build inside the block forces
         an early write --- is removed from the store and the index. Only this context's
         own writes are undone.
+
+        TODO: removals performed through this context are applied to the store
+        immediately and are not restored here; add full rollback of removals.
         """
         self._pending = []
         self._staged = {}

@@ -44,6 +44,11 @@ def _process_time_series_kwarg(key: str, **kwargs: Any) -> Any:
     return kwargs.get(key, TIME_SERIES_KWARGS[key])
 
 
+def _type_name(time_series_type: Type[TimeSeriesData] | None) -> str | None:
+    """Return the storage-level type name filter; None matches every type."""
+    return None if time_series_type is None else time_series_type.__name__
+
+
 class TimeSeriesManager:
     """Manages time series for a system."""
 
@@ -58,15 +63,7 @@ class TimeSeriesManager:
 
     def close(self) -> None:
         """Release resources held by the storage backend."""
-        storage = getattr(self, "_storage", None)
-        for attr in ("close", "dispose"):
-            func = getattr(storage, attr, None)
-            if callable(func):
-                try:
-                    func()
-                except Exception:
-                    logger.debug("Error closing time series storage", exc_info=True)
-                break
+        self._storage.close()
 
     @staticmethod
     def create_new_storage(**kwargs) -> TimeSeriesStoreStorage:
@@ -183,7 +180,7 @@ class TimeSeriesManager:
             metadata = self._storage.get_metadata(
                 owner,
                 name=name,
-                time_series_type=time_series_type.__name__ if time_series_type else None,
+                time_series_type=_type_name(time_series_type),
                 context=ctx,
                 **features,
             )
@@ -212,18 +209,18 @@ class TimeSeriesManager:
         self,
         owner: Component | SupplementalAttribute,
         name: str | None = None,
-        time_series_type: Type[TimeSeriesData] = SingleTimeSeries,
+        time_series_type: Type[TimeSeriesData] | None = SingleTimeSeries,
         context: TimeSeriesStorageContext | None = None,
         **features,
     ) -> bool:
         """Return True if the component or supplemental atttribute has time series matching the
-        inputs.
+        inputs. Pass ``time_series_type=None`` to match any type.
         """
         with self._ensure_context(context) as ctx:
             return self._storage.has_metadata(
                 owner,
                 name=name,
-                time_series_type=time_series_type.__name__,
+                time_series_type=_type_name(time_series_type),
                 context=ctx,
                 **features,
             )
@@ -232,18 +229,20 @@ class TimeSeriesManager:
         self,
         owner: Component | SupplementalAttribute,
         name: str | None = None,
-        time_series_type: Type[TimeSeriesData] = SingleTimeSeries,
+        time_series_type: Type[TimeSeriesData] | None = SingleTimeSeries,
         start_time: datetime | None = None,
         length: int | None = None,
         context: TimeSeriesStorageContext | None = None,
         **features: Any,
     ) -> list[TimeSeriesData]:
-        """Return all time series that match the inputs."""
+        """Return all time series that match the inputs. Pass ``time_series_type=None``
+        to match any type.
+        """
         with self._ensure_context(context) as ctx:
             records = self._storage.list_metadata(
                 owner,
                 name=name,
-                time_series_type=time_series_type.__name__,
+                time_series_type=_type_name(time_series_type),
                 context=ctx,
                 **features,
             )
@@ -259,7 +258,7 @@ class TimeSeriesManager:
         self,
         owner: Component | SupplementalAttribute,
         name: str | None = None,
-        time_series_type: Type[TimeSeriesData] = SingleTimeSeries,
+        time_series_type: Type[TimeSeriesData] | None = SingleTimeSeries,
         context: TimeSeriesStorageContext | None = None,
         **features: Any,
     ) -> list[TimeSeriesKey]:
@@ -272,18 +271,20 @@ class TimeSeriesManager:
         self,
         owner: Component | SupplementalAttribute,
         name: str | None = None,
-        time_series_type: Type[TimeSeriesData] = SingleTimeSeries,
+        time_series_type: Type[TimeSeriesData] | None = SingleTimeSeries,
         context: TimeSeriesStorageContext | None = None,
         **features: Any,
     ) -> list[TimeSeriesKey]:
-        """Return the keys describing all time series that match the inputs."""
+        """Return the keys describing all time series that match the inputs.
+        Pass ``time_series_type=None`` to match any type.
+        """
         with self._ensure_context(context) as ctx:
             return [
                 self._storage.key_for(record)
                 for record in self._storage.list_metadata(
                     owner,
                     name=name,
-                    time_series_type=time_series_type.__name__,
+                    time_series_type=_type_name(time_series_type),
                     context=ctx,
                     **features,
                 )
@@ -344,11 +345,12 @@ class TimeSeriesManager:
         self,
         *owners: Component | SupplementalAttribute,
         name: str | None = None,
-        time_series_type: Type[TimeSeriesData] = SingleTimeSeries,
+        time_series_type: Type[TimeSeriesData] | None = SingleTimeSeries,
         context: TimeSeriesStorageContext | None = None,
         **features: Any,
     ):
-        """Remove all time series arrays matching the inputs.
+        """Remove all time series arrays matching the inputs. Pass
+        ``time_series_type=None`` to match any type.
 
         Raises
         ------
@@ -359,14 +361,19 @@ class TimeSeriesManager:
         """
         self._handle_read_only()
         with self._ensure_context(context) as ctx:
-            self._storage.remove(
+            removed = self._storage.remove(
                 *owners,
                 name=name,
-                time_series_type=time_series_type.__name__,
+                time_series_type=_type_name(time_series_type),
                 context=ctx,
                 **features,
             )
-        logger.info("Removed time series {}.{}", time_series_type, name)
+        logger.info(
+            "Removed {} time series matching type={} name={}",
+            len(removed),
+            _type_name(time_series_type),
+            name,
+        )
 
     def copy(
         self,

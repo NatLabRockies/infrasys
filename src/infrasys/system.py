@@ -989,21 +989,15 @@ class System:
         >>> system.remove_component(gen)
         """
         self._component_mgr.raise_if_not_attached(component)
-        if self.has_time_series(component):
-            keys = list(self._time_series_mgr.list_time_series_metadata(component))
+        keys = self._time_series_mgr.list_time_series_metadata(component, time_series_type=None)
+        if keys:
             logger.warning(
                 "Removing component {} which has {} time series(s). "
                 "Associated time series will be removed before the component.",
                 component.label,
                 len(keys),
             )
-            for key in keys:
-                self.remove_time_series(
-                    component,
-                    time_series_type=key.time_series_type,
-                    name=key.name,
-                    **key.features,
-                )
+            self.remove_time_series(component, time_series_type=None)
         self._component_mgr.remove(component, cascade_down=cascade_down, force=force)
 
     def remove_component_by_name(
@@ -1066,14 +1060,8 @@ class System:
     def remove_supplemental_attribute(self, attribute: SupplementalAttribute) -> None:
         """Remove the supplemental attribute from the system."""
         self._supplemental_attr_mgr.raise_if_not_attached(attribute)
-        if self.has_time_series(attribute):
-            for key in self._time_series_mgr.list_time_series_metadata(attribute):
-                self.remove_time_series(
-                    attribute,
-                    time_series_type=key.time_series_type,
-                    name=key.name,
-                    **key.features,
-                )
+        if self.has_time_series(attribute, time_series_type=None):
+            self.remove_time_series(attribute, time_series_type=None)
         return self._supplemental_attr_mgr.remove(attribute)
 
     def remove_supplemental_attribute_from_component(
@@ -1270,7 +1258,7 @@ class System:
         self,
         owner: Component | SupplementalAttribute,
         name: Optional[str] = None,
-        time_series_type: Type[TimeSeriesData] = SingleTimeSeries,
+        time_series_type: Type[TimeSeriesData] | None = SingleTimeSeries,
         context: TimeSeriesStorageContext | None = None,
         **features: str,
     ) -> bool:
@@ -1282,8 +1270,8 @@ class System:
             Component to check for matching time series.
         name : str | None
             Optional, search for time series with this name.
-        time_series_type : Type[TimeSeriesData]
-            Optional, search for time series with this type.
+        time_series_type : Type[TimeSeriesData] | None
+            Optional, search for time series with this type. Pass None to match any type.
         features : str
             Optional, search for time series with these attributes.
         """
@@ -1299,7 +1287,7 @@ class System:
         self,
         component: Component,
         name: str | None = None,
-        time_series_type: Type[TimeSeriesData] = SingleTimeSeries,
+        time_series_type: Type[TimeSeriesData] | None = SingleTimeSeries,
         start_time: datetime | None = None,
         length: int | None = None,
         context: TimeSeriesStorageContext | None = None,
@@ -1314,7 +1302,7 @@ class System:
         name : str | None
             Optional, search for time series with this name.
         time_series_type : Type[TimeSeriesData] | None
-            Optional, search for time series with this type.
+            Optional, search for time series with this type. Pass None to match any type.
         start_time : datetime | None
             If not None, take a slice of the time series starting at this time.
         length : int | None
@@ -1342,7 +1330,7 @@ class System:
         self,
         owner: Component | SupplementalAttribute,
         name: str | None = None,
-        time_series_type: Type[TimeSeriesData] = SingleTimeSeries,
+        time_series_type: Type[TimeSeriesData] | None = SingleTimeSeries,
         context: TimeSeriesStorageContext | None = None,
         **features: Any,
     ) -> list[TimeSeriesKey]:
@@ -1355,7 +1343,7 @@ class System:
         name : str | None
             Optional, search for time series with this name.
         time_series_type : Type[TimeSeriesData] | None
-            Optional, search for time series with this type.
+            Optional, search for time series with this type. Pass None to match any type.
         features : str
             Optional, search for time series with these attributes.
 
@@ -1377,7 +1365,7 @@ class System:
         self,
         component: Component,
         name: str | None = None,
-        time_series_type: Type[TimeSeriesData] = SingleTimeSeries,
+        time_series_type: Type[TimeSeriesData] | None = SingleTimeSeries,
         context: TimeSeriesStorageContext | None = None,
         **features: Any,
     ) -> list[TimeSeriesKey]:
@@ -1390,7 +1378,7 @@ class System:
         name : str | None
             Optional, search for time series with this name.
         time_series_type : Type[TimeSeriesData] | None
-            Optional, search for time series with this type.
+            Optional, search for time series with this type. Pass None to match any type.
         features : str
             Optional, search for time series with these attributes.
 
@@ -1412,7 +1400,7 @@ class System:
         self,
         *owners: Component | SupplementalAttribute,
         name: str | None = None,
-        time_series_type: Type[TimeSeriesData] = SingleTimeSeries,
+        time_series_type: Type[TimeSeriesData] | None = SingleTimeSeries,
         context: TimeSeriesStorageContext | None = None,
         **features: Any,
     ) -> None:
@@ -1425,8 +1413,8 @@ class System:
             Affected components or supplemental attributes
         name : str | None
             Optional, search for time series with this name.
-        time_series_type : Type[TimeSeriesData]
-            Optional, search for time series with this type.
+        time_series_type : Type[TimeSeriesData] | None
+            Optional, search for time series with this type. Pass None to match any type.
         features : str
             Optional, search for time series with these attributes.
 
