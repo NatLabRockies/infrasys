@@ -466,14 +466,16 @@ class TimeSeriesManager:
 
     @contextmanager
     def open_time_series_store(self) -> Generator[TimeSeriesStorageContext, None, None]:
-        """Open a context that batches every operation passed to it.
+        """Open a context that batches every operation passed to it, inside a store
+        transaction.
 
-        The context commits on a clean exit. If the block raises, it is discarded: staged
-        additions are dropped and anything the block had already flushed is removed from
-        the store. Only this context's own writes are undone, so a concurrent batch is
-        untouched.
+        The context commits on a clean exit. If the block raises, the transaction is
+        rolled back and the whole block is undone — buffered additions never reached the
+        store, and everything that did, **including removals**, is reversed. Removals are
+        recoverable only in here; outside a transaction the store frees the array.
         """
         context = self._storage.new_context()
+        context.begin()
         try:
             yield context
         except Exception as e:

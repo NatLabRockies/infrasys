@@ -52,8 +52,8 @@ committed state.
 The staged batch reaches the store when the context **flushes**, which happens at the first of:
 
 - the block exits cleanly (commit),
-- an operation needs the arrays physically present --- a read, a reader build, a removal,
-  counts, or serialization inside the block forces an early flush.
+- an operation needs the arrays physically present --- a read, a reader build, a removal, or
+  counts inside the block forces an early flush.
 
 A flush hands the whole batch to `Store.add_time_series_bulk`, which writes the arrays and
 records every association in a single catalog transaction. The Rust store applies the batch
@@ -61,10 +61,28 @@ atomically: if any item is rejected, nothing is written. Only after the store ac
 does the storage layer update its committed index, using the keys the store returned (memoized
 so later reads never scan for them).
 
-If the block raises, the context **discards**: staged additions are dropped outright, and
-anything the block had already flushed is removed from the store and the index. Only this
-context's own writes are undone. Removals are applied immediately and are currently *not*
-restored on discard.
+A block opened with `open_time_series_store` runs inside an **`infrastore` transaction**, and
+that is what makes a failure recoverable. If the block raises, buffered additions are dropped
+(they never reached the store) and the transaction is rolled back, undoing everything the block
+did write --- **including removals**, which are irreversible outside a transaction because the
+store frees an array once its last association goes. Inside one the free is deferred to the
+commit, so the bytes are still there when the catalog rewinds. The in-memory index is rebuilt
+from the store afterwards, since entries recorded as work was flushed now describe a catalog
+state that no longer exists.
+
+An early flush therefore costs nothing in recoverability: it lands inside the open transaction
+and rolls back with the rest. This is why a read or a counts call inside a block is harmless.
+
+Two constraints come with the mechanism:
+
+- **Blocks nest LIFO.** SQLite savepoints are a stack, so an inner block must finish before the
+  one enclosing it. `with` statements produce that shape anyway; two *interleaved* batches that
+  each commit or discard on their own schedule are not supported. That is the price of exact
+  rollback, and a client-side undo log --- which is what this replaced --- cannot restore a
+  removal at any price.
+- **Serialization must happen outside a block.** Copying the artifact closes and reopens it,
+  which would discard the transaction, so `to_json` inside an open block raises rather than
+  writing a copy of state that might still roll back.
 
 ## Bulk reads
 
@@ -239,8 +257,8 @@ loop, which touches only the teal and orange boxes.
   uncommitted work.
 - **Metadata never reads arrays.** Listing, existence checks, and counts run entirely against
   the descriptor index; array I/O happens only in the planned bulk reads.
-- **Failure surfaces cleanly.** A rejected bulk write leaves the store, the index, and every
-  other context untouched; a raised block undoes its own flushed additions and nothing else.
+- **Failure surfaces cleanly.** A rejected bulk write leaves the store and the index untouched;
+  a raised block rolls its transaction back, undoing its adds *and* its removals exactly.
 - **Stepping loops pay at build time, not per step.** A reader validates its filter, resolves
   its keys, and derives its lookup state once; each timestamp then costs one store call per
   columnar group or slot, with no metadata work in the loop.

@@ -86,25 +86,53 @@ def test_concurrent_contexts_each_commit_their_own_adds(tmp_path):
     assert system.has_time_series(second_gen, name="second")
 
 
-def test_discarding_one_context_leaves_another_intact(tmp_path):
+def test_nested_blocks_unwind_innermost_first(tmp_path):
+    """Blocks nest LIFO: an inner failure undoes only its own work.
+
+    Rollback is a store transaction, and SQLite savepoints are a stack, so two blocks
+    open at once nest rather than running independently. `with` statements produce that
+    shape naturally. Two *interleaved* batches that each commit or discard on their own
+    schedule are not supported -- the price of exact rollback, including of removals,
+    which a client-side undo log cannot deliver.
+    """
     system, generators = make_system(tmp_path, count=2)
-    keeper_gen, loser_gen = generators
+    outer_gen, inner_gen = generators
 
-    keeper = system.time_series.storage.new_context()
-    loser = system.time_series.storage.new_context()
+    with system.open_time_series_store() as outer:
+        system.add_time_series(make_series("outer"), outer_gen, context=outer)
+        with pytest.raises(RuntimeError):
+            with system.open_time_series_store() as inner:
+                system.add_time_series(make_series("inner"), inner_gen, context=inner)
+                msg = "inner failed"
+                raise RuntimeError(msg)
+        # The outer block is still usable and still holds its own work.
+        assert system.has_time_series(outer_gen, name="outer", context=outer)
 
-    system.add_time_series(make_series("keeper"), keeper_gen, context=keeper)
-    system.add_time_series(make_series("loser"), loser_gen, context=loser)
+    assert system.has_time_series(outer_gen, name="outer")
+    assert not system.has_time_series(inner_gen, name="inner")
 
-    # Force both to write before either finishes, so the undo has something to reverse.
-    keeper.flush()
-    loser.flush()
 
-    loser.discard()
-    keeper.commit()
+def test_rollback_restores_a_removal(tmp_path):
+    """The capability the client-side undo log could not provide.
 
-    assert system.has_time_series(keeper_gen, name="keeper")
-    assert not system.has_time_series(loser_gen, name="loser")
+    Outside a transaction the store frees the array once its last association goes, so a
+    removal is irreversible. Inside one the free is deferred to the commit, so the
+    rollback restores the data and not merely the catalog row.
+    """
+    system, generators = make_system(tmp_path)
+    gen = generators[0]
+    system.add_time_series(make_series("keep"), gen)
+
+    with pytest.raises(RuntimeError):
+        with system.open_time_series_store() as context:
+            system.remove_time_series(gen, name="keep", context=context)
+            assert not system.has_time_series(gen, name="keep", context=context)
+            msg = "boom"
+            raise RuntimeError(msg)
+
+    assert system.has_time_series(gen, name="keep")
+    restored = system.get_time_series(gen, name="keep")
+    np.testing.assert_array_equal(restored.data, np.arange(LENGTH, dtype=np.float64))
 
 
 def test_exception_undoes_adds_already_flushed_mid_block(tmp_path):
@@ -184,32 +212,35 @@ def test_storage_holds_no_batch_state(tmp_path):
     assert not context.has_staged_data
 
 
-def test_to_json_with_context_includes_staged_time_series(tmp_path):
+def test_to_json_after_a_block_includes_its_time_series(tmp_path):
     system, generators = make_system(tmp_path / "store")
     gen = generators[0]
     path = tmp_path / "system.json"
 
     with system.open_time_series_store() as context:
         system.add_time_series(make_series(), gen, context=context)
-        system.to_json(path, context=context)
+    system.to_json(path)
 
     restored = SimpleSystem.from_json(path)
     actual = restored.get_time_series(restored.get_component_by_id(gen.id), name="load")
     np.testing.assert_array_equal(actual.data, np.arange(LENGTH, dtype=np.float64))
 
 
-def test_to_json_without_context_omits_staged_time_series(tmp_path):
-    """Serializing without the context writes committed state only."""
+def test_to_json_inside_a_block_is_rejected(tmp_path):
+    """Serializing mid-block raises rather than producing a copy of pending state.
+
+    Copying the artifact closes and reopens it, which would discard the open
+    transaction; and a durable copy of state that may still roll back is not a coherent
+    thing to write. The caller is told to move the call out of the block.
+    """
     system, generators = make_system(tmp_path / "store")
     gen = generators[0]
     path = tmp_path / "system.json"
 
-    with system.open_time_series_store() as context:
-        system.add_time_series(make_series(), gen, context=context)
-        system.to_json(path)
-
-    restored = SimpleSystem.from_json(path)
-    assert not restored.has_time_series(restored.get_component_by_id(gen.id), name="load")
+    with pytest.raises(ISOperationNotAllowed, match="transaction is open"):
+        with system.open_time_series_store() as context:
+            system.add_time_series(make_series(), gen, context=context)
+            system.to_json(path)
 
 
 def test_reader_built_with_context_sees_staged_data(tmp_path):

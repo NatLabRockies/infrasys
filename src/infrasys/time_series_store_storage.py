@@ -125,10 +125,12 @@ class TimeSeriesStoreStorage:
         return TimeSeriesStorageContext(self)
 
     def write_pending(self, pending: list[_PendingAdd]) -> None:
-        """Write a context's staged additions to the store in one bulk call.
+        """Write a context's buffered additions to the store in one bulk call.
 
         Called by :meth:`TimeSeriesStorageContext.flush`. The index is updated only after
-        the store accepts the batch, so a rejected batch leaves no trace here.
+        the store accepts the batch, so a rejected batch leaves no trace here. Inside a
+        transactional context this write is still undoable — the store rolls it back with
+        the rest of the transaction, and ``discard`` rebuilds the index to match.
         """
         if not pending:
             return
@@ -138,25 +140,6 @@ class TimeSeriesStoreStorage:
         for entry, key in zip(pending, keys):
             entry.stored.store_key = key
             self._index.setdefault(entry.owner_key, {})[entry.assoc_key] = entry.stored
-
-    def undo_committed(self, committed: list[_PendingAdd]) -> None:
-        """Remove associations a failed context had already written.
-
-        Called by :meth:`TimeSeriesStorageContext.discard`. Only the entries that context
-        wrote are touched, so a concurrent batch is unaffected.
-        """
-        for entry in committed:
-            assoc_map = self._index.get(entry.owner_key)
-            stored = assoc_map.pop(entry.assoc_key, None) if assoc_map is not None else None
-            if stored is None:
-                continue
-            owner_id, category_name = entry.owner_key
-            category = _category_from_name(category_name)
-            try:
-                rust_key = self._resolve_committed_key(owner_id, category, stored)
-            except ISNotStored:
-                continue
-            self._store.remove_time_series(rust_key)
 
     @classmethod
     def create_with_temp_directory(
@@ -735,8 +718,23 @@ class TimeSeriesStoreStorage:
     ) -> None:
         """Copy the store to ``dst``.
 
-        Anything ``context`` has staged is flushed first so it is included in the copy.
+        Anything ``context`` has buffered is flushed first so it is included in the copy.
+
+        Raises
+        ------
+        ISOperationNotAllowed
+            Raised if a time series transaction is open. Copying the artifact means
+            closing and reopening it (see ``_closed_store``), which discards the
+            transaction — and a durable copy of state that may still be rolled back is
+            not a coherent thing to produce.
         """
+        if self._store.in_transaction:
+            msg = (
+                "Cannot serialize while a time series transaction is open. Move the call "
+                "outside the open_time_series_store block so the copy reflects committed "
+                "state."
+            )
+            raise ISOperationNotAllowed(msg)
         if context is not None:
             context.check_owns(self)
             context.flush()

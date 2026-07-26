@@ -149,10 +149,18 @@ with system.open_time_series_store() as context:
         system.add_time_series(profile, generator, context=context)
 ```
 
-The context is also the unit of rollback. If the block raises, everything it added is
-undone — including anything it had already been forced to write, since operations that need
-the arrays physically present (reading a series, building a reader, serializing) flush the
-context first.
+The block is also a **transaction**. If it raises, everything it did is undone — additions
+it had already been forced to write, and **removals**, which are recoverable only in here.
+Outside a block a removal is permanent as soon as it happens: the store frees the array once
+its last reference goes. Inside one that free is deferred until the block succeeds.
+
+```python
+with system.open_time_series_store() as context:
+    system.add_time_series(new_profile, generator, context=context)
+    system.remove_time_series(generator, name="old_profile", context=context)
+    ...
+# both applied, or -- if anything raised -- neither
+```
 
 Passing the context is what puts a call in the batch. A call that omits it runs on its own
 and sees **committed** data only:
@@ -165,8 +173,13 @@ with system.open_time_series_store() as context:
     system.has_time_series(generator, name="load")                   # False - not committed yet
 ```
 
-This isolation means two open contexts never observe or disturb each other's staged work,
-and discarding one leaves the other's writes intact.
+Two constraints come with this:
+
+- **Blocks nest, innermost first.** An inner block must finish before the one enclosing it.
+  Two batches open at once that each commit or discard on their own schedule are not
+  supported.
+- **Serialize outside the block.** `to_json` while a block is open raises: writing a durable
+  copy of state that might still roll back is not something it will do for you.
 
 ## Resolution
 
