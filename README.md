@@ -21,7 +21,7 @@ their domain problems instead of managing persistence concerns.
 - **Typed components with pint validation:** Base models derive from `pydantic` and use
   `pint` quantities whenever a physical unit is involved.
 - **Efficient time-series storage:** Time series arrays and their metadata are stored by the
-  Rust-backed `time-series-store` package (NetCDF arrays plus a SQLite database).
+  Rust-backed `infrastore` package (NetCDF arrays plus a SQLite database).
 - **Efficient serialization:** Components, supplemental attributes, and nested systems are
   serialized to JSON with automatic metadata and optional migration hooks.
 - **Designed for extension:** Derive your own `System` classes, override component addition
@@ -87,21 +87,21 @@ pip install -e ".[dev]"
 pytest
 ```
 
-### Building the Rust `time-series-store` extension
+### Building the Rust `infrastore` extension
 
-infrasys depends on the Rust `time-series-store` package for its time series backend. During
+infrasys depends on the Rust `infrastore` package for its time series backend. During
 local development this is resolved from a sibling checkout via [`[tool.uv.sources]`](pyproject.toml):
 
 ```toml
 [tool.uv.sources]
-time-series-store = { path = "../time-series-store/crates/time-series-store-py" }
+infrastore = { path = "../infrastore/crates/infrastore-py" }
 ```
 
-1. Clone the [`time-series-store`](https://github.com/NatLabRockies/time-series-store) repository
+1. Clone the [`infrastore`](https://github.com/NatLabRockies/infrastore) repository
    next to this one so the relative path resolves:
 
    ```bash
-   git clone https://github.com/NatLabRockies/time-series-store.git ../time-series-store
+   git clone https://github.com/NatLabRockies/infrastore.git ../infrastore
    ```
 
 2. Make sure a Rust toolchain is installed (`uv` compiles the extension with `maturin`):
@@ -120,7 +120,7 @@ time-series-store = { path = "../time-series-store/crates/time-series-store-py" 
    `uv sync` will not rebuild an unchanged-version path dependency:
 
    ```bash
-   uv sync --reinstall-package time-series-store
+   uv sync --reinstall-package infrastore
    ```
 
    You can confirm the rebuild picked up your changes, e.g.:

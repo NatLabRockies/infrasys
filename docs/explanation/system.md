@@ -71,7 +71,7 @@ Every time you add a component to a system, `infrasys` inspects the component ty
 components. It checks for directly connected components, such as `Generator.bus`, and lists of
 components. (It does not inspect other composite data structures like dictionaries.)
 
-`infrasys` stores these component associations in the Rust-backed `time-series-store` catalog that
+`infrasys` stores these component associations in the Rust-backed `infrastore` catalog that
 lives alongside the system's time series data, and so lookups are fast. The associations are saved
 and restored with the system.
 

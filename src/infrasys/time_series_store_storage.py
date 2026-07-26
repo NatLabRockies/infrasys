@@ -1,4 +1,4 @@
-"""Time series storage backed by the time-series-store Rust extension.
+"""Time series storage backed by the infrastore Rust extension.
 
 This backend is the single source of truth for both time series *data* and the
 association *metadata* (which owner has which series, plus features/units). The
@@ -123,7 +123,7 @@ class _PendingAdd:
 
 
 class TimeSeriesStoreStorage:
-    """Store time series in the NetCDF/SQLite time-series-store format."""
+    """Store time series in the NetCDF/SQLite infrastore format."""
 
     STORAGE_FILE = "time_series_store.nc"
 
@@ -137,7 +137,7 @@ class TimeSeriesStoreStorage:
 
     @property
     def store(self) -> Store:
-        """Return the underlying time-series-store object.
+        """Return the underlying infrastore object.
 
         Component and supplemental attribute associations are stored in its SQLite catalog.
         """

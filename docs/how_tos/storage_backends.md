@@ -1,14 +1,14 @@
 # How to Configure Time Series Storage
 
 Infrasys stores all time-series data and metadata in the
-**time-series-store** backend
+**infrastore** backend
 ({py:class}`~infrasys.time_series_store_storage.TimeSeriesStoreStorage`), implemented by the Rust
-`time-series-store` package. It is the single source of truth for both the arrays and their
+`infrastore` package. It is the single source of truth for both the arrays and their
 owner/feature associations.
 
 ## Persistent Storage
 
-Systems use `time-series-store` by default:
+Systems use `infrastore` by default:
 
 ```python
 from infrasys import System

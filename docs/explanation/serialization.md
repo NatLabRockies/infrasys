@@ -105,6 +105,6 @@ instance. Here is an example of such a component:
 ```
 
 ## Time Series
-`infrasys` stores all time series arrays and their metadata in the Rust-backed `time-series-store`
+`infrasys` stores all time series arrays and their metadata in the Rust-backed `infrastore`
 backend (NetCDF arrays plus a SQLite database). When the user calls `system.to_json()`, `infrasys`
 copies those store files into the user-specified directory alongside the JSON file.

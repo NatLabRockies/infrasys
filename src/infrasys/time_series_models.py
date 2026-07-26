@@ -46,7 +46,7 @@ class TimeSeriesStorageType(StrEnum):
 class TimeSeriesData(InfraSysBaseModel, abc.ABC):
     """Base class for all time series models.
 
-    Time series identity is owned by the Rust ``time-series-store`` core (content hash plus
+    Time series identity is owned by the Rust ``infrastore`` core (content hash plus
     the owner/name/features association key); infrasys does not assign its own id/uuid.
     """
 
@@ -355,7 +355,7 @@ def single_time_series_range(
 ) -> tuple[int, int]:
     """Return the ``(index, length)`` slice into a SingleTimeSeries array.
 
-    Extracted from the former ``SingleTimeSeriesMetadata.get_range``; the time-series-store
+    Extracted from the former ``SingleTimeSeriesMetadata.get_range``; the infrastore
     backend uses it to translate a ``start_time``/``length`` request into array indices.
     """
     if start_time is None and slice_length is None:

@@ -87,7 +87,7 @@ system.add_time_series(ts, generator)
 When you want a "perfect forecast" derived from historical data, call
 `System.transform_single_time_series(horizon, interval)`. This re-describes **every**
 `SingleTimeSeries` already stored on the system as a deterministic forecast that shares the same
-underlying array — the overlapping forecast windows are computed by the Rust `time-series-store`
+underlying array — the overlapping forecast windows are computed by the Rust `infrastore`
 backend, not materialized in Python. After transforming, retrieve a forecast by passing
 `time_series_type=Deterministic` to `get_time_series`.
 
@@ -140,7 +140,7 @@ For example, a `timedelta` of 1 month will be converted to the ISO format string
 ## Behaviors
 
 The `System` stores all time series arrays and their metadata in the Rust-backed
-`time-series-store` backend (NetCDF arrays plus a SQLite database). Users can customize time series
+`infrastore` backend (NetCDF arrays plus a SQLite database). Users can customize time series
 behavior with these keyword arguments passed to the `System` constructor:
 
 - `time_series_read_only`: The default behavior allows users to add and remove time series data.
