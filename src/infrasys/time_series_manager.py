@@ -465,7 +465,7 @@ class TimeSeriesManager:
         return cls(storage=storage, initialize=False, **kwargs)
 
     @contextmanager
-    def open_time_series_store(self) -> Generator[TimeSeriesStorageContext, None, None]:
+    def time_series_transaction(self) -> Generator[TimeSeriesStorageContext, None, None]:
         """Open a context that batches every operation passed to it, inside a store
         transaction.
 

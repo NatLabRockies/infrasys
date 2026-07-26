@@ -36,7 +36,7 @@ def test_staged_adds_are_visible_only_through_their_own_context(tmp_path):
     system, generators = make_system(tmp_path)
     gen = generators[0]
 
-    with system.open_time_series_store() as context:
+    with system.time_series_transaction() as context:
         system.add_time_series(make_series(), gen, context=context)
         # The staging context sees its own work.
         assert system.has_time_series(gen, name="load", context=context)
@@ -51,9 +51,9 @@ def test_second_context_does_not_see_another_contexts_staged_adds(tmp_path):
     system, generators = make_system(tmp_path)
     gen = generators[0]
 
-    with system.open_time_series_store() as writer:
+    with system.time_series_transaction() as writer:
         system.add_time_series(make_series(), gen, context=writer)
-        with system.open_time_series_store() as reader:
+        with system.time_series_transaction() as reader:
             assert not system.has_time_series(gen, name="load", context=reader)
 
     assert system.has_time_series(gen, name="load")
@@ -98,10 +98,10 @@ def test_nested_blocks_unwind_innermost_first(tmp_path):
     system, generators = make_system(tmp_path, count=2)
     outer_gen, inner_gen = generators
 
-    with system.open_time_series_store() as outer:
+    with system.time_series_transaction() as outer:
         system.add_time_series(make_series("outer"), outer_gen, context=outer)
         with pytest.raises(RuntimeError):
-            with system.open_time_series_store() as inner:
+            with system.time_series_transaction() as inner:
                 system.add_time_series(make_series("inner"), inner_gen, context=inner)
                 msg = "inner failed"
                 raise RuntimeError(msg)
@@ -124,7 +124,7 @@ def test_rollback_restores_a_removal(tmp_path):
     system.add_time_series(make_series("keep"), gen)
 
     with pytest.raises(RuntimeError):
-        with system.open_time_series_store() as context:
+        with system.time_series_transaction() as context:
             system.remove_time_series(gen, name="keep", context=context)
             assert not system.has_time_series(gen, name="keep", context=context)
             msg = "boom"
@@ -141,7 +141,7 @@ def test_exception_undoes_adds_already_flushed_mid_block(tmp_path):
     gen = generators[0]
 
     with pytest.raises(RuntimeError):
-        with system.open_time_series_store() as context:
+        with system.time_series_transaction() as context:
             system.add_time_series(make_series(), gen, context=context)
             # Reading requires the array to be in the store, so this flushes the batch.
             actual = system.get_time_series(gen, name="load", context=context)
@@ -157,7 +157,7 @@ def test_context_rejects_use_after_its_block_exits(tmp_path):
     system, generators = make_system(tmp_path)
     gen = generators[0]
 
-    with system.open_time_series_store() as context:
+    with system.time_series_transaction() as context:
         system.add_time_series(make_series(), gen, context=context)
 
     with pytest.raises(ISOperationNotAllowed):
@@ -168,7 +168,7 @@ def test_context_rejects_use_against_a_different_system(tmp_path):
     first_system, first_gens = make_system(tmp_path / "first")
     second_system, second_gens = make_system(tmp_path / "second")
 
-    with first_system.open_time_series_store() as context:
+    with first_system.time_series_transaction() as context:
         with pytest.raises(ISOperationNotAllowed):
             second_system.add_time_series(make_series(), second_gens[0], context=context)
 
@@ -178,7 +178,7 @@ def test_duplicate_staged_on_one_context_is_rejected(tmp_path):
     gen = generators[0]
 
     with pytest.raises(ISAlreadyAttached):
-        with system.open_time_series_store() as context:
+        with system.time_series_transaction() as context:
             system.add_time_series(make_series(), gen, context=context)
             system.add_time_series(make_series(), gen, context=context)
 
@@ -200,7 +200,7 @@ def test_storage_holds_no_batch_state(tmp_path):
     system, generators = make_system(tmp_path)
     storage = system.time_series.storage
 
-    with system.open_time_series_store() as context:
+    with system.time_series_transaction() as context:
         system.add_time_series(make_series(), generators[0], context=context)
         assert context.has_staged_data
         # Nothing about the open batch is reachable from storage: it holds no buffer, and
@@ -217,7 +217,7 @@ def test_to_json_after_a_block_includes_its_time_series(tmp_path):
     gen = generators[0]
     path = tmp_path / "system.json"
 
-    with system.open_time_series_store() as context:
+    with system.time_series_transaction() as context:
         system.add_time_series(make_series(), gen, context=context)
     system.to_json(path)
 
@@ -238,7 +238,7 @@ def test_to_json_inside_a_block_is_rejected(tmp_path):
     path = tmp_path / "system.json"
 
     with pytest.raises(ISOperationNotAllowed, match="transaction is open"):
-        with system.open_time_series_store() as context:
+        with system.time_series_transaction() as context:
             system.add_time_series(make_series(), gen, context=context)
             system.to_json(path)
 
@@ -246,7 +246,7 @@ def test_to_json_inside_a_block_is_rejected(tmp_path):
 def test_reader_built_with_context_sees_staged_data(tmp_path):
     system, generators = make_system(tmp_path)
 
-    with system.open_time_series_store() as context:
+    with system.time_series_transaction() as context:
         for i, gen in enumerate(generators):
             system.add_time_series(make_series(offset=i * 100.0), gen, context=context)
         reader = system.build_time_series_reader(RESOLUTION, name="load", context=context)

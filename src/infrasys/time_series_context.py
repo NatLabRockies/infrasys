@@ -6,7 +6,7 @@ so that many additions reach the store as one bulk call. That is what buys block
 NetCDF writes and feature-set dedup, and a store transaction deliberately does not
 provide it.
 
-Atomicity is the store's job. A context opened by ``open_time_series_store`` begins an
+Atomicity is the store's job. A context opened by ``time_series_transaction`` begins an
 ``infrastore`` transaction and commits or rolls it back on exit, so undoing a failed
 block is one call rather than a compensating-removal log. Two things follow that used
 to need machinery here:
@@ -86,13 +86,13 @@ class TimeSeriesStorageContext:
     """Owns one batch of time series work against a storage backend.
 
     Additions are buffered until :meth:`flush` writes them to the store in a single bulk
-    call. A transactional context (one from ``open_time_series_store``) wraps everything
+    call. A transactional context (one from ``time_series_transaction``) wraps everything
     it does in a store transaction, so :meth:`discard` undoes the whole block — flushed
     work and removals included.
 
     Examples
     --------
-    >>> with system.open_time_series_store() as context:
+    >>> with system.time_series_transaction() as context:
     ...     system.add_time_series(ts, gen, context=context)
     """
 
@@ -120,7 +120,7 @@ class TimeSeriesStorageContext:
     def begin(self) -> None:
         """Open the store transaction backing this context.
 
-        Called by ``open_time_series_store``. Contexts created for a single operation
+        Called by ``time_series_transaction``. Contexts created for a single operation
         skip this: that operation is already atomic, and beginning a transaction would
         take a write lock needlessly — and fail outright on a read-only store.
         """
@@ -139,7 +139,7 @@ class TimeSeriesStorageContext:
         if self._closed:
             msg = (
                 "This time series context is closed. Contexts are valid only inside the "
-                "open_time_series_store block that created them; open a new one."
+                "time_series_transaction block that created them; open a new one."
             )
             raise ISOperationNotAllowed(msg)
 

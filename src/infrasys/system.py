@@ -185,7 +185,7 @@ class System:
             key 'system'. Packages that derive a custom instance of this class should leave this
             field unset.
         context : TimeSeriesStorageContext | None
-            Pass the context returned by :meth:`open_time_series_store` when serializing from
+            Pass the context returned by :meth:`time_series_transaction` when serializing from
             inside that block, so its staged time series are flushed and included. Without it
             only committed time series are written.
 
@@ -197,7 +197,7 @@ class System:
 
         Serialize from inside an open batch:
 
-        >>> with system.open_time_series_store() as context:
+        >>> with system.time_series_transaction() as context:
         ...     system.add_time_series(ts, gen, context=context)
         ...     system.to_json("systems/system1.json", context=context)
         """
@@ -1210,7 +1210,7 @@ class System:
         features : str
             Optional, search for time series with these attributes.
         context: TimeSeriesStorageContext
-            Optional, connection returned by :meth:`open_time_series_store`
+            Optional, connection returned by :meth:`time_series_transaction`
 
         Raises
         ------
@@ -1612,7 +1612,7 @@ class System:
         )
 
     @contextmanager
-    def open_time_series_store(self) -> Generator[TimeSeriesStorageContext, None, None]:
+    def time_series_transaction(self) -> Generator[TimeSeriesStorageContext, None, None]:
         """Open a context that batches every time series operation passed to it.
 
         Batching lets the store pay one catalog transaction for the whole block instead of
@@ -1630,11 +1630,11 @@ class System:
 
         Examples
         --------
-        >>> with system.open_time_series_store() as context:
+        >>> with system.time_series_transaction() as context:
         ...     system.add_time_series(ts1, gen1, context=context)
         ...     system.add_time_series(ts2, gen1, context=context)
         """
-        with self._time_series_mgr.open_time_series_store() as context:
+        with self._time_series_mgr.time_series_transaction() as context:
             yield context
 
     @contextmanager

@@ -731,7 +731,7 @@ class TimeSeriesStoreStorage:
         if self._store.in_transaction:
             msg = (
                 "Cannot serialize while a time series transaction is open. Move the call "
-                "outside the open_time_series_store block so the copy reflects committed "
+                "outside the time_series_transaction block so the copy reflects committed "
                 "state."
             )
             raise ISOperationNotAllowed(msg)

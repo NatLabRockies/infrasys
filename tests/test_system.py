@@ -348,7 +348,7 @@ def test_time_series_retrieval(storage_type, use_quantity):
 
 
 @pytest.mark.parametrize("storage_type", TS_STORAGE_OPTIONS)
-def test_open_time_series_store(storage_type: TimeSeriesStorageType):
+def test_time_series_transaction(storage_type: TimeSeriesStorageType):
     system = SimpleSystem(time_series_storage_type=storage_type)
     bus = SimpleBus(name="test-bus", voltage=1.1)
     gen = SimpleGenerator(name="gen", active_power=1.0, rating=1.0, bus=bus, available=True)
@@ -358,12 +358,12 @@ def test_open_time_series_store(storage_type: TimeSeriesStorageType):
     initial_time = datetime(year=2020, month=1, day=1)
     timestamps = [initial_time + timedelta(hours=i) for i in range(length)]
     time_series_arrays: list[SingleTimeSeries] = []
-    with system.open_time_series_store() as conn:
+    with system.time_series_transaction() as conn:
         for i in range(5):
             ts = SingleTimeSeries.from_time_array(np.random.rand(length), f"ts{i}", timestamps)
             system.add_time_series(ts, gen)
             time_series_arrays.append(ts)
-    with system.open_time_series_store() as conn:
+    with system.time_series_transaction() as conn:
         for i in range(5):
             ts = system.get_time_series(gen, name=f"ts{i}", context=conn)
             assert np.array_equal(
@@ -784,7 +784,7 @@ def test_bulk_add_time_series():
     gen = SimpleGenerator(name="gen", active_power=1.0, rating=1.0, bus=bus, available=True)
     system.add_components(bus, gen)
     time_series: list[SingleTimeSeries] = []
-    with system.open_time_series_store() as conn:
+    with system.time_series_transaction() as conn:
         for i in range(2):
             for initial_time, resolution, length in (
                 (datetime(year=2020, month=1, day=1), timedelta(hours=1), 10),
@@ -796,7 +796,7 @@ def test_bulk_add_time_series():
                 system.add_time_series(ts, gen, context=conn)
                 time_series.append(ts)
 
-    with system.open_time_series_store() as conn:
+    with system.time_series_transaction() as conn:
         for expected_ts in time_series:
             actual_ts = system.get_time_series(
                 gen,
@@ -815,7 +815,7 @@ def test_bulk_add_time_series_with_rollback(storage_type: TimeSeriesStorageType)
     system.add_components(bus, gen)
     ts_name = "test_ts"
     with pytest.raises(ISAlreadyAttached):
-        with system.open_time_series_store() as conn:
+        with system.time_series_transaction() as conn:
             initial_time = datetime(year=2020, month=1, day=1)
             resolution = timedelta(hours=1)
             length = 10
@@ -842,7 +842,7 @@ def test_bulk_add_deterministic_time_series():
     window_count = 3
 
     time_series: list[Deterministic] = []
-    with system.open_time_series_store() as conn:
+    with system.time_series_transaction() as conn:
         for i in range(5):
             data = np.random.rand(window_count, 8)
             ts = Deterministic.from_array(
@@ -857,7 +857,7 @@ def test_bulk_add_deterministic_time_series():
             system.add_time_series(ts, gen, context=conn)
             time_series.append(ts)
 
-    with system.open_time_series_store() as conn:
+    with system.time_series_transaction() as conn:
         for expected_ts in time_series:
             actual_ts = system.get_time_series(
                 gen,
@@ -880,7 +880,7 @@ def test_bulk_add_deterministic_time_series_with_rollback(storage_type: TimeSeri
     system.add_components(bus, gen)
     ts_name = "forecast"
     with pytest.raises(ISAlreadyAttached):
-        with system.open_time_series_store() as conn:
+        with system.time_series_transaction() as conn:
             ts = Deterministic.from_array(
                 np.random.rand(3, 8),
                 ts_name,
@@ -912,14 +912,14 @@ def test_bulk_add_nonsequential_time_series():
     )
 
     time_series: list[NonSequentialTimeSeries] = []
-    with system.open_time_series_store() as conn:
+    with system.time_series_transaction() as conn:
         for i in range(5):
             data = np.random.rand(length)
             ts = NonSequentialTimeSeries.from_array(data, timestamps, f"events_{i}")
             system.add_time_series(ts, gen, context=conn)
             time_series.append(ts)
 
-    with system.open_time_series_store() as conn:
+    with system.time_series_transaction() as conn:
         for expected_ts in time_series:
             actual_ts = system.get_time_series(
                 gen,
@@ -944,7 +944,7 @@ def test_bulk_add_nonsequential_time_series_with_rollback(storage_type: TimeSeri
         dtype=object,
     )
     with pytest.raises(ISAlreadyAttached):
-        with system.open_time_series_store() as conn:
+        with system.time_series_transaction() as conn:
             ts = NonSequentialTimeSeries.from_array(np.random.rand(4), timestamps, ts_name)
             system.add_time_series(ts, gen, context=conn)
             assert system.has_time_series(

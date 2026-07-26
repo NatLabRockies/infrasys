@@ -35,7 +35,7 @@ def make_system(tmp_path, count: int = 4, shared: bool = False):
 
     profile = np.arange(LENGTH, dtype=np.float64)
     expected = {}
-    with system.open_time_series_store() as conn:
+    with system.time_series_transaction() as conn:
         for i, generator in enumerate(generators):
             data = profile if shared else profile + i * 100
             time_series = SingleTimeSeries.from_array(data, "load", INITIAL_TIMESTAMP, RESOLUTION)
@@ -150,7 +150,7 @@ def test_reader_sees_series_staged_in_an_open_batch(tmp_path):
     late = SimpleGenerator(name="late", active_power=1.0, rating=1.0, bus=bus, available=True)
     system.add_component(late)
 
-    with system.open_time_series_store() as conn:
+    with system.time_series_transaction() as conn:
         system.add_time_series(
             SingleTimeSeries.from_array(
                 np.full(LENGTH, 7.0), "load", INITIAL_TIMESTAMP, RESOLUTION

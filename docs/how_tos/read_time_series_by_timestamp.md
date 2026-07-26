@@ -41,7 +41,7 @@ system.add_components(*generators)
 
 # Passing the context batches all three adds into one write. Omit it and each add
 # commits on its own.
-with system.open_time_series_store() as context:
+with system.time_series_transaction() as context:
     for i, generator in enumerate(generators):
         data = np.arange(length, dtype=float) + i * 100
         ts = SingleTimeSeries.from_array(data, "load", initial_time, resolution)

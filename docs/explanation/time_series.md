@@ -138,13 +138,13 @@ See [How to read time series by timestamp](#read-time-series-by-timestamp).
 
 ## Batching and Contexts
 
-`System.open_time_series_store()` yields a context that batches every operation you pass it
+`System.time_series_transaction()` yields a context that batches every operation you pass it
 to. Without it, each call commits on its own; with it, the store pays one catalog
 transaction for the whole block instead of one per series. This matters when adding many
 arrays.
 
 ```python
-with system.open_time_series_store() as context:
+with system.time_series_transaction() as context:
     for generator, profile in profiles.items():
         system.add_time_series(profile, generator, context=context)
 ```
@@ -155,7 +155,7 @@ Outside a block a removal is permanent as soon as it happens: the store frees th
 its last reference goes. Inside one that free is deferred until the block succeeds.
 
 ```python
-with system.open_time_series_store() as context:
+with system.time_series_transaction() as context:
     system.add_time_series(new_profile, generator, context=context)
     system.remove_time_series(generator, name="old_profile", context=context)
     ...
@@ -166,7 +166,7 @@ Passing the context is what puts a call in the batch. A call that omits it runs 
 and sees **committed** data only:
 
 ```python
-with system.open_time_series_store() as context:
+with system.time_series_transaction() as context:
     system.add_time_series(ts, generator, context=context)
 
     system.has_time_series(generator, name="load", context=context)  # True

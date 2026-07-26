@@ -43,7 +43,7 @@
 ## Context
 
 The transaction object for time series operations, returned by
-{py:meth}`infrasys.system.System.open_time_series_store`. Pass it as ``context=`` to batch
+{py:meth}`infrasys.system.System.time_series_transaction`. Pass it as ``context=`` to batch
 calls together and to make them share one unit of rollback.
 
 ```{eval-rst}

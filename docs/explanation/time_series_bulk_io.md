@@ -5,7 +5,7 @@ how additions are batched into one catalog transaction, and how reads are groupe
 store decompresses each dataset once. It describes the design behind
 {py:meth}`infrasys.system.System.add_time_series`,
 {py:meth}`infrasys.system.System.list_time_series`, and
-{py:meth}`infrasys.system.System.open_time_series_store`.
+{py:meth}`infrasys.system.System.time_series_transaction`.
 
 ## The layers and what each one owns
 
@@ -31,12 +31,12 @@ is rebuilt from the store on deserialization, and the store key memoized on each
 ## Bulk adds
 
 Every write operation takes a context. A caller who opens
-{py:meth}`~infrasys.system.System.open_time_series_store` batches many calls; a caller who
+{py:meth}`~infrasys.system.System.time_series_transaction` batches many calls; a caller who
 passes nothing gets a transient context that commits at the end of that single call, so the
 one-call behavior is unchanged.
 
 ```python
-with system.open_time_series_store() as context:
+with system.time_series_transaction() as context:
     for gen, ts in profiles:
         system.add_time_series(ts, gen, context=context)
 # exiting the block commits: one bulk write, one catalog transaction
@@ -61,7 +61,7 @@ atomically: if any item is rejected, nothing is written. Only after the store ac
 does the storage layer update its committed index, using the keys the store returned (memoized
 so later reads never scan for them).
 
-A block opened with `open_time_series_store` runs inside an **`infrastore` transaction**, and
+A block opened with `time_series_transaction` runs inside an **`infrastore` transaction**, and
 that is what makes a failure recoverable. If the block raises, buffered additions are dropped
 (they never reached the store) and the transaction is rolled back, undoing everything the block
 did write --- **including removals**, which are irreversible outside a transaction because the
