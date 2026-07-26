@@ -12,7 +12,7 @@ from uuid import UUID, uuid4
 
 import orjson
 from loguru import logger
-from castore import Store
+from infrastore import Store
 from rich import print as _pprint
 from rich.table import Table
 

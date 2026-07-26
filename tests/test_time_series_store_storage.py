@@ -134,7 +134,7 @@ def test_compression_options_flow_from_system(tmp_path, compression_kwargs):
 
 
 def test_invalid_compression_rejected(tmp_path):
-    from castore import InvalidParameterError
+    from infrastore import InvalidParameterError
 
     with pytest.raises(InvalidParameterError):
         TimeSeriesStoreStorage.create_with_temp_directory(tmp_path, compression="lz4")
@@ -286,7 +286,7 @@ def test_deterministic_collides_with_transformed_view(tmp_path):
     """Adding an explicit Deterministic must be rejected once a transform-derived
     DeterministicSingleTimeSeries view of the same series exists; they are mutually exclusive.
     """
-    from castore import InvalidParameterError
+    from infrastore import InvalidParameterError
 
     system, generator = make_system(tmp_path)
     single = SingleTimeSeries.from_array(
@@ -306,7 +306,7 @@ def test_transform_collides_with_explicit_deterministic(tmp_path):
     """transform_single_time_series must be rejected once an explicit Deterministic forecast of
     the same series exists; the derived DeterministicSingleTimeSeries would collide with it.
     """
-    from castore import InvalidParameterError
+    from infrastore import InvalidParameterError
 
     system, generator = make_system(tmp_path)
     system.add_time_series(make_deterministic(), generator)

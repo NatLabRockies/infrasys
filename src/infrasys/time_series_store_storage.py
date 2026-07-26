@@ -30,7 +30,7 @@ import numpy as np
 import orjson
 import pint
 from loguru import logger
-from castore import (  # type: ignore[import-untyped]
+from infrastore import (  # type: ignore[import-untyped]
     Deterministic as RustDeterministic,
     NonSequentialTimeSeries as RustNonSequentialTimeSeries,
     OwnerCategory,

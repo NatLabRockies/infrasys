@@ -6,7 +6,7 @@ from collections import defaultdict
 from typing import Any, Callable, Iterable, Optional, Type
 from uuid import UUID
 from loguru import logger
-from castore import ParentChildAssociation, Store
+from infrastore import ParentChildAssociation, Store
 
 from infrasys.component import Component
 from infrasys.exceptions import (

@@ -5,7 +5,7 @@ from typing import Any, Callable, Generator, Iterable, Optional, Type, TypeVar, 
 from uuid import UUID
 
 from loguru import logger
-from castore import (
+from infrastore import (
     DuplicateAssociationError,
     SupplementalAttributeAssociation,
     Store,

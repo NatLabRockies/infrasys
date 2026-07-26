@@ -81,21 +81,6 @@ wheels = [
 ]
 
 [[package]]
-name = "castore"
-version = "0.1.0"
-source = { directory = "../castore/crates/castore-py" }
-dependencies = [
-    { name = "numpy" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "numpy", specifier = ">=1.24" },
-    { name = "pytest", marker = "extra == 'test'", specifier = ">=7" },
-]
-provides-extras = ["test"]
-
-[[package]]
 name = "certifi"
 version = "2025.8.3"
 source = { registry = "https://pypi.org/simple" }
@@ -355,11 +340,26 @@ wheels = [
 ]
 
 [[package]]
+name = "infrastore"
+version = "0.1.0"
+source = { directory = "../castore/crates/infrastore-py" }
+dependencies = [
+    { name = "numpy" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "numpy", specifier = ">=1.24" },
+    { name = "pytest", marker = "extra == 'test'", specifier = ">=7" },
+]
+provides-extras = ["test"]
+
+[[package]]
 name = "infrasys"
 version = "1.2.0"
 source = { editable = "." }
 dependencies = [
-    { name = "castore" },
+    { name = "infrastore" },
     { name = "loguru" },
     { name = "numpy" },
     { name = "orjson" },
@@ -397,7 +397,7 @@ docs = [
 
 [package.metadata]
 requires-dist = [
-    { name = "castore", directory = "../castore/crates/castore-py" },
+    { name = "infrastore", directory = "../castore/crates/infrastore-py" },
     { name = "loguru", specifier = ">=0.7,<0.8" },
     { name = "numpy", specifier = ">=2,<3" },
     { name = "orjson", specifier = ">=3.11.5,<4" },
