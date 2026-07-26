@@ -3,10 +3,13 @@
 import copy
 import itertools
 from collections import defaultdict
-from typing import Any, Callable, Iterable, Optional, Type
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Optional, Type
 from uuid import UUID
 from loguru import logger
 from infrastore import ParentChildAssociation, Store
+
+if TYPE_CHECKING:
+    from infrasys.time_series_store_storage import TimeSeriesStoreStorage
 
 from infrasys.component import Component
 from infrasys.exceptions import (
@@ -25,14 +28,23 @@ class ComponentManager:
     def __init__(
         self,
         auto_add_composed_components: bool,
-        store: Store,
+        storage: "TimeSeriesStoreStorage",
     ) -> None:
         self._components: dict[Type, dict[str | None, list[Component]]] = {}
         self._components_by_id: dict[int, Component] = {}
         self._components_by_uuid: dict[UUID, Component] = {}
         self._id_manager = IDManager(next_id=1)
         self._auto_add_composed_components = auto_add_composed_components
-        self._store = store
+        self._storage = storage
+
+    @property
+    def _store(self) -> Store:
+        """Resolve the store on every access rather than caching it.
+
+        The storage closes and reopens its files when serializing, which yields a new
+        handle, so a reference captured here would go stale after the first save.
+        """
+        return self._storage.store
 
     @property
     def auto_add_composed_components(self) -> bool:

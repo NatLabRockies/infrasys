@@ -1,7 +1,7 @@
 """Manages supplemental"""
 
 from contextlib import contextmanager
-from typing import Any, Callable, Generator, Iterable, Optional, Type, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Callable, Generator, Iterable, Optional, Type, TypeVar, cast
 from uuid import UUID
 
 from loguru import logger
@@ -10,6 +10,9 @@ from infrastore import (
     SupplementalAttributeAssociation,
     Store,
 )
+
+if TYPE_CHECKING:
+    from infrasys.time_series_store_storage import TimeSeriesStoreStorage
 
 from infrasys.component import Component
 from infrasys.exceptions import ISAlreadyAttached, ISNotStored, ISOperationNotAllowed
@@ -22,14 +25,23 @@ T = TypeVar("T", bound="SupplementalAttribute")
 class SupplementalAttributeManager:
     """Manages supplemental attributes"""
 
-    def __init__(self, store: Store, **kwargs) -> None:
-        self._store = store
+    def __init__(self, storage: "TimeSeriesStoreStorage", **kwargs) -> None:
+        self._storage = storage
         self._attributes: dict[Type, dict[UUID, SupplementalAttribute]] = {}
         self._attributes_by_id: dict[int, SupplementalAttribute] = {}
         self._id_manager = IDManager(next_id=1)
         self._in_context = False
         self._context_new_attributes: list[SupplementalAttribute] = []
         self._context_removed_attributes: list[SupplementalAttribute] = []
+
+    @property
+    def _store(self) -> Store:
+        """Resolve the store on every access rather than caching it.
+
+        The storage closes and reopens its files when serializing, which yields a new
+        handle, so a reference captured here would go stale after the first save.
+        """
+        return self._storage.store
 
     def add(
         self,

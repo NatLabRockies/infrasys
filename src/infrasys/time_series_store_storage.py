@@ -509,8 +509,33 @@ class TimeSeriesStoreStorage:
         source = self._directory if src is None else Path(src)
         destination = Path(dst)
         destination.mkdir(parents=True, exist_ok=True)
-        self._copy_store(source, destination)
+        if source.resolve() == self._directory.resolve():
+            # Windows denies reads on the NetCDF/SQLite files while the store holds
+            # them open, so a flush is not enough: release the handles, copy, and
+            # reopen. POSIX would tolerate copying in place, but the close/reopen is
+            # cheap next to the copy and keeps one code path across platforms.
+            with self._closed_store():
+                self._copy_store(source, destination)
+        else:
+            self._copy_store(source, destination)
         self.add_serialized_data(data)
+
+    @contextmanager
+    def _closed_store(self) -> Generator[None, None, None]:
+        """Release the store's file handles for the duration of the block.
+
+        The reopen runs even if the body raises, so a failed copy leaves the storage
+        usable rather than stranding it on a closed handle.
+        """
+        read_only = self._store.read_only
+        self._store.close()
+        try:
+            yield
+        finally:
+            self._store = Store.open(
+                path=self._directory / self.STORAGE_FILE,
+                read_only=read_only,
+            )
 
     @staticmethod
     def add_serialized_data(data: dict[str, Any]) -> None:

@@ -110,10 +110,10 @@ class System:
         # The time series store owns the SQLite catalog that holds component and supplemental
         # attribute associations, so it must exist before the managers that use it.
         self._time_series_mgr = time_series_manager or TimeSeriesManager(**time_series_kwargs)
-        store = self._time_series_mgr.storage.store
-        self._component_mgr = ComponentManager(auto_add_composed_components, store)
+        storage = self._time_series_mgr.storage
+        self._component_mgr = ComponentManager(auto_add_composed_components, storage)
         self._supplemental_attr_mgr = (
-            supplemental_attribute_manager or SupplementalAttributeManager(store)
+            supplemental_attribute_manager or SupplementalAttributeManager(storage)
         )
         self._closed = False
 
@@ -441,7 +441,7 @@ class System:
             data["time_series"], ts_path, **ts_kwargs
         )
         supplemental_attribute_manager = SupplementalAttributeManager(
-            time_series_manager.storage.store
+            time_series_manager.storage
         )
         system = cls(
             name=system_data.get("name"),
