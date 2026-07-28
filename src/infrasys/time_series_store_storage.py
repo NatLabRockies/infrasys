@@ -391,12 +391,40 @@ class TimeSeriesStoreStorage:
         time_series_type: str | None = None,
         **features: Any,
     ) -> bool:
-        """Return True if any stored series matches the inputs."""
-        return bool(
-            self._list_metadata(
-                context, owner, name=name, time_series_type=time_series_type, **features
+        """Return True if any stored series matches the inputs.
+
+        Committed rows are answered by the store's existence probe — a covering-index
+        ``SELECT 1 ... LIMIT 1`` that hydrates nothing — so this is safe in hot
+        per-component loops. Staged additions are visible only to their own context and
+        absent from the store until flush, so they are checked in memory first.
+        """
+        owner_id, category = _owner_identity(owner)
+        staged = context.staged_for((owner_id, _category_name(category)))
+        if staged and any(
+            _matches(stored, name, time_series_type, features) for stored in staged.values()
+        ):
+            return True
+
+        def probe(rust_type: Any) -> bool:
+            return self._store.has_any_time_series(
+                owner_id=owner_id,
+                owner_category=category,
+                time_series_type=rust_type,
+                name=name,
+                features=features or None,
             )
-        )
+
+        if time_series_type is None:
+            return probe(None)
+        if time_series_type == "Deterministic":
+            # infrasys surfaces both stored forecast tags as ``Deterministic``
+            # (see _type_matches); one probe per candidate stored type.
+            return probe(RustTimeSeriesType.Deterministic) or probe(
+                RustTimeSeriesType.DeterministicSingleTimeSeries
+            )
+        rust_type = getattr(RustTimeSeriesType, time_series_type, None)
+        # A name the store does not know cannot have been stored.
+        return rust_type is not None and probe(rust_type)
 
     def _remove(
         self,
