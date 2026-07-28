@@ -12,11 +12,13 @@ data. The index is populated as series are added and rehydrated from the store
 on deserialization. The store's own metadata records carry everything a
 :class:`_StoredSeries` needs, so no path here reads array data for metadata.
 
-Writes go through the store's bulk API, and every operation takes a
-:class:`TimeSeriesStorageContext` that owns the batch it belongs to. A single
-:meth:`add_time_series` call commits all of its owners together, and a caller who
-opens a context can stage many calls so the store pays one catalog transaction for
-the block instead of one per series.
+Writes go through the store's bulk API, and every operation belongs to a
+:class:`TimeSeriesStorageContext` that owns its batch. Callers reach these operations
+through the context, not through this class: the entry points here are private and take
+their context positionally, so a caller's ``**features`` may contain a key named
+``context`` without colliding with the plumbing. A single add call commits all of its
+owners together, and a caller who opens a context can stage many calls so the store pays
+one catalog transaction for the block instead of one per series.
 
 This class holds no batch state and no reference to any context. The index it keeps
 describes *committed* associations only; staged additions live on the context until
@@ -57,6 +59,8 @@ from infrasys.exceptions import (
 from infrasys.serialization import serialize_value
 from infrasys.supplemental_attribute import SupplementalAttribute
 from infrasys.time_series_context import (
+    AUTO_FLUSH_BYTES,
+    AUTO_FLUSH_THRESHOLD,
     AssocKey,
     OwnerKey,
     TimeSeriesStorageContext,
@@ -120,9 +124,17 @@ class TimeSeriesStoreStorage:
         """
         return self._store
 
-    def new_context(self) -> TimeSeriesStorageContext:
+    def new_context(
+        self,
+        auto_flush_threshold: int = AUTO_FLUSH_THRESHOLD,
+        auto_flush_bytes: int = AUTO_FLUSH_BYTES,
+    ) -> TimeSeriesStorageContext:
         """Return a new context bound to this storage."""
-        return TimeSeriesStorageContext(self)
+        return TimeSeriesStorageContext(
+            self,
+            auto_flush_threshold=auto_flush_threshold,
+            auto_flush_bytes=auto_flush_bytes,
+        )
 
     def write_pending(self, pending: list[_PendingAdd]) -> None:
         """Write a context's buffered additions to the store in one bulk call.
@@ -216,11 +228,16 @@ class TimeSeriesStoreStorage:
     # ------------------------------------------------------------------
     # Metadata operations
     # ------------------------------------------------------------------
-    def add_time_series(
+    # These are the implementations behind the identically named methods on
+    # TimeSeriesStorageContext, which is the only supported caller. The context is
+    # positional-only so that its name stays free for a caller's time series features:
+    # `**features` may legitimately contain a key called "context".
+    def _add_time_series(
         self,
+        context: TimeSeriesStorageContext,
+        /,
         time_series: TimeSeriesData,
         *owners: Any,
-        context: TimeSeriesStorageContext,
         **features: Any,
     ) -> None:
         """Stage a time series for one or more owners on ``context``.
@@ -234,7 +251,6 @@ class TimeSeriesStoreStorage:
             Raised if a matching association already exists for one of the owners, either
             committed or already staged on this context.
         """
-        context.check_owns(self)
         if not owners:
             msg = "add_time_series requires at least one owner"
             raise ISOperationNotAllowed(msg)
@@ -248,6 +264,8 @@ class TimeSeriesStoreStorage:
         # owner does not leave the earlier ones half-added.
         staged: list[_PendingAdd] = []
         seen: set[tuple[OwnerKey, AssocKey]] = set()
+        # All owners share one array, so its size is charged to the first entry only.
+        nbytes = _estimate_nbytes(time_series)
         for owner in owners:
             owner_id, category = _owner_identity(owner)
             stored = _StoredSeries(
@@ -283,18 +301,24 @@ class TimeSeriesStoreStorage:
                 "units": units_str,
             }
             staged.append(
-                _PendingAdd(item=item, stored=stored, owner_key=owner_key, assoc_key=assoc_key)
+                _PendingAdd(
+                    item=item,
+                    stored=stored,
+                    owner_key=owner_key,
+                    assoc_key=assoc_key,
+                    nbytes=nbytes if not staged else 0,
+                )
             )
 
         context.stage(staged)
 
-    def get_metadata(
+    def _get_metadata(
         self,
+        context: TimeSeriesStorageContext,
+        /,
         owner: Any,
         name: str | None = None,
         time_series_type: str | None = None,
-        *,
-        context: TimeSeriesStorageContext,
         **features: Any,
     ) -> _StoredSeries:
         """Return the single stored-series descriptor matching the inputs.
@@ -306,8 +330,8 @@ class TimeSeriesStoreStorage:
         ISOperationNotAllowed
             Raised if more than one matches.
         """
-        matches = self.list_metadata(
-            owner, name=name, time_series_type=time_series_type, context=context, **features
+        matches = self._list_metadata(
+            context, owner, name=name, time_series_type=time_series_type, **features
         )
         if not matches:
             msg = "No time series matching the inputs is stored"
@@ -317,12 +341,13 @@ class TimeSeriesStoreStorage:
             raise ISOperationNotAllowed(msg)
         return matches[0]
 
-    def list_metadata(
+    def _list_metadata(
         self,
+        context: TimeSeriesStorageContext,
+        /,
         *owners: Any,
         name: str | None = None,
         time_series_type: str | None = None,
-        context: TimeSeriesStorageContext,
         **features: Any,
     ) -> list[_StoredSeries]:
         """Return all stored-series descriptors matching the inputs across the owners.
@@ -330,7 +355,6 @@ class TimeSeriesStoreStorage:
         Resolves against ``context``'s staged additions as well as the committed index, so
         a caller sees its own uncommitted work and no one else's.
         """
-        context.check_owns(self)
         if not owners:
             msg = "At least one owner must be passed."
             raise ISOperationNotAllowed(msg)
@@ -358,28 +382,29 @@ class TimeSeriesStoreStorage:
             return committed
         return {**committed, **staged}
 
-    def has_metadata(
+    def _has_metadata(
         self,
+        context: TimeSeriesStorageContext,
+        /,
         owner: Any,
         name: str | None = None,
         time_series_type: str | None = None,
-        *,
-        context: TimeSeriesStorageContext,
         **features: Any,
     ) -> bool:
         """Return True if any stored series matches the inputs."""
         return bool(
-            self.list_metadata(
-                owner, name=name, time_series_type=time_series_type, context=context, **features
+            self._list_metadata(
+                context, owner, name=name, time_series_type=time_series_type, **features
             )
         )
 
-    def remove(
+    def _remove(
         self,
+        context: TimeSeriesStorageContext,
+        /,
         *owners: Any,
         name: str | None = None,
         time_series_type: str | None = None,
-        context: TimeSeriesStorageContext,
         **features: Any,
     ) -> list[_StoredSeries]:
         """Remove all associations matching the inputs and return their descriptors.
@@ -392,7 +417,6 @@ class TimeSeriesStoreStorage:
         ISNotStored
             Raised if nothing matches.
         """
-        context.check_owns(self)
         context.flush()
         # Resolve every matching association before touching anything, then remove them
         # from the store in one bulk call. The index is updated only after the store
@@ -423,13 +447,12 @@ class TimeSeriesStoreStorage:
         """Build the public :class:`TimeSeriesKey` for a stored-series descriptor."""
         return _key_from_stored(stored)
 
-    def get_time_series_counts(self, context: TimeSeriesStorageContext) -> TimeSeriesCounts:
+    def _get_time_series_counts(self, context: TimeSeriesStorageContext, /) -> TimeSeriesCounts:
         """Return summary counts of stored time series.
 
         Unique arrays come from the store's content-addressed array groups, so anything
         ``context`` has staged is flushed first to be counted.
         """
-        context.check_owns(self)
         context.flush()
         groups = self._store.list_array_groups()
         unique_arrays = len(groups)
@@ -474,8 +497,8 @@ class TimeSeriesStoreStorage:
             stored.store_key = keys.get((owner_key, assoc_key))
             self._index.setdefault(owner_key, {})[assoc_key] = stored
 
-    def transform_single_time_series(
-        self, horizon: timedelta, interval: timedelta, context: TimeSeriesStorageContext
+    def _transform_single_time_series(
+        self, context: TimeSeriesStorageContext, /, horizon: timedelta, interval: timedelta
     ) -> int:
         """Derive ``Deterministic`` forecasts from every stored ``SingleTimeSeries``.
 
@@ -484,7 +507,6 @@ class TimeSeriesStoreStorage:
         The transform runs store-wide, so anything ``context`` has staged is flushed first to
         be included.
         """
-        context.check_owns(self)
         context.flush()
         count = self._store.transform_single_time_series(horizon=horizon, interval=interval)
         self.rehydrate()
@@ -493,14 +515,15 @@ class TimeSeriesStoreStorage:
     # ------------------------------------------------------------------
     # Readers
     # ------------------------------------------------------------------
-    def build_reader(
+    def _build_reader(
         self,
+        context: TimeSeriesStorageContext,
+        /,
         resolution: timedelta,
         *,
         name: str | None = None,
         name_glob: str | None = None,
         owner_type: str | None = None,
-        context: TimeSeriesStorageContext,
         **features: Any,
     ) -> TimeSeriesReader:
         """Build a cross-sectional reader over the matching ``SingleTimeSeries``.
@@ -508,7 +531,6 @@ class TimeSeriesStoreStorage:
         The store builds the reader from its own catalog, so anything ``context`` has
         staged is flushed first or it would be invisible to the reader.
         """
-        context.check_owns(self)
         context.flush()
         reader = self._store.build_static_reader(
             resolution,
@@ -528,15 +550,16 @@ class TimeSeriesStoreStorage:
         }
         return TimeSeriesReader(self._store, reader, group_component_ids, units)
 
-    def build_forecast_reader(
+    def _build_forecast_reader(
         self,
+        context: TimeSeriesStorageContext,
+        /,
         resolution: timedelta,
         *,
         time_series_type: str = "Deterministic",
         name: str | None = None,
         name_glob: str | None = None,
         owner_type: str | None = None,
-        context: TimeSeriesStorageContext,
         **features: Any,
     ) -> ForecastReader:
         """Build a cross-sectional reader over the matching forecasts.
@@ -544,7 +567,6 @@ class TimeSeriesStoreStorage:
         The store builds the reader from its own catalog, so anything ``context`` has
         staged is flushed first or it would be invisible to the reader.
         """
-        context.check_owns(self)
         context.flush()
         reader = self._store.build_forecast_reader(
             _rust_time_series_type(time_series_type),
@@ -571,16 +593,15 @@ class TimeSeriesStoreStorage:
     # ------------------------------------------------------------------
     # Data operations
     # ------------------------------------------------------------------
-    def get_time_series(
+    def _get_time_series(
         self,
+        context: TimeSeriesStorageContext,
+        /,
         stored: _StoredSeries,
         owner: Any,
         start_time: datetime | None = None,
         length: int | None = None,
-        *,
-        context: TimeSeriesStorageContext,
     ) -> TimeSeriesData:
-        context.check_owns(self)
         # The array has to be in the store before it can be read back.
         context.flush()
         owner_id, category = _owner_identity(owner)
@@ -590,14 +611,14 @@ class TimeSeriesStoreStorage:
         rust_result = self._store.get_time_series(key, time_range=time_range)
         return self._build_result(stored, rust_result, result_initial_timestamp)
 
-    def get_time_series_bulk(
+    def _get_time_series_bulk(
         self,
+        context: TimeSeriesStorageContext,
+        /,
         records: list[_StoredSeries],
         owner: Any,
         start_time: datetime | None = None,
         length: int | None = None,
-        *,
-        context: TimeSeriesStorageContext,
     ) -> list[TimeSeriesData]:
         """Return the arrays for several stored series belonging to one owner.
 
@@ -606,7 +627,6 @@ class TimeSeriesStoreStorage:
         """
         if not records:
             return []
-        context.check_owns(self)
         # The arrays have to be in the store before they can be read back.
         context.flush()
         owner_id, category = _owner_identity(owner)
@@ -709,12 +729,13 @@ class TimeSeriesStoreStorage:
         msg = f"get_time_series not implemented for {stored.time_series_type}"
         raise NotImplementedError(msg)
 
-    def serialize(
+    def _serialize(
         self,
+        context: TimeSeriesStorageContext,
+        /,
         data: dict[str, Any],
         dst: Path | str,
         src: Path | str | None = None,
-        context: TimeSeriesStorageContext | None = None,
     ) -> None:
         """Copy the store to ``dst``.
 
@@ -735,9 +756,7 @@ class TimeSeriesStoreStorage:
                 "state."
             )
             raise ISOperationNotAllowed(msg)
-        if context is not None:
-            context.check_owns(self)
-            context.flush()
+        context.flush()
         self._store.flush()
         source = self._directory if src is None else Path(src)
         destination = Path(dst)
@@ -880,6 +899,23 @@ def _key_from_stored(stored: _StoredSeries) -> TimeSeriesKey:
         )
     msg = f"key not implemented for {stored.time_series_type}"
     raise NotImplementedError(msg)
+
+
+def _estimate_nbytes(time_series: TimeSeriesData) -> int:
+    """Estimate the array bytes a staged series keeps buffered.
+
+    Drives the context's byte-based auto-flush, so it only needs to track the dominant
+    cost — the array data — not exact process overhead.
+    """
+    for attr in ("data", "data_array"):
+        data = getattr(time_series, attr, None)
+        if data is None:
+            continue
+        array = getattr(data, "magnitude", data)
+        nbytes = getattr(array, "nbytes", None)
+        if nbytes is not None:
+            return int(nbytes)
+    return 8 * getattr(time_series, "length", 0)
 
 
 def _data_type_name(time_series: TimeSeriesData) -> str:

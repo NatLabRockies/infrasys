@@ -136,17 +136,17 @@ Forecast readers additionally collapse components that share a backing array int
 
 See [How to read time series by timestamp](#read-time-series-by-timestamp).
 
-## Batching and Contexts
+## Batching and Transactions
 
-`System.time_series_transaction()` yields a context that batches every operation you pass it
-to. Without it, each call commits on its own; with it, the store pays one catalog
-transaction for the whole block instead of one per series. This matters when adding many
-arrays.
+`System.time_series_transaction()` yields a transaction object exposing the same time series
+methods as `System`; every call made on it joins the batch. Without a transaction, each call
+commits on its own; with one, the store pays one catalog transaction for the whole block
+instead of one per series. This matters when adding many arrays.
 
 ```python
-with system.time_series_transaction() as context:
+with system.time_series_transaction() as txn:
     for generator, profile in profiles.items():
-        system.add_time_series(profile, generator, context=context)
+        txn.add_time_series(profile, generator)
 ```
 
 The block is also a **transaction**. If it raises, everything it did is undone — additions
@@ -155,22 +155,22 @@ Outside a block a removal is permanent as soon as it happens: the store frees th
 its last reference goes. Inside one that free is deferred until the block succeeds.
 
 ```python
-with system.time_series_transaction() as context:
-    system.add_time_series(new_profile, generator, context=context)
-    system.remove_time_series(generator, name="old_profile", context=context)
+with system.time_series_transaction() as txn:
+    txn.add_time_series(new_profile, generator)
+    txn.remove_time_series(generator, name="old_profile")
     ...
 # both applied, or -- if anything raised -- neither
 ```
 
-Passing the context is what puts a call in the batch. A call that omits it runs on its own
-and sees **committed** data only:
+Calling a method on the transaction is what puts it in the batch. A `System` call inside the
+block runs on its own and sees **committed** data only:
 
 ```python
-with system.time_series_transaction() as context:
-    system.add_time_series(ts, generator, context=context)
+with system.time_series_transaction() as txn:
+    txn.add_time_series(ts, generator)
 
-    system.has_time_series(generator, name="load", context=context)  # True
-    system.has_time_series(generator, name="load")                   # False - not committed yet
+    txn.has_time_series(generator, name="load")     # True
+    system.has_time_series(generator, name="load")  # False - not committed yet
 ```
 
 Two constraints come with this:

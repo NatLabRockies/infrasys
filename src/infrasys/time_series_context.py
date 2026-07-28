@@ -31,19 +31,28 @@ catalog rewinds.
 A context created implicitly for a single operation (the default when a caller opens no
 block) does **not** begin a transaction. One operation is already atomic on its own, and
 taking a write lock for it would be both wasted work and wrong on a read-only store.
+
+The context is also the *receiver* for the operations themselves: every call goes to
+``context.add_time_series(...)`` rather than to a storage method that takes the context
+as an argument. That is what keeps the batching plumbing out of the ``**features``
+namespace a caller owns --- a time series feature named ``context`` is just a feature ---
+and it makes handing a context to the wrong storage unrepresentable rather than merely
+checked.
 """
 
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
 from infrasys.exceptions import ISOperationNotAllowed
-from infrasys.time_series_models import QuantityMetadata
+from infrasys.time_series_models import QuantityMetadata, TimeSeriesData
 
 if TYPE_CHECKING:
-    from infrasys.time_series_store_storage import TimeSeriesStoreStorage
+    from infrasys.time_series_reader import ForecastReader, TimeSeriesReader
+    from infrasys.time_series_store_storage import TimeSeriesCounts, TimeSeriesStoreStorage
 
 # (owner_id, owner_category_name)
 OwnerKey = tuple[int, str]
@@ -80,23 +89,56 @@ class _PendingAdd:
     stored: _StoredSeries
     owner_key: OwnerKey
     assoc_key: AssocKey
+    # Estimated bytes of array data this entry keeps buffered. A multi-owner add shares
+    # one array across its entries, so the size is carried by the first entry only.
+    nbytes: int = 0
+
+
+# A context flushes on its own when its buffer reaches either limit below, whichever
+# comes first. Inside a transaction an early flush costs nothing in recoverability, so
+# these only split the I/O, never the atomicity.
+#
+# The count limit keeps the store's layout healthy: each flush becomes one NetCDF
+# dataset whose chunk width equals the batch width, so 10,000 f64 series produce 80 KiB
+# chunks — near the store's 1 MiB chunk cap and within ~2% of unlimited-batch write
+# throughput. The byte limit is what actually bounds memory, which the count cannot do
+# when individual arrays are long: buffered arrays live until the flush, so the buffer
+# holds at most ~AUTO_FLUSH_BYTES of array data no matter how large each series is.
+AUTO_FLUSH_THRESHOLD = 10_000
+AUTO_FLUSH_BYTES = 256 * 1024 * 1024
 
 
 class TimeSeriesStorageContext:
     """Owns one batch of time series work against a storage backend.
 
     Additions are buffered until :meth:`flush` writes them to the store in a single bulk
-    call. A transactional context (one from ``time_series_transaction``) wraps everything
-    it does in a store transaction, so :meth:`discard` undoes the whole block — flushed
-    work and removals included.
+    call; a batch that grows past ``auto_flush_threshold`` flushes on its own so an
+    arbitrarily large block holds a bounded amount of data in memory. A transactional
+    context (one from ``time_series_transaction``) wraps everything it does in a store
+    transaction, so :meth:`discard` undoes the whole block — flushed work and removals
+    included.
 
-    Examples
-    --------
-    >>> with system.time_series_transaction() as context:
-    ...     system.add_time_series(ts, gen, context=context)
+    Every time series operation is a method on the context (see `Operations` below), so
+    nothing has to pass a context around to reach the store.
+
+    This is internal plumbing: users see only the
+    :class:`~infrasys.time_series_transaction.TimeSeriesTransaction` facade, which routes
+    every call it receives through its context.
     """
 
-    def __init__(self, storage: "TimeSeriesStoreStorage", transactional: bool = False) -> None:
+    def __init__(
+        self,
+        storage: "TimeSeriesStoreStorage",
+        transactional: bool = False,
+        auto_flush_threshold: int = AUTO_FLUSH_THRESHOLD,
+        auto_flush_bytes: int = AUTO_FLUSH_BYTES,
+    ) -> None:
+        if auto_flush_threshold < 1:
+            msg = f"auto_flush_threshold must be positive: {auto_flush_threshold}"
+            raise ValueError(msg)
+        if auto_flush_bytes < 1:
+            msg = f"auto_flush_bytes must be positive: {auto_flush_bytes}"
+            raise ValueError(msg)
         self._storage = storage
         # Buffered additions, not yet handed to the store. Batching only; atomicity is
         # the transaction's job.
@@ -105,6 +147,9 @@ class TimeSeriesStorageContext:
         # would let the store catch it. Cleared whenever the buffer drains.
         self._staged: dict[OwnerKey, dict[AssocKey, _StoredSeries]] = {}
         self._transactional = transactional
+        self._auto_flush_threshold = auto_flush_threshold
+        self._auto_flush_bytes = auto_flush_bytes
+        self._staged_bytes = 0
         self._closed = False
 
     @property
@@ -146,6 +191,10 @@ class TimeSeriesStorageContext:
     def check_owns(self, storage: "TimeSeriesStoreStorage") -> None:
         """Raise if this context belongs to a different storage backend.
 
+        Operations run through the context and reach its own storage by construction, so
+        this guards only the one place a context is paired with something else:
+        :meth:`~infrasys.time_series_manager.TimeSeriesManager.bind_context`.
+
         Raises
         ------
         ISOperationNotAllowed
@@ -157,11 +206,23 @@ class TimeSeriesStorageContext:
             raise ISOperationNotAllowed(msg)
 
     def stage(self, entries: list[_PendingAdd]) -> None:
-        """Buffer additions without writing them to the store."""
+        """Buffer additions without writing them to the store.
+
+        A buffer that reaches ``auto_flush_threshold`` entries or ``auto_flush_bytes``
+        of array data is written out immediately, after the whole ``entries`` group is
+        staged — the group came from one ``add`` call and was validated together, so it
+        lands in one piece.
+        """
         self.check_open()
         self._pending.extend(entries)
         for entry in entries:
             self._staged.setdefault(entry.owner_key, {})[entry.assoc_key] = entry.stored
+            self._staged_bytes += entry.nbytes
+        if (
+            len(self._pending) >= self._auto_flush_threshold
+            or self._staged_bytes >= self._auto_flush_bytes
+        ):
+            self.flush()
 
     def staged_for(self, owner_key: OwnerKey) -> dict[AssocKey, _StoredSeries]:
         """Return this context's buffered associations for one owner.
@@ -188,6 +249,7 @@ class TimeSeriesStorageContext:
         # overlay goes with it: once written, the store's index is authoritative.
         self._pending = []
         self._staged = {}
+        self._staged_bytes = 0
         self._storage.write_pending(pending)
 
     def commit(self) -> None:
@@ -215,6 +277,7 @@ class TimeSeriesStorageContext:
         """
         self._pending = []
         self._staged = {}
+        self._staged_bytes = 0
         self._closed = True
         if not self._transactional:
             return
@@ -228,3 +291,217 @@ class TimeSeriesStorageContext:
             )
             return
         self._storage.rehydrate()
+
+    # ------------------------------------------------------------------
+    # Operations
+    # ------------------------------------------------------------------
+    # Each entry point checks that the batch is still open and then hands itself to the
+    # storage, which owns the index and the store. The storage side is private: the
+    # context is the only supported way in, which is what keeps `context` out of the
+    # caller's `**features`.
+
+    def add_time_series(
+        self,
+        time_series: TimeSeriesData,
+        *owners: Any,
+        **features: Any,
+    ) -> None:
+        """Stage a time series for one or more owners on this batch.
+
+        All owners are staged together, so nothing is stored if any of them already holds
+        a matching association. The additions reach the store when the batch flushes.
+
+        Raises
+        ------
+        ISAlreadyAttached
+            Raised if a matching association already exists for one of the owners, either
+            committed or already staged here.
+        """
+        self.check_open()
+        self._storage._add_time_series(self, time_series, *owners, **features)
+
+    def get_metadata(
+        self,
+        owner: Any,
+        name: str | None = None,
+        time_series_type: str | None = None,
+        **features: Any,
+    ) -> _StoredSeries:
+        """Return the single stored-series descriptor matching the inputs.
+
+        Raises
+        ------
+        ISNotStored
+            Raised if nothing matches.
+        ISOperationNotAllowed
+            Raised if more than one matches.
+        """
+        self.check_open()
+        return self._storage._get_metadata(
+            self, owner, name=name, time_series_type=time_series_type, **features
+        )
+
+    def list_metadata(
+        self,
+        *owners: Any,
+        name: str | None = None,
+        time_series_type: str | None = None,
+        **features: Any,
+    ) -> list[_StoredSeries]:
+        """Return all stored-series descriptors matching the inputs across the owners.
+
+        Resolves against this batch's staged additions as well as the committed index, so
+        a caller sees its own uncommitted work and no one else's.
+        """
+        self.check_open()
+        return self._storage._list_metadata(
+            self, *owners, name=name, time_series_type=time_series_type, **features
+        )
+
+    def has_metadata(
+        self,
+        owner: Any,
+        name: str | None = None,
+        time_series_type: str | None = None,
+        **features: Any,
+    ) -> bool:
+        """Return True if any stored series matches the inputs."""
+        self.check_open()
+        return self._storage._has_metadata(
+            self, owner, name=name, time_series_type=time_series_type, **features
+        )
+
+    def remove(
+        self,
+        *owners: Any,
+        name: str | None = None,
+        time_series_type: str | None = None,
+        **features: Any,
+    ) -> list[_StoredSeries]:
+        """Remove all associations matching the inputs and return their descriptors.
+
+        Staged additions are flushed first, so a series added and removed inside one
+        block is removed rather than silently committed by a later flush.
+
+        Raises
+        ------
+        ISNotStored
+            Raised if nothing matches.
+        """
+        self.check_open()
+        return self._storage._remove(
+            self, *owners, name=name, time_series_type=time_series_type, **features
+        )
+
+    def get_time_series(
+        self,
+        stored: _StoredSeries,
+        owner: Any,
+        start_time: datetime | None = None,
+        length: int | None = None,
+    ) -> TimeSeriesData:
+        """Return the array for one stored series, flushing this batch first."""
+        self.check_open()
+        return self._storage._get_time_series(
+            self, stored, owner, start_time=start_time, length=length
+        )
+
+    def get_time_series_bulk(
+        self,
+        records: list[_StoredSeries],
+        owner: Any,
+        start_time: datetime | None = None,
+        length: int | None = None,
+    ) -> list[TimeSeriesData]:
+        """Return the arrays for several stored series belonging to one owner."""
+        self.check_open()
+        return self._storage._get_time_series_bulk(
+            self, records, owner, start_time=start_time, length=length
+        )
+
+    def get_time_series_counts(self) -> "TimeSeriesCounts":
+        """Return summary counts of stored time series, flushing this batch first."""
+        self.check_open()
+        return self._storage._get_time_series_counts(self)
+
+    def transform_single_time_series(self, horizon: timedelta, interval: timedelta) -> int:
+        """Derive ``Deterministic`` forecasts from every stored ``SingleTimeSeries``.
+
+        The transform runs store-wide, so anything staged here is flushed first to be
+        included. Returns the number of series transformed.
+        """
+        self.check_open()
+        return self._storage._transform_single_time_series(self, horizon, interval)
+
+    def build_reader(
+        self,
+        resolution: timedelta,
+        *,
+        name: str | None = None,
+        name_glob: str | None = None,
+        owner_type: str | None = None,
+        **features: Any,
+    ) -> "TimeSeriesReader":
+        """Build a cross-sectional reader over the matching ``SingleTimeSeries``.
+
+        The store builds the reader from its own catalog, so anything staged here is
+        flushed first or it would be invisible to the reader.
+        """
+        self.check_open()
+        return self._storage._build_reader(
+            self,
+            resolution,
+            name=name,
+            name_glob=name_glob,
+            owner_type=owner_type,
+            **features,
+        )
+
+    def build_forecast_reader(
+        self,
+        resolution: timedelta,
+        *,
+        time_series_type: str = "Deterministic",
+        name: str | None = None,
+        name_glob: str | None = None,
+        owner_type: str | None = None,
+        **features: Any,
+    ) -> "ForecastReader":
+        """Build a cross-sectional reader over the matching forecasts.
+
+        The store builds the reader from its own catalog, so anything staged here is
+        flushed first or it would be invisible to the reader.
+        """
+        self.check_open()
+        return self._storage._build_forecast_reader(
+            self,
+            resolution,
+            time_series_type=time_series_type,
+            name=name,
+            name_glob=name_glob,
+            owner_type=owner_type,
+            **features,
+        )
+
+    def serialize(
+        self,
+        data: dict[str, Any],
+        dst: Path | str,
+        src: Path | str | None = None,
+    ) -> None:
+        """Copy the store to ``dst``, including anything staged here.
+
+        Raises
+        ------
+        ISOperationNotAllowed
+            Raised if a time series transaction is open. Copying the artifact means
+            closing and reopening it, which discards the transaction --- and a durable
+            copy of state that may still be rolled back is not a coherent thing to
+            produce.
+        """
+        self.check_open()
+        self._storage._serialize(self, data, dst, src=src)
+
+    def key_for(self, stored: _StoredSeries) -> Any:
+        """Build the public ``TimeSeriesKey`` for a stored-series descriptor."""
+        return self._storage.key_for(stored)

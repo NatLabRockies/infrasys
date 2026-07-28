@@ -1,6 +1,7 @@
 """Manages time series arrays"""
 
 from contextlib import contextmanager
+from copy import copy
 from datetime import datetime, timedelta
 from functools import singledispatch
 from pathlib import Path
@@ -11,7 +12,11 @@ from loguru import logger
 from .component import Component
 from .exceptions import ISInvalidParameter, ISOperationNotAllowed
 from .supplemental_attribute import SupplementalAttribute
-from .time_series_context import TimeSeriesStorageContext
+from .time_series_context import (
+    AUTO_FLUSH_BYTES,
+    AUTO_FLUSH_THRESHOLD,
+    TimeSeriesStorageContext,
+)
 from .time_series_models import (
     Deterministic,
     DeterministicTimeSeriesKey,
@@ -60,6 +65,9 @@ class TimeSeriesManager:
     ) -> None:
         self._read_only = _process_time_series_kwarg("time_series_read_only", **kwargs)
         self._storage: TimeSeriesStoreStorage = storage or self.create_new_storage(**kwargs)
+        # Set only on the view returned by bind_context; None means every operation gets
+        # its own transient context.
+        self._context: TimeSeriesStorageContext | None = None
 
     def close(self) -> None:
         """Release resources held by the storage backend."""
@@ -86,20 +94,36 @@ class TimeSeriesManager:
         """Return the time series storage object."""
         return self._storage
 
-    @contextmanager
-    def _ensure_context(
-        self, context: TimeSeriesStorageContext | None
-    ) -> Generator[TimeSeriesStorageContext, None, None]:
-        """Yield the caller's context, or a transient one covering just this operation.
+    def bind_context(self, context: TimeSeriesStorageContext) -> "TimeSeriesManager":
+        """Return a view of this manager whose operations all run on ``context``.
 
-        A caller-supplied context is left open: the block that created it decides when to
-        commit. A transient context is committed on success and discarded on failure, so
-        an operation invoked without a batch behaves exactly as it did before contexts
+        Used by :class:`~infrasys.time_series_transaction.TimeSeriesTransaction` so that a
+        batch is expressed once, at the binding, instead of threaded through every call as
+        an argument. The view shares this manager's storage and read-only setting; only
+        the context differs.
+
+        Raises
+        ------
+        ISOperationNotAllowed
+            Raised if the context was opened against another system's storage.
+        """
+        context.check_owns(self._storage)
+        bound = copy(self)
+        bound._context = context
+        return bound
+
+    @contextmanager
+    def _ensure_context(self) -> Generator[TimeSeriesStorageContext, None, None]:
+        """Yield the bound context, or a transient one covering just this operation.
+
+        A bound context is left open: the block that created it decides when to commit. A
+        transient context is committed on success and discarded on failure, so an
+        operation invoked outside a batch behaves exactly as it did before contexts
         became explicit.
         """
-        if context is not None:
-            context.check_owns(self._storage)
-            yield context
+        if self._context is not None:
+            self._context.check_open()
+            yield self._context
             return
 
         transient = self._storage.new_context()
@@ -114,7 +138,6 @@ class TimeSeriesManager:
         self,
         time_series: TimeSeriesData,
         *owners: Component | SupplementalAttribute,
-        context: TimeSeriesStorageContext | None = None,
         **features: Any,
     ) -> TimeSeriesKey:
         """Store a time series array for one or more components or supplemental attributes.
@@ -149,8 +172,8 @@ class TimeSeriesManager:
             msg = f"Time-series persistence is not implemented for {ts_type.__name__}"
             raise NotImplementedError(msg)
 
-        with self._ensure_context(context) as ctx:
-            self._storage.add_time_series(time_series, *owners, context=ctx, **features)
+        with self._ensure_context() as ctx:
+            ctx.add_time_series(time_series, *owners, **features)
         return make_time_series_key(time_series, features)
 
     def get(
@@ -160,7 +183,6 @@ class TimeSeriesManager:
         time_series_type: Type[TimeSeriesData] | None = None,
         start_time: datetime | None = None,
         length: int | None = None,
-        context: TimeSeriesStorageContext | None = None,
         **features,
     ) -> TimeSeriesData:
         """Return a time series array.
@@ -176,52 +198,45 @@ class TimeSeriesManager:
         --------
         list_time_series
         """
-        with self._ensure_context(context) as ctx:
-            metadata = self._storage.get_metadata(
+        with self._ensure_context() as ctx:
+            metadata = ctx.get_metadata(
                 owner,
                 name=name,
                 time_series_type=_type_name(time_series_type),
-                context=ctx,
                 **features,
             )
-            return self._get_by_metadata(
-                metadata, owner, start_time=start_time, length=length, context=ctx
-            )
+            return ctx.get_time_series(metadata, owner, start_time=start_time, length=length)
 
     def get_by_key(
         self,
         owner: Component | SupplementalAttribute,
         key: TimeSeriesKey,
-        context: TimeSeriesStorageContext | None = None,
     ) -> TimeSeriesData:
         """Return a time series array by key."""
-        with self._ensure_context(context) as ctx:
-            metadata = self._storage.get_metadata(
+        with self._ensure_context() as ctx:
+            metadata = ctx.get_metadata(
                 owner,
                 name=key.name,
                 time_series_type=key.time_series_type.__name__,
-                context=ctx,
                 **key.features,
             )
-            return self._get_by_metadata(metadata, owner, context=ctx)
+            return ctx.get_time_series(metadata, owner)
 
     def has_time_series(
         self,
         owner: Component | SupplementalAttribute,
         name: str | None = None,
         time_series_type: Type[TimeSeriesData] | None = SingleTimeSeries,
-        context: TimeSeriesStorageContext | None = None,
         **features,
     ) -> bool:
         """Return True if the component or supplemental atttribute has time series matching the
         inputs. Pass ``time_series_type=None`` to match any type.
         """
-        with self._ensure_context(context) as ctx:
-            return self._storage.has_metadata(
+        with self._ensure_context() as ctx:
+            return ctx.has_metadata(
                 owner,
                 name=name,
                 time_series_type=_type_name(time_series_type),
-                context=ctx,
                 **features,
             )
 
@@ -232,26 +247,23 @@ class TimeSeriesManager:
         time_series_type: Type[TimeSeriesData] | None = SingleTimeSeries,
         start_time: datetime | None = None,
         length: int | None = None,
-        context: TimeSeriesStorageContext | None = None,
         **features: Any,
     ) -> list[TimeSeriesData]:
         """Return all time series that match the inputs. Pass ``time_series_type=None``
         to match any type.
         """
-        with self._ensure_context(context) as ctx:
-            records = self._storage.list_metadata(
+        with self._ensure_context() as ctx:
+            records = ctx.list_metadata(
                 owner,
                 name=name,
                 time_series_type=_type_name(time_series_type),
-                context=ctx,
                 **features,
             )
-            return self._storage.get_time_series_bulk(
+            return ctx.get_time_series_bulk(
                 records,
                 owner,
                 start_time=start_time,
                 length=length,
-                context=ctx,
             )
 
     def list_time_series_keys(
@@ -259,43 +271,36 @@ class TimeSeriesManager:
         owner: Component | SupplementalAttribute,
         name: str | None = None,
         time_series_type: Type[TimeSeriesData] | None = SingleTimeSeries,
-        context: TimeSeriesStorageContext | None = None,
         **features: Any,
     ) -> list[TimeSeriesKey]:
         """Return all time series keys that match the inputs."""
-        return self.list_time_series_metadata(
-            owner, name, time_series_type, context=context, **features
-        )
+        return self.list_time_series_metadata(owner, name, time_series_type, **features)
 
     def list_time_series_metadata(
         self,
         owner: Component | SupplementalAttribute,
         name: str | None = None,
         time_series_type: Type[TimeSeriesData] | None = SingleTimeSeries,
-        context: TimeSeriesStorageContext | None = None,
         **features: Any,
     ) -> list[TimeSeriesKey]:
         """Return the keys describing all time series that match the inputs.
         Pass ``time_series_type=None`` to match any type.
         """
-        with self._ensure_context(context) as ctx:
+        with self._ensure_context() as ctx:
             return [
-                self._storage.key_for(record)
-                for record in self._storage.list_metadata(
+                ctx.key_for(record)
+                for record in ctx.list_metadata(
                     owner,
                     name=name,
                     time_series_type=_type_name(time_series_type),
-                    context=ctx,
                     **features,
                 )
             ]
 
-    def get_time_series_counts(
-        self, context: TimeSeriesStorageContext | None = None
-    ) -> TimeSeriesCounts:
+    def get_time_series_counts(self) -> TimeSeriesCounts:
         """Return summary counts of stored time series."""
-        with self._ensure_context(context) as ctx:
-            return self._storage.get_time_series_counts(ctx)
+        with self._ensure_context() as ctx:
+            return ctx.get_time_series_counts()
 
     def build_reader(
         self,
@@ -304,17 +309,15 @@ class TimeSeriesManager:
         name: str | None = None,
         name_glob: str | None = None,
         component_type: Type[Component] | None = None,
-        context: TimeSeriesStorageContext | None = None,
         **features: Any,
     ) -> TimeSeriesReader:
         """Build a cross-sectional reader over the matching ``SingleTimeSeries``."""
-        with self._ensure_context(context) as ctx:
-            return self._storage.build_reader(
+        with self._ensure_context() as ctx:
+            return ctx.build_reader(
                 resolution,
                 name=name,
                 name_glob=name_glob,
                 owner_type=None if component_type is None else component_type.__name__,
-                context=ctx,
                 **features,
             )
 
@@ -326,18 +329,16 @@ class TimeSeriesManager:
         name: str | None = None,
         name_glob: str | None = None,
         component_type: Type[Component] | None = None,
-        context: TimeSeriesStorageContext | None = None,
         **features: Any,
     ) -> ForecastReader:
         """Build a cross-sectional reader over the matching forecasts."""
-        with self._ensure_context(context) as ctx:
-            return self._storage.build_forecast_reader(
+        with self._ensure_context() as ctx:
+            return ctx.build_forecast_reader(
                 resolution,
                 time_series_type=time_series_type.__name__,
                 name=name,
                 name_glob=name_glob,
                 owner_type=None if component_type is None else component_type.__name__,
-                context=ctx,
                 **features,
             )
 
@@ -346,7 +347,6 @@ class TimeSeriesManager:
         *owners: Component | SupplementalAttribute,
         name: str | None = None,
         time_series_type: Type[TimeSeriesData] | None = SingleTimeSeries,
-        context: TimeSeriesStorageContext | None = None,
         **features: Any,
     ):
         """Remove all time series arrays matching the inputs. Pass
@@ -360,12 +360,11 @@ class TimeSeriesManager:
             Raised if the manager was created in read-only mode.
         """
         self._handle_read_only()
-        with self._ensure_context(context) as ctx:
-            removed = self._storage.remove(
+        with self._ensure_context() as ctx:
+            removed = ctx.remove(
                 *owners,
                 name=name,
                 time_series_type=_type_name(time_series_type),
-                context=ctx,
                 **features,
             )
         logger.info(
@@ -380,7 +379,6 @@ class TimeSeriesManager:
         dst: Component | SupplementalAttribute,
         src: Component | SupplementalAttribute,
         name_mapping: dict[str, str] | None = None,
-        context: TimeSeriesStorageContext | None = None,
     ) -> None:
         """Copy all time series from src to dst.
 
@@ -395,7 +393,6 @@ class TimeSeriesManager:
         self,
         horizon: timedelta,
         interval: timedelta,
-        context: TimeSeriesStorageContext | None = None,
     ) -> int:
         """Derive ``Deterministic`` forecasts from every stored ``SingleTimeSeries``.
 
@@ -409,36 +406,18 @@ class TimeSeriesManager:
             Raised if the manager was created in read-only mode.
         """
         self._handle_read_only()
-        with self._ensure_context(context) as ctx:
-            return self._storage.transform_single_time_series(horizon, interval, ctx)
-
-    def _get_by_metadata(
-        self,
-        record: Any,
-        owner: Component | SupplementalAttribute,
-        start_time: datetime | None = None,
-        length: int | None = None,
-        *,
-        context: TimeSeriesStorageContext,
-    ) -> TimeSeriesData:
-        return self._storage.get_time_series(
-            record,
-            owner,
-            start_time=start_time,
-            length=length,
-            context=context,
-        )
+        with self._ensure_context() as ctx:
+            return ctx.transform_single_time_series(horizon, interval)
 
     def serialize(
         self,
         data: dict[str, Any],
         dst: Path | str,
         src: Path | str | None = None,
-        context: TimeSeriesStorageContext | None = None,
     ) -> None:
         """Serialize the time series data to dst."""
-        with self._ensure_context(context) as ctx:
-            self._storage.serialize(data, dst, src=src, context=ctx)
+        with self._ensure_context() as ctx:
+            ctx.serialize(data, dst, src=src)
 
     @classmethod
     def deserialize(
@@ -465,7 +444,11 @@ class TimeSeriesManager:
         return cls(storage=storage, initialize=False, **kwargs)
 
     @contextmanager
-    def time_series_transaction(self) -> Generator[TimeSeriesStorageContext, None, None]:
+    def time_series_transaction(
+        self,
+        auto_flush_threshold: int = AUTO_FLUSH_THRESHOLD,
+        auto_flush_bytes: int = AUTO_FLUSH_BYTES,
+    ) -> Generator[TimeSeriesStorageContext, None, None]:
         """Open a context that batches every operation passed to it, inside a store
         transaction.
 
@@ -474,7 +457,10 @@ class TimeSeriesManager:
         store, and everything that did, **including removals**, is reversed. Removals are
         recoverable only in here; outside a transaction the store frees the array.
         """
-        context = self._storage.new_context()
+        context = self._storage.new_context(
+            auto_flush_threshold=auto_flush_threshold,
+            auto_flush_bytes=auto_flush_bytes,
+        )
         context.begin()
         try:
             yield context

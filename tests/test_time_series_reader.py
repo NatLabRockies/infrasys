@@ -35,11 +35,11 @@ def make_system(tmp_path, count: int = 4, shared: bool = False):
 
     profile = np.arange(LENGTH, dtype=np.float64)
     expected = {}
-    with system.time_series_transaction() as conn:
+    with system.time_series_transaction() as txn:
         for i, generator in enumerate(generators):
             data = profile if shared else profile + i * 100
             time_series = SingleTimeSeries.from_array(data, "load", INITIAL_TIMESTAMP, RESOLUTION)
-            system.add_time_series(time_series, generator, context=conn)
+            txn.add_time_series(time_series, generator)
             expected[generator.id] = np.asarray(data)
     return system, generators, expected
 
@@ -150,17 +150,16 @@ def test_reader_sees_series_staged_in_an_open_batch(tmp_path):
     late = SimpleGenerator(name="late", active_power=1.0, rating=1.0, bus=bus, available=True)
     system.add_component(late)
 
-    with system.time_series_transaction() as conn:
-        system.add_time_series(
+    with system.time_series_transaction() as txn:
+        txn.add_time_series(
             SingleTimeSeries.from_array(
                 np.full(LENGTH, 7.0), "load", INITIAL_TIMESTAMP, RESOLUTION
             ),
             late,
-            context=conn,
         )
         # The store builds readers from its own catalog, so passing the context flushes
         # the batch; without it the staged series would be invisible to the reader.
-        reader = system.build_time_series_reader(RESOLUTION, context=conn)
+        reader = txn.build_time_series_reader(RESOLUTION)
         assert reader.read(INITIAL_TIMESTAMP)[late.id] == 7.0
 
 

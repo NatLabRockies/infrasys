@@ -39,13 +39,13 @@ generators = [
 ]
 system.add_components(*generators)
 
-# Passing the context batches all three adds into one write. Omit it and each add
-# commits on its own.
-with system.time_series_transaction() as context:
+# Adding through the transaction batches all three adds into one write. Calling
+# system.add_time_series directly instead commits each add on its own.
+with system.time_series_transaction() as txn:
     for i, generator in enumerate(generators):
         data = np.arange(length, dtype=float) + i * 100
         ts = SingleTimeSeries.from_array(data, "load", initial_time, resolution)
-        system.add_time_series(ts, generator, context=context)
+        txn.add_time_series(ts, generator)
 
 reader = system.build_time_series_reader(resolution, name="load")
 

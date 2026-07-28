@@ -448,12 +448,12 @@ def test_time_series_transaction_defers_writes(tmp_path):
         for i in range(3)
     ]
 
-    with system.time_series_transaction() as conn:
+    with system.time_series_transaction() as txn:
         for ts in time_series:
-            system.add_time_series(ts, generator, context=conn)
+            txn.add_time_series(ts, generator)
         # The context sees its own staged additions, but the store has not been written yet.
         for ts in time_series:
-            assert system.has_time_series(generator, name=ts.name, context=conn)
+            assert txn.has_time_series(generator, name=ts.name)
         assert storage.store.list_time_series() == []
 
     assert len(storage.store.list_time_series()) == len(time_series)
@@ -468,15 +468,15 @@ def test_reading_inside_batch_flushes_pending(tmp_path):
         np.arange(8, dtype=np.float64), "load", datetime(2024, 1, 1), timedelta(hours=1)
     )
 
-    with system.time_series_transaction() as conn:
-        system.add_time_series(expected, generator, context=conn)
-        actual = system.get_time_series(generator, name="load", context=conn)
+    with system.time_series_transaction() as txn:
+        txn.add_time_series(expected, generator)
+        actual = txn.get_time_series(generator, name="load")
         np.testing.assert_array_equal(actual.data, expected.data)
         # A read forces the flush but leaves the batch open for more additions.
         second = SingleTimeSeries.from_array(
             np.arange(8, dtype=np.float64), "load2", datetime(2024, 1, 1), timedelta(hours=1)
         )
-        system.add_time_series(second, generator, context=conn)
+        txn.add_time_series(second, generator)
 
     assert len(system.time_series.storage.store.list_time_series()) == 2
 
@@ -553,7 +553,7 @@ def test_list_time_series_matches_per_series_reads(tmp_path):
     system, generator = make_system(tmp_path)
     initial_timestamp = datetime(2024, 1, 1)
     expected = []
-    with system.time_series_transaction() as conn:
+    with system.time_series_transaction() as txn:
         for i in range(4):
             time_series = SingleTimeSeries.from_array(
                 np.arange(i, i + 8, dtype=np.float64),
@@ -561,7 +561,7 @@ def test_list_time_series_matches_per_series_reads(tmp_path):
                 initial_timestamp,
                 timedelta(hours=1),
             )
-            system.add_time_series(time_series, generator, context=conn)
+            txn.add_time_series(time_series, generator)
             expected.append(time_series)
 
     listed = system.list_time_series(generator)
@@ -596,9 +596,9 @@ def test_list_time_series_reads_forecasts(tmp_path):
 
 def test_reads_do_not_scan_for_keys(tmp_path):
     system, generator = make_system(tmp_path)
-    with system.time_series_transaction() as conn:
+    with system.time_series_transaction() as txn:
         for i in range(3):
-            system.add_time_series(
+            txn.add_time_series(
                 SingleTimeSeries.from_array(
                     np.arange(8, dtype=np.float64),
                     f"load_{i}",
@@ -606,7 +606,6 @@ def test_reads_do_not_scan_for_keys(tmp_path):
                     timedelta(hours=1),
                 ),
                 generator,
-                context=conn,
             )
     filename = tmp_path / "system.json"
     system.to_json(filename)

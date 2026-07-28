@@ -358,14 +358,14 @@ def test_time_series_transaction(storage_type: TimeSeriesStorageType):
     initial_time = datetime(year=2020, month=1, day=1)
     timestamps = [initial_time + timedelta(hours=i) for i in range(length)]
     time_series_arrays: list[SingleTimeSeries] = []
-    with system.time_series_transaction() as conn:
+    with system.time_series_transaction() as txn:
         for i in range(5):
             ts = SingleTimeSeries.from_time_array(np.random.rand(length), f"ts{i}", timestamps)
             system.add_time_series(ts, gen)
             time_series_arrays.append(ts)
-    with system.time_series_transaction() as conn:
+    with system.time_series_transaction() as txn:
         for i in range(5):
-            ts = system.get_time_series(gen, name=f"ts{i}", context=conn)
+            ts = txn.get_time_series(gen, name=f"ts{i}")
             assert np.array_equal(
                 system.get_time_series(gen, f"ts{i}").data, time_series_arrays[i].data
             )
@@ -784,7 +784,7 @@ def test_bulk_add_time_series():
     gen = SimpleGenerator(name="gen", active_power=1.0, rating=1.0, bus=bus, available=True)
     system.add_components(bus, gen)
     time_series: list[SingleTimeSeries] = []
-    with system.time_series_transaction() as conn:
+    with system.time_series_transaction() as txn:
         for i in range(2):
             for initial_time, resolution, length in (
                 (datetime(year=2020, month=1, day=1), timedelta(hours=1), 10),
@@ -793,16 +793,13 @@ def test_bulk_add_time_series():
                 data = np.random.rand(length)
                 name = f"test_ts_{length}_{i}"
                 ts = SingleTimeSeries.from_array(data, name, initial_time, resolution)
-                system.add_time_series(ts, gen, context=conn)
+                txn.add_time_series(ts, gen)
                 time_series.append(ts)
 
-    with system.time_series_transaction() as conn:
+    with system.time_series_transaction() as txn:
         for expected_ts in time_series:
-            actual_ts = system.get_time_series(
-                gen,
-                time_series_type=SingleTimeSeries,
-                name=expected_ts.name,
-                context=conn,
+            actual_ts = txn.get_time_series(
+                gen, time_series_type=SingleTimeSeries, name=expected_ts.name
             )
             assert np.array_equal(expected_ts.data, actual_ts.data)
 
@@ -815,16 +812,16 @@ def test_bulk_add_time_series_with_rollback(storage_type: TimeSeriesStorageType)
     system.add_components(bus, gen)
     ts_name = "test_ts"
     with pytest.raises(ISAlreadyAttached):
-        with system.time_series_transaction() as conn:
+        with system.time_series_transaction() as txn:
             initial_time = datetime(year=2020, month=1, day=1)
             resolution = timedelta(hours=1)
             length = 10
             data = np.random.rand(length)
             ts = SingleTimeSeries.from_array(data, ts_name, initial_time, resolution)
-            system.add_time_series(ts, gen, context=conn)
+            txn.add_time_series(ts, gen)
             # Staged additions are visible through the context that staged them.
-            assert system.has_time_series(gen, name=ts_name, context=conn)
-            system.add_time_series(ts, gen, context=conn)
+            assert txn.has_time_series(gen, name=ts_name)
+            txn.add_time_series(ts, gen)
 
     assert not system.has_time_series(gen, name=ts_name)
 
@@ -842,7 +839,7 @@ def test_bulk_add_deterministic_time_series():
     window_count = 3
 
     time_series: list[Deterministic] = []
-    with system.time_series_transaction() as conn:
+    with system.time_series_transaction() as txn:
         for i in range(5):
             data = np.random.rand(window_count, 8)
             ts = Deterministic.from_array(
@@ -854,16 +851,13 @@ def test_bulk_add_deterministic_time_series():
                 interval,
                 window_count,
             )
-            system.add_time_series(ts, gen, context=conn)
+            txn.add_time_series(ts, gen)
             time_series.append(ts)
 
-    with system.time_series_transaction() as conn:
+    with system.time_series_transaction() as txn:
         for expected_ts in time_series:
-            actual_ts = system.get_time_series(
-                gen,
-                time_series_type=Deterministic,
-                name=expected_ts.name,
-                context=conn,
+            actual_ts = txn.get_time_series(
+                gen, time_series_type=Deterministic, name=expected_ts.name
             )
             assert isinstance(actual_ts, Deterministic)
             np.testing.assert_array_equal(actual_ts.data_array, expected_ts.data_array)
@@ -880,7 +874,7 @@ def test_bulk_add_deterministic_time_series_with_rollback(storage_type: TimeSeri
     system.add_components(bus, gen)
     ts_name = "forecast"
     with pytest.raises(ISAlreadyAttached):
-        with system.time_series_transaction() as conn:
+        with system.time_series_transaction() as txn:
             ts = Deterministic.from_array(
                 np.random.rand(3, 8),
                 ts_name,
@@ -890,11 +884,9 @@ def test_bulk_add_deterministic_time_series_with_rollback(storage_type: TimeSeri
                 timedelta(hours=1),
                 3,
             )
-            system.add_time_series(ts, gen, context=conn)
-            assert system.has_time_series(
-                gen, name=ts_name, time_series_type=Deterministic, context=conn
-            )
-            system.add_time_series(ts, gen, context=conn)
+            txn.add_time_series(ts, gen)
+            assert txn.has_time_series(gen, name=ts_name, time_series_type=Deterministic)
+            txn.add_time_series(ts, gen)
 
     assert not system.has_time_series(gen, name=ts_name, time_series_type=Deterministic)
 
@@ -912,20 +904,17 @@ def test_bulk_add_nonsequential_time_series():
     )
 
     time_series: list[NonSequentialTimeSeries] = []
-    with system.time_series_transaction() as conn:
+    with system.time_series_transaction() as txn:
         for i in range(5):
             data = np.random.rand(length)
             ts = NonSequentialTimeSeries.from_array(data, timestamps, f"events_{i}")
-            system.add_time_series(ts, gen, context=conn)
+            txn.add_time_series(ts, gen)
             time_series.append(ts)
 
-    with system.time_series_transaction() as conn:
+    with system.time_series_transaction() as txn:
         for expected_ts in time_series:
-            actual_ts = system.get_time_series(
-                gen,
-                time_series_type=NonSequentialTimeSeries,
-                name=expected_ts.name,
-                context=conn,
+            actual_ts = txn.get_time_series(
+                gen, time_series_type=NonSequentialTimeSeries, name=expected_ts.name
             )
             assert isinstance(actual_ts, NonSequentialTimeSeries)
             np.testing.assert_array_equal(actual_ts.data, expected_ts.data)
@@ -944,13 +933,11 @@ def test_bulk_add_nonsequential_time_series_with_rollback(storage_type: TimeSeri
         dtype=object,
     )
     with pytest.raises(ISAlreadyAttached):
-        with system.time_series_transaction() as conn:
+        with system.time_series_transaction() as txn:
             ts = NonSequentialTimeSeries.from_array(np.random.rand(4), timestamps, ts_name)
-            system.add_time_series(ts, gen, context=conn)
-            assert system.has_time_series(
-                gen, name=ts_name, time_series_type=NonSequentialTimeSeries, context=conn
-            )
-            system.add_time_series(ts, gen, context=conn)
+            txn.add_time_series(ts, gen)
+            assert txn.has_time_series(gen, name=ts_name, time_series_type=NonSequentialTimeSeries)
+            txn.add_time_series(ts, gen)
 
     assert not system.has_time_series(gen, name=ts_name, time_series_type=NonSequentialTimeSeries)
 

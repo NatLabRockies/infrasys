@@ -37,17 +37,17 @@
 ```
 
 ```{eval-rst}
-.. _time-series-context-api:
+.. _time-series-transaction-api:
 ```
 
-## Context
+## Transaction
 
-The transaction object for time series operations, returned by
-{py:meth}`infrasys.system.System.time_series_transaction`. Pass it as ``context=`` to batch
-calls together and to make them share one unit of rollback.
+The transaction object for time series operations, yielded by
+{py:meth}`infrasys.system.System.time_series_transaction`. Call the time series methods on
+it to batch them together and to make them share one unit of rollback.
 
 ```{eval-rst}
-.. autoclass:: infrasys.time_series_context.TimeSeriesStorageContext
+.. autoclass:: infrasys.time_series_transaction.TimeSeriesTransaction
    :members:
 ```
 

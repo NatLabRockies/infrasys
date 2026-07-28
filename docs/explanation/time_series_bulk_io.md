@@ -13,13 +13,23 @@ Four layers cooperate, and each owns exactly one kind of state:
 
 - **`System` / `TimeSeriesManager`** own no time series state at all. They validate inputs,
   translate infrasys types to storage-level names, and ensure every operation runs inside a
-  context (creating a transient one when the caller did not supply one).
+  context (creating a transient one when the manager is not bound to a batch).
+- **`TimeSeriesTransaction`** is the user-facing facade for one batch: the object yielded by
+  `time_series_transaction`, exposing the same methods as `System`. It binds the manager to its
+  context once, at construction, and holds no state of its own.
 - **`TimeSeriesStorageContext`** owns *one batch of work*: the additions staged but not yet
   written, and the record of what the batch has already written so a failure can undo exactly
-  its own writes.
+  its own writes. It is also the *receiver* for every operation --- `context.add_time_series(...)`
+  rather than a storage call taking the context as an argument.
 - **`TimeSeriesStoreStorage`** owns the in-memory index of *committed* associations
   (owner → association → `_StoredSeries` descriptor). It holds no batch state and no reference
   to any context; ownership points one way, from the context to the storage it writes through.
+
+Hanging the operations off the context is what keeps the batching plumbing out of the
+`**features` namespace that belongs to the caller: a time series feature named `context` is just
+a feature. The storage-side implementations are private and take their context positionally, for
+the same reason. It also makes a context reaching the wrong storage unrepresentable instead of
+merely checked --- the one remaining pairing, `TimeSeriesManager.bind_context`, validates it.
 - **The `infrastore` Rust store** is the single source of truth for array data and association
   metadata. It owns identity: arrays are content-addressed, and each association is identified
   by a store key. infrasys assigns no ids of its own.
@@ -30,30 +40,44 @@ is rebuilt from the store on deserialization, and the store key memoized on each
 
 ## Bulk adds
 
-Every write operation takes a context. A caller who opens
-{py:meth}`~infrasys.system.System.time_series_transaction` batches many calls; a caller who
-passes nothing gets a transient context that commits at the end of that single call, so the
-one-call behavior is unchanged.
+Every write operation runs inside a context. A caller who opens
+{py:meth}`~infrasys.system.System.time_series_transaction` gets a transaction object and
+calls the time series methods on it, batching them; a `System` method called on its own gets
+a transient context that commits at the end of that single call, so the one-call behavior is
+unchanged.
 
 ```python
-with system.time_series_transaction() as context:
+with system.time_series_transaction() as txn:
     for gen, ts in profiles:
-        system.add_time_series(ts, gen, context=context)
+        txn.add_time_series(ts, gen)
 # exiting the block commits: one bulk write, one catalog transaction
 ```
 
-An `add_time_series` call does no I/O. It validates every owner (so a duplicate on the last
+A `txn.add_time_series` call does no I/O. It validates every owner (so a duplicate on the last
 owner cannot leave the earlier ones half-added), then stages one `_PendingAdd` per owner on the
-context. Staged additions are visible only through the context that staged them: metadata
-queries resolve the committed index *overlaid with* the calling context's staged entries, in
-one place (`_visible_assocs`). A concurrent context, or a call with no context, sees only
-committed state.
+transaction's context. Staged additions are visible only through the transaction that staged
+them: metadata queries resolve the committed index *overlaid with* the calling context's staged
+entries, in one place (`_visible_assocs`). A concurrent batch, or a `System` call inside the
+block, sees only committed state.
 
 The staged batch reaches the store when the context **flushes**, which happens at the first of:
 
 - the block exits cleanly (commit),
 - an operation needs the arrays physically present --- a read, a reader build, a removal, or
-  counts inside the block forces an early flush.
+  counts inside the block forces an early flush,
+- the buffer reaches its **auto-flush limits**: 10,000 staged additions or 256 MiB of staged
+  array data, whichever comes first (both configurable on
+  {py:meth}`~infrasys.system.System.time_series_transaction`).
+
+The auto-flush limits are what let a block add hundreds of thousands of series without
+holding them all in memory. The two limits serve different masters. The byte limit bounds
+memory, which a count cannot do when individual arrays are long. The count limit protects
+the stored layout: each flush becomes one NetCDF dataset whose *chunk width equals the batch
+width*, so 10,000 f64 series produce 80 KiB chunks --- near the store's 1 MiB chunk cap and
+within ~2% of unlimited-batch write throughput --- while flushing every 1,000 would freeze
+8 KiB chunks into the file for every future reader. Splitting a block into several flushes
+loses nothing else: array dedup is store-wide by content hash, and each flush is a nested
+savepoint inside the block's transaction, so there is still exactly one SQLite commit.
 
 A flush hands the whole batch to `Store.add_time_series_bulk`, which writes the arrays and
 records every association in a single catalog transaction. The Rust store applies the batch
@@ -112,8 +136,8 @@ time --- infrasys provides the cross-sectional readers described
 ```{mermaid}
 flowchart TB
     subgraph UserCode["User code"]
-        ADD["system.add_time_series(ts, gen, context=ctx)"]
-        LIST["system.list_time_series(gen, context=ctx)"]
+        ADD["txn.add_time_series(ts, gen)"]
+        LIST["txn.list_time_series(gen)"]
     end
 
     subgraph Context["TimeSeriesStorageContext — owns the batch"]
@@ -176,8 +200,8 @@ pattern; usage is covered in the
 
 Building a reader splits the cost so that everything expensive happens once, up front:
 
-1. The caller's context is flushed --- a reader is built from the store's catalog, so staged
-   additions would otherwise be invisible to it.
+1. The calling transaction's context is flushed --- a reader is built from the store's
+   catalog, so staged additions would otherwise be invisible to it.
 2. The Rust store snapshots the associations matching the filter (name, glob, owner type,
    features, one resolution per reader) and validates them together: static readers require
    one shared grid (initial timestamp, resolution, length), forecast readers one shared
