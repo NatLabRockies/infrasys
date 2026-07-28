@@ -341,15 +341,15 @@ wheels = [
 
 [[package]]
 name = "infrastore"
-version = "0.1.1"
+version = "0.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b3/c6/7bc75884af45f688c5976945d6a485e430c3f193a0c04e9c03a4f71a2688/infrastore-0.1.1-cp311-abi3-macosx_14_0_arm64.whl", hash = "sha256:a30379d99b0e19c3fa2d0add91a776a4d74f06c7f7404db6b2d596218bc03880", size = 3458800, upload-time = "2026-07-26T02:14:12.601Z" },
-    { url = "https://files.pythonhosted.org/packages/c9/0c/ad16f8cc07eaccc5f2d94207b3b2cbbbee2c0e904e7ee3cec2ba5d6b7361/infrastore-0.1.1-cp311-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:abaaf820117d707b8a77014b037b85857d82dcde9136099244b961fa8fd7cc14", size = 4384817, upload-time = "2026-07-26T02:14:14.329Z" },
-    { url = "https://files.pythonhosted.org/packages/2b/72/d5610391894d908caf0dac694a55e8ecbcb88d11988f00285792f2ca9ed7/infrastore-0.1.1-cp311-abi3-win_amd64.whl", hash = "sha256:28f765cdcf2e105eedb3b1ccfa631634acdf3b1b42d7ecbb1fc53f7bccbf0b44", size = 5738478, upload-time = "2026-07-26T02:14:16.411Z" },
+    { url = "https://files.pythonhosted.org/packages/be/39/38fb658483b87f9d18eb114d6fcb2b9e00f828d26a646847be0a206c1247/infrastore-0.3.0-cp311-abi3-macosx_14_0_arm64.whl", hash = "sha256:574b42978d0992d90285b9eebbc1e23b32334c33f64949efc011bd5eee7b2c2e", size = 3471690, upload-time = "2026-07-28T15:23:59.551Z" },
+    { url = "https://files.pythonhosted.org/packages/d6/79/b026d694f96a767e4ffc8d10e5d5e30b064fe1d785cc2930a87e5bd6d15c/infrastore-0.3.0-cp311-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:c39a500540a89329a8b5a6b4916aed3231be306a0358fc4611ee37d9a89e3551", size = 4397458, upload-time = "2026-07-28T15:24:01.141Z" },
+    { url = "https://files.pythonhosted.org/packages/eb/ec/257668e64017e3883f9578da03b82eedb8ff7c0451538d6e1d50bf537a6b/infrastore-0.3.0-cp311-abi3-win_amd64.whl", hash = "sha256:bd6e518f86941bd344c42ebe9571f8ae9ec78a143505a3be49884f950994b9d7", size = 5755030, upload-time = "2026-07-28T15:24:02.649Z" },
 ]
 
 [[package]]
@@ -396,7 +396,7 @@ docs = [
 
 [package.metadata]
 requires-dist = [
-    { name = "infrastore", specifier = ">=0.1.1,<0.2" },
+    { name = "infrastore", specifier = ">=0.3.0,<0.4" },
     { name = "loguru", specifier = ">=0.7,<0.8" },
     { name = "numpy", specifier = ">=2,<3" },
     { name = "orjson", specifier = ">=3.11.5,<4" },

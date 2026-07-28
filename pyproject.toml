@@ -40,7 +40,7 @@ dependencies = [
     "pydantic>=2.12,<3",
     "python-dateutil>=2.9,<3",
     "rich>=13.7,<14",
-    "infrastore>=0.1.1,<0.2",
+    "infrastore>=0.3.0,<0.4",
 ]
 
 [project.urls]
