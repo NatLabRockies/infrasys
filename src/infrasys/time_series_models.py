@@ -256,7 +256,9 @@ class Deterministic(AbstractDeterministic):
     horizon : timedelta
         The forecast horizon, indicating the duration of each forecast window.
     interval : timedelta
-        The time interval between consecutive forecast windows.
+        The time interval between consecutive forecast windows. A single-window forecast
+        (``window_count=1``) has no second window to step to, so ``timedelta(0)`` is the
+        natural value there and is stored and returned verbatim.
     window_count : int
         The number of forecast windows.
 

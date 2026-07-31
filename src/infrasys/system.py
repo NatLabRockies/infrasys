@@ -95,7 +95,7 @@ class System:
               - time_series_directory: Location to store time series files, defaults to the system's
                 tmp directory. Use an alternate location if the space in that directory is limited,
                 such as on a compute node with no local storage.
-              - time_series_compression: NetCDF compression filter for the infrastore
+              - time_series_compression: HDF5 compression filter for the infrastore
                 backend; "deflate" (default) or "none".
               - time_series_compression_level: DEFLATE level 0-9, defaults to 3.
               - time_series_shuffle: Enable the byte-shuffle filter for DEFLATE, defaults to True.
@@ -1431,7 +1431,10 @@ class System:
         horizon
             Duration of each forecast window (e.g., ``timedelta(hours=24)``).
         interval
-            Time between consecutive forecast windows (e.g., ``timedelta(hours=1)``).
+            Time between consecutive forecast windows (e.g., ``timedelta(hours=1)``). Pass
+            ``timedelta(0)`` to derive a single window per series, which requires ``horizon``
+            to span each series in full; the interval is stored verbatim, so the forecast
+            reads back with ``window_count=1`` and ``interval=timedelta(0)``.
 
         Raises
         ------

@@ -72,7 +72,7 @@ The staged batch reaches the store when the context **flushes**, which happens a
 The auto-flush limits are what let a block add hundreds of thousands of series without
 holding them all in memory. The two limits serve different masters. The byte limit bounds
 memory, which a count cannot do when individual arrays are long. The count limit protects
-the stored layout: each flush becomes one NetCDF dataset whose *chunk width equals the batch
+the stored layout: each flush becomes one HDF5 dataset whose *chunk width equals the batch
 width*, so 10,000 f64 series produce 80 KiB chunks --- near the store's 1 MiB chunk cap and
 within ~2% of unlimited-batch write throughput --- while flushing every 1,000 would freeze
 8 KiB chunks into the file for every future reader. Splitting a block into several flushes

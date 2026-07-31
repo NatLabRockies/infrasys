@@ -21,7 +21,7 @@ their domain problems instead of managing persistence concerns.
 - **Typed components with pint validation:** Base models derive from `pydantic` and use
   `pint` quantities whenever a physical unit is involved.
 - **Efficient time-series storage:** Time series arrays and their metadata are stored by the
-  Rust-backed `infrastore` package (NetCDF arrays plus a SQLite database).
+  Rust-backed `infrastore` package (HDF5 arrays plus a SQLite database).
 - **Efficient serialization:** Components, supplemental attributes, and nested systems are
   serialized to JSON with automatic metadata and optional migration hooks.
 - **Designed for extension:** Derive your own `System` classes, override component addition

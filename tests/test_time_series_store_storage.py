@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import numpy as np
 import pytest
@@ -47,6 +47,36 @@ def make_system(tmp_path) -> tuple[SimpleSystem, SimpleGenerator]:
     )
     system.add_components(bus, generator)
     return system, generator
+
+
+def _store_accepts_a_zero_interval() -> bool:
+    """Does the installed infrastore accept a zero interval for a single-window forecast?
+
+    A ``window_count=1`` forecast has no second window to step to, so infrastore made
+    ``timedelta(0)`` a valid interval there. Releases before that reject it, and the store
+    validates in the constructor, so probing costs nothing but an object.
+    """
+    from infrastore import Deterministic as RustDeterministic, InvalidParameterError
+
+    try:
+        RustDeterministic(
+            datetime(2024, 1, 1, tzinfo=timezone.utc),
+            timedelta(hours=1),
+            timedelta(hours=4),
+            timedelta(0),
+            1,
+            np.zeros((4, 1), dtype=np.float64),
+            "probe",
+        )
+    except InvalidParameterError:
+        return False
+    return True
+
+
+requires_zero_interval = pytest.mark.skipif(
+    not _store_accepts_a_zero_interval(),
+    reason="the installed infrastore rejects a zero interval for a single-window forecast",
+)
 
 
 def test_time_series_store_is_default():
@@ -436,6 +466,87 @@ def test_transform_single_time_series_preserves_units(tmp_path):
             underlying[window : window + 3],
             err_msg=f"window {window} mismatch",
         )
+
+
+def test_has_time_series_finds_a_transform_derived_forecast(tmp_path):
+    """``Deterministic`` covers both stored forecast tags in the existence probe.
+
+    A transform-derived view is tagged ``DeterministicSingleTimeSeries`` in the store, so
+    the probe asks for the store's deterministic *family* rather than either tag alone.
+    """
+    system, generator = make_system(tmp_path)
+    system.add_time_series(make_single(), generator)
+    assert not system.has_time_series(generator, time_series_type=Deterministic)
+
+    system.transform_single_time_series(horizon=timedelta(hours=2), interval=timedelta(hours=1))
+    assert system.has_time_series(generator, time_series_type=Deterministic)
+    # The static series the view shares is untouched, and narrower filters still apply.
+    assert system.has_time_series(generator, time_series_type=SingleTimeSeries)
+    assert system.has_time_series(generator, name="active_power", time_series_type=Deterministic)
+    assert not system.has_time_series(generator, name="absent", time_series_type=Deterministic)
+
+
+def test_has_time_series_finds_an_explicit_forecast_by_family(tmp_path):
+    """The same probe answers for an explicitly stored ``Deterministic``."""
+    system, generator = make_system(tmp_path)
+    system.add_time_series(make_deterministic(), generator)
+
+    assert system.has_time_series(generator, time_series_type=Deterministic)
+    assert not system.has_time_series(generator, time_series_type=SingleTimeSeries)
+
+
+@requires_zero_interval
+def test_single_window_forecast_with_zero_interval_round_trip(tmp_path):
+    """A single-window forecast may carry a zero interval, kept verbatim through a reload."""
+    system, generator = make_system(tmp_path / "storage")
+    data = np.arange(4, dtype=np.float64).reshape(1, 4)
+    forecast = Deterministic.from_array(
+        data,
+        "active_power",
+        datetime(2024, 1, 1),
+        resolution=timedelta(hours=1),
+        horizon=timedelta(hours=4),
+        interval=timedelta(0),
+        window_count=1,
+    )
+    system.add_time_series(forecast, generator)
+
+    result = system.get_time_series(generator, name="active_power", time_series_type=Deterministic)
+    assert result.window_count == 1
+    assert result.interval == timedelta(0)
+    np.testing.assert_array_equal(result.data_array, data)
+
+    filename = tmp_path / "system.json"
+    system.to_json(filename)
+    loaded = SimpleSystem.from_json(filename)
+    reloaded = loaded.get_time_series(
+        loaded.get_component(SimpleGenerator, generator.name),
+        name="active_power",
+        time_series_type=Deterministic,
+    )
+    assert reloaded.interval == timedelta(0)
+    np.testing.assert_array_equal(reloaded.data_array, data)
+
+
+@requires_zero_interval
+def test_transform_single_time_series_with_zero_interval(tmp_path):
+    """A zero interval asks the store for exactly one window spanning the whole series."""
+    system, generator = make_system(tmp_path)
+    underlying = np.arange(4, dtype=np.float64)
+    single = SingleTimeSeries.from_array(
+        underlying, "active_power", datetime(2024, 1, 1), timedelta(hours=1)
+    )
+    system.add_time_series(single, generator)
+
+    count = system.transform_single_time_series(horizon=timedelta(hours=4), interval=timedelta(0))
+    assert count == 1
+
+    forecast = system.get_time_series(
+        generator, name="active_power", time_series_type=Deterministic
+    )
+    assert forecast.window_count == 1
+    assert forecast.interval == timedelta(0)
+    np.testing.assert_array_equal(forecast.data_array[0], underlying)
 
 
 def test_time_series_transaction_defers_writes(tmp_path):

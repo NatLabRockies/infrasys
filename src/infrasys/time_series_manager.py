@@ -36,7 +36,7 @@ TIME_SERIES_KWARGS = {
     "time_series_read_only": False,
     "time_series_directory": None,
     "time_series_storage_type": TimeSeriesStorageType.TIME_SERIES_STORE,
-    # NetCDF compression for the infrastore backend. "deflate" (default)
+    # HDF5 compression for the infrastore backend. "deflate" (default)
     # compresses arrays at time_series_compression_level (0-9) with optional
     # byte shuffle; "none" disables compression.
     "time_series_compression": "deflate",

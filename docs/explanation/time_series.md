@@ -117,6 +117,16 @@ forecast = system.get_time_series(generator, name="active_power", time_series_ty
 `SingleTimeSeries` remains retrievable with `time_series_type=SingleTimeSeries`; the forecast view
 is returned as a `Deterministic` whose data is a 2D array with one forecast window per row.
 
+### Single-Window Forecasts
+
+A forecast with `window_count=1` has no second window to step to, so its interval carries no
+information. Pass `interval=timedelta(0)` for that case, both when adding a `Deterministic`
+directly and when calling `transform_single_time_series` (where a zero interval derives exactly
+one window and requires `horizon` to span the whole `SingleTimeSeries`). The store keeps the
+interval you passed verbatim, so `get_time_series` returns `timedelta(0)` rather than a
+substituted value. Encoding a single window as `interval == horizon` is also still accepted; the
+zero interval simply says so directly.
+
 ## Reading by Timestamp
 
 `get_time_series` and its variants are series-oriented: they return one component's whole
@@ -204,7 +214,7 @@ For example, a `timedelta` of 1 month will be converted to the ISO format string
 ## Behaviors
 
 The `System` stores all time series arrays and their metadata in the Rust-backed
-`infrastore` backend (NetCDF arrays plus a SQLite database). Users can customize time series
+`infrastore` backend (HDF5 arrays plus a SQLite database). Users can customize time series
 behavior with these keyword arguments passed to the `System` constructor:
 
 - `time_series_read_only`: The default behavior allows users to add and remove time series data.
@@ -214,7 +224,7 @@ behavior with these keyword arguments passed to the `System` constructor:
   default. This filesystem may be of limited size. If your data will exceed that limit, such as what
   is likely to happen on an HPC compute node, set this parameter to an alternate location (such as
   `/tmp/scratch` on NREL's HPC systems).
-- `time_series_compression`, `time_series_compression_level`, `time_series_shuffle`: Control NetCDF
+- `time_series_compression`, `time_series_compression_level`, `time_series_shuffle`: Control HDF5
   compression of the stored arrays. By default the backend uses `"deflate"` compression at level `3`
   with byte shuffle enabled; set `time_series_compression="none"` to disable compression.
 

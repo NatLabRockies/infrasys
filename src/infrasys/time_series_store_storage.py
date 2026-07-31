@@ -87,6 +87,11 @@ from infrasys.utils.time_utils import as_naive_utc, as_utc, to_iso_8601
 # Store-side time-series type names that infrasys exposes as ``Deterministic``.
 _FORECAST_TYPES = frozenset({"Deterministic", "DeterministicSingleTimeSeries"})
 
+# The store's filter value for the family of both names in _FORECAST_TYPES. Passing it
+# where a ``TimeSeriesType`` would go matches either stored tag in one catalog query,
+# which is what infrasys wants everywhere it treats the two as one type.
+ABSTRACT_DETERMINISTIC = "abstract_deterministic"
+
 
 @dataclass
 class TimeSeriesCounts:
@@ -105,9 +110,9 @@ class TimeSeriesCounts:
 
 
 class TimeSeriesStoreStorage:
-    """Store time series in the NetCDF/SQLite infrastore format."""
+    """Store time series in the HDF5/SQLite infrastore format."""
 
-    STORAGE_FILE = "time_series_store.nc"
+    STORAGE_FILE = "time_series_store.h5"
 
     def __init__(self, directory: Path, store: Store) -> None:
         self._directory = directory
@@ -393,10 +398,10 @@ class TimeSeriesStoreStorage:
     ) -> bool:
         """Return True if any stored series matches the inputs.
 
-        Committed rows are answered by the store's existence probe — a covering-index
-        ``SELECT 1 ... LIMIT 1`` that hydrates nothing — so this is safe in hot
-        per-component loops. Staged additions are visible only to their own context and
-        absent from the store until flush, so they are checked in memory first.
+        Committed rows are answered by one of the store's existence probes — an index
+        ``SELECT 1 ... LIMIT 1`` that hydrates nothing, features filter included — so this
+        is safe in hot per-component loops. Staged additions are visible only to their own
+        context and absent from the store until flush, so they are checked in memory first.
         """
         owner_id, category = _owner_identity(owner)
         staged = context.staged_for((owner_id, _category_name(category)))
@@ -417,11 +422,9 @@ class TimeSeriesStoreStorage:
         if time_series_type is None:
             return probe(None)
         if time_series_type == "Deterministic":
-            # infrasys surfaces both stored forecast tags as ``Deterministic``
-            # (see _type_matches); one probe per candidate stored type.
-            return probe(RustTimeSeriesType.Deterministic) or probe(
-                RustTimeSeriesType.DeterministicSingleTimeSeries
-            )
+            # infrasys surfaces both stored forecast tags as ``Deterministic`` (see
+            # _type_matches). The store's family filter matches both in one probe.
+            return probe(ABSTRACT_DETERMINISTIC)
         rust_type = getattr(RustTimeSeriesType, time_series_type, None)
         # A name the store does not know cannot have been stored.
         return rust_type is not None and probe(rust_type)
@@ -534,6 +537,9 @@ class TimeSeriesStoreStorage:
         association sharing the same underlying array. Returns the number of series transformed.
         The transform runs store-wide, so anything ``context`` has staged is flushed first to
         be included.
+
+        ``interval`` is passed to the store as given, including ``timedelta(0)``, which the store
+        reads as a request for a single window spanning ``horizon``.
         """
         context.flush()
         count = self._store.transform_single_time_series(horizon=horizon, interval=interval)
@@ -790,7 +796,7 @@ class TimeSeriesStoreStorage:
         destination = Path(dst)
         destination.mkdir(parents=True, exist_ok=True)
         if source.resolve() == self._directory.resolve():
-            # Windows denies reads on the NetCDF/SQLite files while the store holds
+            # Windows denies reads on the HDF5/SQLite files while the store holds
             # them open, so a flush is not enough: release the handles, copy, and
             # reopen. POSIX would tolerate copying in place, but the close/reopen is
             # cheap next to the copy and keeps one code path across platforms.

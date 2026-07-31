@@ -3,7 +3,7 @@
 A :class:`TimeSeriesStorageContext` owns one batch of work. What it owns is now only
 the part the store cannot do for itself: the **client-side add buffer**, which exists
 so that many additions reach the store as one bulk call. That is what buys block-sized
-NetCDF writes and feature-set dedup, and a store transaction deliberately does not
+HDF5 writes and feature-set dedup, and a store transaction deliberately does not
 provide it.
 
 Atomicity is the store's job. A context opened by ``time_series_transaction`` begins an
@@ -98,7 +98,7 @@ class _PendingAdd:
 # comes first. Inside a transaction an early flush costs nothing in recoverability, so
 # these only split the I/O, never the atomicity.
 #
-# The count limit keeps the store's layout healthy: each flush becomes one NetCDF
+# The count limit keeps the store's layout healthy: each flush becomes one HDF5
 # dataset whose chunk width equals the batch width, so 10,000 f64 series produce 80 KiB
 # chunks — near the store's 1 MiB chunk cap and within ~2% of unlimited-batch write
 # throughput. The byte limit is what actually bounds memory, which the count cannot do

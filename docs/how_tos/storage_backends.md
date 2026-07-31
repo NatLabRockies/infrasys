@@ -16,7 +16,7 @@ from infrasys import System
 system = System()
 ```
 
-You can select it explicitly and choose the parent directory for its NetCDF and SQLite files:
+You can select it explicitly and choose the parent directory for its HDF5 and SQLite files:
 
 ```python
 from pathlib import Path
