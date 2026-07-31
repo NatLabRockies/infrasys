@@ -87,11 +87,6 @@ from infrasys.utils.time_utils import as_naive_utc, as_utc, to_iso_8601
 # Store-side time-series type names that infrasys exposes as ``Deterministic``.
 _FORECAST_TYPES = frozenset({"Deterministic", "DeterministicSingleTimeSeries"})
 
-# The store's filter value for the family of both names in _FORECAST_TYPES. Passing it
-# where a ``TimeSeriesType`` would go matches either stored tag in one catalog query,
-# which is what infrasys wants everywhere it treats the two as one type.
-ABSTRACT_DETERMINISTIC = "abstract_deterministic"
-
 
 @dataclass
 class TimeSeriesCounts:
@@ -423,8 +418,8 @@ class TimeSeriesStoreStorage:
             return probe(None)
         if time_series_type == "Deterministic":
             # infrasys surfaces both stored forecast tags as ``Deterministic`` (see
-            # _type_matches). The store's family filter matches both in one probe.
-            return probe(ABSTRACT_DETERMINISTIC)
+            # _type_matches). The store filters on one exact tag at a time, so probe each.
+            return any(probe(getattr(RustTimeSeriesType, ts_type)) for ts_type in _FORECAST_TYPES)
         rust_type = getattr(RustTimeSeriesType, time_series_type, None)
         # A name the store does not know cannot have been stored.
         return rust_type is not None and probe(rust_type)
