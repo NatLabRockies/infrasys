@@ -29,12 +29,11 @@ import atexit
 import json
 import re
 import shutil
-from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from tempfile import mkdtemp
-from typing import Any, Generator
+from typing import Any
 
 import numpy as np
 import orjson
@@ -189,6 +188,14 @@ class TimeSeriesStoreStorage:
             compression=compression,
             compression_level=compression_level,
             shuffle=shuffle,
+            # This directory is scratch: it is either a mkdtemp that `atexit`
+            # removes, or a working copy of a serialized system. A crash loses the
+            # in-memory `System` regardless, so journaling the catalog to disk on
+            # every commit buys durability nobody can consume. Holding it in RAM
+            # skips the WAL and fsync work; `persist_to` writes it out at save.
+            # Arrays still stream to the HDF5 file, so this does not require the
+            # data to fit in memory.
+            catalog="memory",
         )
         return cls(directory, store)
 
@@ -213,6 +220,12 @@ class TimeSeriesStoreStorage:
         store = Store.open(
             path=directory / cls.STORAGE_FILE,
             read_only=read_only,
+            # A read-only open leaves the catalog attached: nothing mutates it, so
+            # there is nothing to gain by reading it into RAM. A writable open is a
+            # scratch copy, so it gets the same in-memory catalog a fresh store
+            # does — see `_create`. The copied `.sqlite` seeds it and is ignored
+            # from then on; `persist_to` writes the catalog back out at save.
+            catalog="attached" if read_only else "memory",
         )
         storage = cls(directory, store)
         storage.rehydrate()
@@ -766,17 +779,17 @@ class TimeSeriesStoreStorage:
         dst: Path | str,
         src: Path | str | None = None,
     ) -> None:
-        """Copy the store to ``dst``.
+        """Write the store to ``dst``.
 
-        Anything ``context`` has buffered is flushed first so it is included in the copy.
+        Anything ``context`` has buffered is flushed first so it is included in the save.
 
         Raises
         ------
         ISOperationNotAllowed
-            Raised if a time series transaction is open. Copying the artifact means
-            closing and reopening it (see ``_closed_store``), which discards the
-            transaction — and a durable copy of state that may still be rolled back is
-            not a coherent thing to produce.
+            Raised if a time series transaction is open. The saved artifact would then
+            contain rows a rollback can still take back, and a durable copy of state that
+            may still be reverted is not a coherent thing to produce. The store rejects
+            this too; checking here turns it into a message that names the fix.
         """
         if self._store.in_transaction:
             msg = (
@@ -791,32 +804,22 @@ class TimeSeriesStoreStorage:
         destination = Path(dst)
         destination.mkdir(parents=True, exist_ok=True)
         if source.resolve() == self._directory.resolve():
-            # Windows denies reads on the HDF5/SQLite files while the store holds
-            # them open, so a flush is not enough: release the handles, copy, and
-            # reopen. POSIX would tolerate copying in place, but the close/reopen is
-            # cheap next to the copy and keeps one code path across platforms.
-            with self._closed_store():
-                self._copy_store(source, destination)
+            # The live store writes itself out. `persist_to` stages both halves,
+            # fsyncs them, and renames them into place under one generation stamp,
+            # so a save interrupted between the two renames is caught on the next
+            # open instead of read as a valid store. It also releases and reopens
+            # the HDF5 handle internally, which is what this branch used to need a
+            # close/copy/reopen dance for on Windows.
+            #
+            # Note the destination is replaced, so a failed save may have destroyed
+            # what was there. Recovery is to call this again — the scratch store is
+            # still live and unchanged.
+            self._store.persist_to(destination / self.STORAGE_FILE)
         else:
+            # Serializing from a directory this storage does not own; the live
+            # store cannot write those bytes, so a plain file copy is all there is.
             self._copy_store(source, destination)
         self.add_serialized_data(data)
-
-    @contextmanager
-    def _closed_store(self) -> Generator[None, None, None]:
-        """Release the store's file handles for the duration of the block.
-
-        The reopen runs even if the body raises, so a failed copy leaves the storage
-        usable rather than stranding it on a closed handle.
-        """
-        read_only = self._store.read_only
-        self._store.close()
-        try:
-            yield
-        finally:
-            self._store = Store.open(
-                path=self._directory / self.STORAGE_FILE,
-                read_only=read_only,
-            )
 
     @staticmethod
     def add_serialized_data(data: dict[str, Any]) -> None:
