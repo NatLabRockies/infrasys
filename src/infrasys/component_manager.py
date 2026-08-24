@@ -62,9 +62,18 @@ class ComponentManager:
         ------
         ISAlreadyAttached
             Raised if a component is already attached to a system.
+        ISOperationNotAllowed
+            Raised if the store was opened read-only.
         """
         if not components:
             return
+
+        # The association write at the end of this method is what a read-only store
+        # refuses, and by then the components are already in the containers. Refuse up
+        # front instead. Deserialization is exempt: it populates the containers from a
+        # store that already holds the associations, and writes nothing.
+        if not deserialization_in_progress:
+            self._storage.raise_if_read_only()
 
         for component in components:
             self._add(component, deserialization_in_progress)
@@ -208,6 +217,10 @@ class ComponentManager:
             raise ISNotStored(msg)
         return component
 
+    def get_by_id_or_none(self, id_: int) -> Any:
+        """Return the component with the input integer ID, or None if it is not stored."""
+        return self._components_by_id.get(id_)
+
     def iter_all(self) -> Iterable[Any]:
         """Return an iterator over all components."""
         return self._components_by_id.values()
@@ -327,14 +340,31 @@ class ComponentManager:
                         subcomponent[i] = sub_component_.label
             yield data
 
-    def remove(self, component: Component, cascade_down: bool = True, force: bool = False) -> None:
-        """Remove the component from the system.
+    def remove(
+        self, component: Component, cascade_down: bool = True, force: bool = False
+    ) -> list[int]:
+        """Remove the component from the system and return the ids it orphaned.
+
+        Only ``component`` is removed here. When ``cascade_down`` is set, the children it
+        was the last parent of come back as ids for the caller to remove in turn, rather
+        than being removed by a recursive call: dropping a component also means detaching
+        its supplemental attributes and its time series, and this manager owns neither.
+        See :meth:`infrasys.system.System.remove_component`, which drives the cascade.
 
         Notes
         -----
         Users should not call this directly. It should be called through the system
         so that time series is handled.
+
+        Raises
+        ------
+        ISOperationNotAllowed
+            Raised if the store was opened read-only.
         """
+        # `remove_associations` below writes to the store, and the containers have
+        # already been popped by then, so a read-only refusal would leave the system
+        # without the component but with its association rows. Refuse first.
+        self._storage.raise_if_read_only()
         component_type = type(component)
         # The system method should have already performed the check, but for completeness in case
         # someone calls it directly, check here.
@@ -363,27 +393,42 @@ class ComponentManager:
             self._components.pop(component_type)
         logger.debug("Removed component {}", matched_component.label)
         if cascade_down:
-            child_components = self.list_child_component_ids(matched_component)
+            child_ids = self.list_child_component_ids(matched_component)
         else:
-            child_components = []
+            child_ids = []
         self.remove_associations(matched_component)
-        for child_id in child_components:
-            child = self.get_by_id(child_id)
-            parent_components = self.list_parent_components(child)
-            if not parent_components:
-                self.remove(child, cascade_down=cascade_down, force=force)
-        return
+        # Nothing is removed here: the parent's associations are gone, so a child with no
+        # remaining parent is now an orphan, and the caller removes it the same way it
+        # removed this one.
+        return [
+            child_id
+            for child_id in child_ids
+            if not self.list_parent_components(self.get_by_id(child_id))
+        ]
 
-    def _check_parent_components_for_remove(self, component: Component, force: bool) -> None:
+    def raise_if_removal_blocked(self, component: Component, force: bool) -> None:
+        """Raise if other components hold references to this one and ``force`` is not set.
+
+        The same gate :meth:`remove` applies, minus the force-path warning, so
+        :meth:`infrasys.system.System.remove_component` can run it before it detaches the
+        component's supplemental attributes and time series. A refusal that arrives after
+        that work would leave the component in place but stripped.
+        """
+        self._check_parent_components_for_remove(component, force, warn=False)
+
+    def _check_parent_components_for_remove(
+        self, component: Component, force: bool, warn: bool = True
+    ) -> None:
         parent_components = self.list_parent_components(component)
         if parent_components:
             parent_labels = ", ".join((x.label for x in parent_components))
             if force:
-                logger.warning(
-                    "Remove {} even though it is attached to these components: {}",
-                    component.label,
-                    parent_labels,
-                )
+                if warn:
+                    logger.warning(
+                        "Remove {} even though it is attached to these components: {}",
+                        component.label,
+                        parent_labels,
+                    )
             else:
                 msg = (
                     f"Cannot remove {component.label} because it is attached to these components: "

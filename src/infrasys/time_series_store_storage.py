@@ -133,6 +133,30 @@ class TimeSeriesStoreStorage:
         """
         return self._store
 
+    @property
+    def read_only(self) -> bool:
+        """Return True if the store refuses writes."""
+        return self._store.read_only
+
+    def raise_if_read_only(self) -> None:
+        """Raise if the store refuses writes.
+
+        Every manager in a system writes through this one store --- component
+        parent/child associations and supplemental attribute associations as well as time
+        series --- so a read-only open makes all of them fail. The managers mutate their
+        in-memory containers before the store call that persists the change, so they call
+        this *first*: a refusal has to land before anything is touched, or the system is
+        left describing a store it no longer agrees with.
+
+        Raises
+        ------
+        ISOperationNotAllowed
+            Raised if the store was opened read-only.
+        """
+        if self._store.read_only:
+            msg = "Cannot modify a system whose time series store was opened read-only."
+            raise ISOperationNotAllowed(msg)
+
     def new_context(
         self,
         auto_flush_threshold: int = AUTO_FLUSH_THRESHOLD,

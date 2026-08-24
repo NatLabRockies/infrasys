@@ -1235,3 +1235,47 @@ def test_component_associations_survive_round_trip(tmp_path):
     assert system2.list_child_components(gen2) == [bus2]
     # The rows must not have been duplicated by deserialization.
     assert len(system2._component_mgr._store.list_parent_child_associations()) == 2
+
+
+def test_read_only_system_refuses_removal_before_mutating(tmp_path):
+    """A refused removal must leave the system exactly as it found it.
+
+    The store writes happen after the managers update their in-memory containers, so a
+    read-only refusal that arrives late leaves the system describing a store it no longer
+    agrees with.
+    """
+    system = SimpleSystem(auto_add_composed_components=True)
+    bus = SimpleBus(name="test-bus", voltage=1.1)
+    gen = SimpleGenerator(name="gen1", active_power=1.0, rating=1.0, bus=bus, available=True)
+    system.add_component(gen)
+    filename = tmp_path / "system.json"
+    system.to_json(filename)
+    system.close()
+
+    read_only = SimpleSystem.from_json(filename, time_series_read_only=True)
+    gen2 = read_only.get_component(SimpleGenerator, "gen1")
+    bus2 = read_only.get_component(SimpleBus, "test-bus")
+    parents_before = read_only._component_mgr.list_parent_component_ids(bus2)
+
+    with pytest.raises(ISOperationNotAllowed):
+        read_only.remove_component(gen2, cascade_down=False)
+
+    assert read_only.get_component(SimpleGenerator, "gen1") is gen2
+    assert read_only._component_mgr.list_parent_component_ids(bus2) == parents_before
+
+
+def test_read_only_system_refuses_addition(tmp_path):
+    system = SimpleSystem(auto_add_composed_components=True)
+    bus = SimpleBus(name="test-bus", voltage=1.1)
+    system.add_component(bus)
+    filename = tmp_path / "system.json"
+    system.to_json(filename)
+    system.close()
+
+    read_only = SimpleSystem.from_json(filename, time_series_read_only=True)
+    bus2 = SimpleBus(name="test-bus2", voltage=1.1)
+    with pytest.raises(ISOperationNotAllowed):
+        read_only.add_component(bus2)
+
+    with pytest.raises(ISNotStored):
+        read_only.get_component(SimpleBus, "test-bus2")

@@ -142,6 +142,24 @@ class System:
         except Exception:
             logger.debug("Error closing time series manager", exc_info=True)
 
+    def _raise_if_read_only(self) -> None:
+        """Refuse a mutation that spans more than one manager, before it starts.
+
+        A removal touches the supplemental attribute manager, the time series manager,
+        and the component manager in turn, each with its own store write. Every one of
+        them refuses a read-only store on its own, but the first refusal would arrive
+        with the earlier managers already updated. Asking both gates here --- the store's
+        and the time series manager's, which can be read-only while the store is not ---
+        keeps a refused removal from being a partial one.
+
+        Raises
+        ------
+        ISOperationNotAllowed
+            Raised if the store or the time series manager is read-only.
+        """
+        self._time_series_mgr.raise_if_read_only()
+        self._time_series_mgr.storage.raise_if_read_only()
+
     def __enter__(self) -> "System":
         return self
 
@@ -977,6 +995,14 @@ class System:
             Raised if the component is not stored in the system.
         ISOperationNotAllowed
             Raised if the other components hold references to this component and force=False.
+            Raised if the store or the time series manager is read-only.
+
+        Notes
+        -----
+        The component's supplemental attributes are detached along with it. An attribute
+        left with no other component keeping it is removed from the system, taking its
+        own time series with it. Components removed by ``cascade_down`` are cleaned up
+        the same way.
 
         Examples
         --------
@@ -984,6 +1010,18 @@ class System:
         >>> system.remove_component(gen)
         """
         self._component_mgr.raise_if_not_attached(component)
+        # Removing a component is several store writes across three managers. Refuse a
+        # read-only store here, before the first of them, so a refusal cannot land with
+        # the attributes already detached and the component still in place.
+        self._raise_if_read_only()
+        # Likewise for the reference check: a component another one still holds is not
+        # removed, so it must not be stripped of its attributes and time series either.
+        self._component_mgr.raise_if_removal_blocked(component, force)
+        attributes: list[SupplementalAttribute] = (
+            self._supplemental_attr_mgr.get_attributes_with_component(component)
+        )
+        for attribute in attributes:
+            self.remove_supplemental_attribute_from_component(component, attribute)
         keys = self._time_series_mgr.list_time_series_metadata(component, time_series_type=None)
         if keys:
             logger.warning(
@@ -993,7 +1031,15 @@ class System:
                 len(keys),
             )
             self.remove_time_series(component, time_series_type=None)
-        self._component_mgr.remove(component, cascade_down=cascade_down, force=force)
+        orphaned_child_ids = self._component_mgr.remove(
+            component, cascade_down=cascade_down, force=force
+        )
+        for child_id in orphaned_child_ids:
+            # An orphan removed here can cascade to another one in the same list, so
+            # check that each is still stored rather than assuming the list is current.
+            child = self._component_mgr.get_by_id_or_none(child_id)
+            if child is not None:
+                self.remove_component(child, cascade_down=cascade_down, force=force)
 
     def remove_component_by_name(
         self,
@@ -1053,11 +1099,35 @@ class System:
         return self.remove_component(component, cascade_down=cascade_down, force=force)
 
     def remove_supplemental_attribute(self, attribute: SupplementalAttribute) -> None:
-        """Remove the supplemental attribute from the system."""
+        """Remove the supplemental attribute from the system.
+
+        Raises
+        ------
+        ISNotStored
+            Raised if the attribute is not attached to the system.
+        ISOperationNotAllowed
+            Raised if the store or the time series manager is read-only.
+        """
         self._supplemental_attr_mgr.raise_if_not_attached(attribute)
+        self._raise_if_read_only()
+        self._remove_supplemental_attribute(attribute, association_must_exist=True)
+
+    def _remove_supplemental_attribute(
+        self,
+        attribute: SupplementalAttribute,
+        association_must_exist: bool,
+    ) -> None:
+        """Drop the attribute from the system, taking its time series with it.
+
+        ``association_must_exist`` is False when the caller has already deleted the last
+        association row and is cascading into this removal, so there is none left to
+        find.
+        """
         if self.has_time_series(attribute, time_series_type=None):
             self.remove_time_series(attribute, time_series_type=None)
-        return self._supplemental_attr_mgr.remove(attribute)
+        self._supplemental_attr_mgr.remove(
+            attribute, association_must_exist=association_must_exist
+        )
 
     def remove_supplemental_attribute_from_component(
         self,
@@ -1066,8 +1136,21 @@ class System:
     ) -> None:
         """Remove the association between the component and supplemental attribute.
         If the attribute is not attached to any other components, remove it from the system.
+
+        Raises
+        ------
+        ISNotStored
+            Raised if the attribute is not attached to the system.
+        ISOperationNotAllowed
+            Raised if the store or the time series manager is read-only.
         """
-        self._supplemental_attr_mgr.remove_attribute_from_component(component, attribute)
+        self._supplemental_attr_mgr.raise_if_not_attached(attribute)
+        self._raise_if_read_only()
+        if self._supplemental_attr_mgr.remove_association(component, attribute):
+            # Nothing references the attribute any more. Route the removal back through
+            # this class rather than the manager, so the attribute's time series go with
+            # it instead of being left in the store with no owner.
+            self._remove_supplemental_attribute(attribute, association_must_exist=False)
 
     def update_components(
         self,

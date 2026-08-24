@@ -159,7 +159,7 @@ class TimeSeriesManager:
         ISOperationNotAllowed
             Raised if the manager was created in read-only mode.
         """
-        self._handle_read_only()
+        self.raise_if_read_only()
         if not owners:
             msg = "add_time_series requires at least one component or supplemental attribute"
             raise ISOperationNotAllowed(msg)
@@ -363,7 +363,7 @@ class TimeSeriesManager:
         ISOperationNotAllowed
             Raised if the manager was created in read-only mode.
         """
-        self._handle_read_only()
+        self.raise_if_read_only()
         with self._ensure_context() as ctx:
             removed = ctx.remove(
                 *owners,
@@ -390,7 +390,7 @@ class TimeSeriesManager:
         -----
         name_mapping is currently not implemented.
         """
-        self._handle_read_only()
+        self.raise_if_read_only()
         raise NotImplementedError
 
     def transform_single_time_series(
@@ -409,7 +409,7 @@ class TimeSeriesManager:
         ISOperationNotAllowed
             Raised if the manager was created in read-only mode.
         """
-        self._handle_read_only()
+        self.raise_if_read_only()
         with self._ensure_context() as ctx:
             return ctx.transform_single_time_series(horizon, interval)
 
@@ -474,7 +474,18 @@ class TimeSeriesManager:
             raise
         context.commit()
 
-    def _handle_read_only(self) -> None:
+    def raise_if_read_only(self) -> None:
+        """Raise if this manager refuses time series modifications.
+
+        Callers that cascade into a time series removal --- ``System.remove_component``
+        and friends --- call this before they mutate anything of their own, so a refusal
+        does not arrive halfway through a removal.
+
+        Raises
+        ------
+        ISOperationNotAllowed
+            Raised if the manager was created in read-only mode.
+        """
         if self._read_only:
             msg = "Cannot modify time series in read-only mode."
             raise ISOperationNotAllowed(msg)

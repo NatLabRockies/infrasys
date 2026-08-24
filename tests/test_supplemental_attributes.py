@@ -508,3 +508,105 @@ def test_components_and_attributes_share_one_id_stream(tmp_path):
     new_bus = SimpleBus(name="new-bus", voltage=1.2)
     system2.add_component(new_bus)
     assert new_bus.id not in ids
+
+
+def test_remove_component_detaches_supplemental_attributes():
+    """A removed component must not leave association rows pointing at it."""
+    bus = SimpleBus(name="test-bus", voltage=1.1)
+    gen = SimpleGenerator(name="gen1", active_power=1.0, rating=1.0, bus=bus, available=True)
+    attr = GeographicInfo.example()
+    system = SimpleSystem(auto_add_composed_components=True)
+    system.add_component(gen)
+    system.add_supplemental_attribute(gen, attr)
+    ts = SingleTimeSeries.from_array(
+        [1.0, 2.0, 3.0], "active_power", datetime(2030, 1, 1), timedelta(hours=1)
+    )
+    system.add_time_series(ts, attr)
+
+    system.remove_component(gen, cascade_down=False)
+
+    assert system.get_num_supplemental_attributes() == 0
+    assert system.get_num_components_with_supplemental_attributes() == 0
+    with pytest.raises(ISNotStored):
+        system.get_supplemental_attribute_by_id(attr.id)
+    # The attribute went with the component, so its time series must go too.
+    assert system._time_series_mgr.get_time_series_counts().reference_count == 0
+
+
+def test_remove_component_keeps_attribute_shared_with_another_component():
+    bus = SimpleBus(name="test-bus", voltage=1.1)
+    gen1 = SimpleGenerator(name="gen1", active_power=1.0, rating=1.0, bus=bus, available=True)
+    gen2 = SimpleGenerator(name="gen2", active_power=1.0, rating=1.0, bus=bus, available=True)
+    attr = GeographicInfo.example()
+    system = SimpleSystem(auto_add_composed_components=True)
+    system.add_components(gen1, gen2)
+    system.add_supplemental_attribute(gen1, attr)
+    system.add_supplemental_attribute(gen2, attr)
+
+    system.remove_component(gen1, cascade_down=False)
+
+    assert system.get_supplemental_attribute_by_id(attr.id) is attr
+    assert system.get_supplemental_attributes_with_component(gen2) == [attr]
+    assert system.get_num_components_with_supplemental_attributes() == 1
+
+
+def test_removing_last_association_removes_the_attributes_time_series():
+    bus = SimpleBus(name="test-bus", voltage=1.1)
+    gen = SimpleGenerator(name="gen1", active_power=1.0, rating=1.0, bus=bus, available=True)
+    attr = GeographicInfo.example()
+    system = SimpleSystem(auto_add_composed_components=True)
+    system.add_component(gen)
+    system.add_supplemental_attribute(gen, attr)
+    ts = SingleTimeSeries.from_array(
+        [1.0, 2.0, 3.0], "active_power", datetime(2030, 1, 1), timedelta(hours=1)
+    )
+    system.add_time_series(ts, attr)
+    assert system._time_series_mgr.get_time_series_counts().reference_count == 1
+
+    system.remove_supplemental_attribute_from_component(gen, attr)
+
+    assert system.get_num_supplemental_attributes() == 0
+    assert system._time_series_mgr.get_time_series_counts().reference_count == 0
+
+
+def test_cascaded_child_removal_detaches_its_attributes_and_time_series():
+    """A component removed by cascade_down gets the same cleanup as a direct removal."""
+    bus = SimpleBus(name="test-bus", voltage=1.1)
+    gen = SimpleGenerator(name="gen1", active_power=1.0, rating=1.0, bus=bus, available=True)
+    attr = GeographicInfo.example()
+    system = SimpleSystem(auto_add_composed_components=True)
+    system.add_component(gen)
+    system.add_supplemental_attribute(bus, attr)
+    ts = SingleTimeSeries.from_array(
+        [1.0, 2.0, 3.0], "active_power", datetime(2030, 1, 1), timedelta(hours=1)
+    )
+    system.add_time_series(ts, bus)
+
+    # No other component holds the bus, so removing the generator cascades to it.
+    system.remove_component(gen, cascade_down=True)
+
+    assert not list(system.get_components(SimpleBus))
+    assert system.get_num_supplemental_attributes() == 0
+    assert system._time_series_mgr.get_time_series_counts().reference_count == 0
+
+
+def test_refused_removal_leaves_attributes_and_time_series_attached():
+    """A component that cannot be removed must not be stripped on the way to the refusal."""
+    bus = SimpleBus(name="test-bus", voltage=1.1)
+    gen = SimpleGenerator(name="gen1", active_power=1.0, rating=1.0, bus=bus, available=True)
+    attr = GeographicInfo.example()
+    system = SimpleSystem(auto_add_composed_components=True)
+    system.add_component(gen)
+    system.add_supplemental_attribute(bus, attr)
+    ts = SingleTimeSeries.from_array(
+        [1.0, 2.0, 3.0], "active_power", datetime(2030, 1, 1), timedelta(hours=1)
+    )
+    system.add_time_series(ts, bus)
+
+    # The generator still holds the bus, so force=False refuses the removal.
+    with pytest.raises(ISOperationNotAllowed):
+        system.remove_component(bus)
+
+    assert system.get_component(SimpleBus, "test-bus") is bus
+    assert system.get_supplemental_attributes_with_component(bus) == [attr]
+    assert system._time_series_mgr.get_time_series_counts().reference_count == 1

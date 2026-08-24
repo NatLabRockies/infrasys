@@ -56,10 +56,17 @@ class SupplementalAttributeManager:
         ------
         ISAlreadyAttached
             Raised if a component is already attached to a system.
+        ISOperationNotAllowed
+            Raised if the store was opened read-only.
         """
         if component is None and not deserialization_in_progress:
             msg = "component can only be None when deserialization_in_progress"
             raise Exception(msg)
+
+        # Deserialization is exempt: it populates the in-memory index from a store that
+        # already holds the association rows, so it writes nothing.
+        if not deserialization_in_progress:
+            self._storage.raise_if_read_only()
 
         already_attached = self.has_attribute(attribute)
         if not deserialization_in_progress and not already_attached:
@@ -263,8 +270,14 @@ class SupplementalAttributeManager:
         -----
         Users should not call this directly. It should be called through the system
         so that time series is handled.
+
+        Raises
+        ------
+        ISOperationNotAllowed
+            Raised if the store was opened read-only.
         """
         self.raise_if_not_attached(attribute)
+        self._storage.raise_if_read_only()
         num_deleted = self._store.remove_supplemental_attribute_associations(
             attribute_id=_get_attribute_id(attribute)
         )
@@ -281,18 +294,26 @@ class SupplementalAttributeManager:
             self._attributes.pop(attr_type)
         logger.debug("Removed supplemental attribute {}", attribute.label)
 
-    def remove_attribute_from_component(
-        self, component: Component, attribute: SupplementalAttribute
-    ) -> None:
-        """Remove the supplemental attribute from the component. If the attribute is not attached
-        to any other components, remove it from the system.
+    def remove_association(self, component: Component, attribute: SupplementalAttribute) -> bool:
+        """Remove the association between the component and the attribute.
+
+        Returns True if the attribute is left with no associations at all, meaning the
+        caller should go on to remove it from the system. That cascade is the caller's
+        because dropping an attribute has to take its time series with it, and this
+        manager has no handle on the time series manager.
 
         Notes
         -----
         Users should not call this directly. It should be called through the system
         so that time series is handled.
+
+        Raises
+        ------
+        ISOperationNotAllowed
+            Raised if the store was opened read-only.
         """
         self.raise_if_not_attached(attribute)
+        self._storage.raise_if_read_only()
         attribute_id = _get_attribute_id(attribute)
         num_deleted = self._store.remove_supplemental_attribute_associations(
             component_id=_get_component_id(component),
@@ -301,8 +322,7 @@ class SupplementalAttributeManager:
         if num_deleted != 1:
             msg = f"Bug: unexpected number of deletions: {num_deleted}. Should have been 1."
             raise Exception(msg)
-        if not self._store.has_supplemental_attribute_association(attribute_id=attribute_id):
-            self.remove(attribute, association_must_exist=False)
+        return not self._store.has_supplemental_attribute_association(attribute_id=attribute_id)
 
     def iter(
         self,
