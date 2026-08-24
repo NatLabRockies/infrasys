@@ -43,8 +43,8 @@ each column representing a time step within that window.
 
 You can create a Deterministic time series in two ways:
 
-1. **Explicitly with forecast data** using `Deterministic.from_array()` when you have pre-computed forecast values.
-2. **From a SingleTimeSeries** using `Deterministic.from_single_time_series()` to create a "perfect forecast" based on historical data by extracting overlapping windows.
+1. **Explicitly with forecast data** using `Deterministic.from_array()` when you have pre-computed forecast values, then attach it with `system.add_time_series()`.
+2. **From stored SingleTimeSeries** using `System.transform_single_time_series()` to create "perfect forecasts" derived from historical data.
 
 ### Creating Deterministic Time Series with Explicit Data
 
@@ -76,18 +76,20 @@ forecast_data = [
 # Create the data with units
 data = ActivePower(np.array(forecast_data), "watts")
 name = "active_power_forecast"
-ts = DeterministicTimeSeries.from_array(
-# Create the data with units
-data = ActivePower(np.array(forecast_data), "watts")
-name = "active_power_forecast"
 ts = Deterministic.from_array(
     data, name, initial_time, resolution, horizon, interval, window_count
 )
+system.add_time_series(ts, generator)
 ```
 
 ### Creating "Perfect Forecasts" from SingleTimeSeries
 
-The `from_single_time_series()` classmethod is useful when you want to create a "perfect forecast" based on historical data for testing or validation purposes. It extracts overlapping forecast windows from an existing `SingleTimeSeries`.
+When you want a "perfect forecast" derived from historical data, call
+`System.transform_single_time_series(horizon, interval)`. This re-describes **every**
+`SingleTimeSeries` already stored on the system as a deterministic forecast that shares the same
+underlying array — the overlapping forecast windows are computed by the Rust `infrastore`
+backend, not materialized in Python. After transforming, retrieve a forecast by passing
+`time_series_type=Deterministic` to `get_time_series`.
 
 Example:
 
@@ -103,14 +105,91 @@ ts = SingleTimeSeries.from_array(
     resolution=timedelta(hours=1),
     initial_timestamp=initial_timestamp,
 )
-horizon = timedelta(hours=8)
-interval = timedelta(hours=1)
-ts_deterministic = Deterministic.from_single_time_series(
-    ts, interval=interval, horizon=horizon
-)
+system.add_time_series(ts, generator)
+
+# Derive perfect forecasts from all stored SingleTimeSeries.
+system.transform_single_time_series(horizon=timedelta(hours=8), interval=timedelta(hours=1))
+
+forecast = system.get_time_series(generator, name="active_power", time_series_type=Deterministic)
 ```
 
-In this example, `ts_deterministic` creates a forecast for `active_power` by extracting forecast windows from the original `SingleTimeSeries` `ts` at different offsets determined by `interval` and `horizon`. The forecast data is materialized as a 2D array where each row is a forecast window.
+`transform_single_time_series` returns the number of series transformed. The original
+`SingleTimeSeries` remains retrievable with `time_series_type=SingleTimeSeries`; the forecast view
+is returned as a `Deterministic` whose data is a 2D array with one forecast window per row.
+
+### Single-Window Forecasts
+
+A forecast with `window_count=1` has no second window to step to, so its interval carries no
+information. Pass `interval=timedelta(0)` for that case, both when adding a `Deterministic`
+directly and when calling `transform_single_time_series` (where a zero interval derives exactly
+one window and requires `horizon` to span the whole `SingleTimeSeries`). The store keeps the
+interval you passed verbatim, so `get_time_series` returns `timedelta(0)` rather than a
+substituted value. Encoding a single window as `interval == horizon` is also still accepted; the
+zero interval simply says so directly.
+
+## Reading by Timestamp
+
+`get_time_series` and its variants are series-oriented: they return one component's whole
+array. Simulations need the transpose — every component's value at one timestamp, then the
+next — and cannot afford to hold every array in memory to get it.
+
+`System.build_time_series_reader(resolution, ...)` returns a reader whose
+`read(timestamp)` is `{component id: value}`, and
+`System.build_forecast_reader(resolution, ...)` returns one whose `read(timestamp)` is
+`{component id: forecast window}`. Build a reader once against a filter (`name`,
+`name_glob`, `component_type`, or feature key/value pairs) and drive it forward through
+time; each read touches only the values for the requested timestamp.
+
+Forecast readers additionally collapse components that share a backing array into a single
+*slot* and perform one physical read per slot, which matters after
+`transform_single_time_series` and wherever many components were given the same profile.
+
+See [How to read time series by timestamp](#read-time-series-by-timestamp).
+
+## Batching and Transactions
+
+`System.time_series_transaction()` yields a transaction object exposing the same time series
+methods as `System`; every call made on it joins the batch. Without a transaction, each call
+commits on its own; with one, the store pays one catalog transaction for the whole block
+instead of one per series. This matters when adding many arrays.
+
+```python
+with system.time_series_transaction() as txn:
+    for generator, profile in profiles.items():
+        txn.add_time_series(profile, generator)
+```
+
+The block is also a **transaction**. If it raises, everything it did is undone — additions
+it had already been forced to write, and **removals**, which are recoverable only in here.
+Outside a block a removal is permanent as soon as it happens: the store frees the array once
+its last reference goes. Inside one that free is deferred until the block succeeds.
+
+```python
+with system.time_series_transaction() as txn:
+    txn.add_time_series(new_profile, generator)
+    txn.remove_time_series(generator, name="old_profile")
+    ...
+# both applied, or -- if anything raised -- neither
+```
+
+Calling a method on the transaction is what puts it in the batch. A `System` call inside the
+block runs on its own and sees **committed** data only:
+
+```python
+with system.time_series_transaction() as txn:
+    txn.add_time_series(ts, generator)
+
+    txn.has_time_series(generator, name="load")     # True
+    system.has_time_series(generator, name="load")  # False - not committed yet
+```
+
+Two constraints come with this:
+
+- **Blocks nest, innermost first.** An inner block must finish before the one enclosing it.
+  Two batches open at once that each commit or discard on their own schedule are not
+  supported.
+- **Serialize outside the block.** `to_json` while a block is open raises: writing a durable
+  copy of state that might still roll back is not something it will do for you.
 
 ## Resolution
 
@@ -132,13 +211,81 @@ storage, and validation.
 For example, a `timedelta` of 1 month will be converted to the ISO format string
 `P1M` and a `timedelta` of 1 hour will be converted to `P0DT1H`.
 
+```{eval-rst}
+.. _time-series-time-zones:
+```
+
+## Time zones
+
+A time series records **how its timestamps were spelled**, and reads hand that spelling
+back. infrasys passes your `datetime` objects to the store as they stand: it never
+attaches a zone to a naive timestamp, and never strips one from an aware timestamp.
+
+There are four spellings, and the store keeps them apart:
+
+| What you pass | Recorded as | What a read returns |
+|---|---|---|
+| a naive `datetime` | `zoneless` --- a wall clock naming no instant | the same naive `datetime` |
+| `tzinfo=timezone.utc` | `utc` | aware, UTC |
+| `tzinfo=timezone(timedelta(hours=-7))` | the fixed offset `-07:00` | aware, at that offset |
+| `tzinfo=ZoneInfo("America/Denver")` | the zone name | aware, in that zone |
+
+```python
+    # Modeled data with no time zone, and none wanted: 24-hour days, stored as written.
+    profile = SingleTimeSeries.from_array(
+        data=[random.random() for _ in range(24)],
+        name="active_power",
+        initial_time=datetime(2030, 1, 1),
+        resolution=timedelta(hours=1),
+    )
+    system.add_time_series(profile, generator)
+    assert system.get_time_series(generator, name="active_power").initial_timestamp.tzinfo is None
+```
+
+One system can hold both kinds --- a Denver load profile beside a zoneless modeled one ---
+because the spelling is per series, not per store.
+
+### What this means for reads
+
+- **A `start_time` must be spelled the way the series is.** A naive bound against a series
+  that names instants, or an aware bound against a zoneless one, has no defined meaning, so
+  it is refused rather than coerced. An aware bound need not match the series' *own* zone:
+  any offset naming the same instant works, because slicing is instant arithmetic.
+- **A reader covers one spelling.** {py:meth}`infrasys.system.System.build_time_series_reader`
+  materializes a single timestamp axis, so it refuses to build over a cohort that mixes
+  wall-clock series with instant-bearing ones. Pass `zoneless=True` for the wall-clock group
+  or `zoneless=False` for everything else --- which includes any series that left the
+  spelling unset --- and each half builds on its own. The timestamps a reader hands back are
+  always spelled the way its `read` expects them.
+
+### A spelling is not a grid
+
+`resolution`, `horizon`, and `interval` are fixed durations, so a series steps **instants**
+whatever its timestamps say. A named zone changes how a timestamp is *rendered*, not which
+instants the series contains: an hourly Denver series runs on hourly instants straight
+through a DST transition, and the wall clock it renders as simply skips or repeats an hour.
+
+If you need a local-clock grid instead --- a 23-hour day in March, a 25-hour day in
+November --- use {py:class}`infrasys.time_series_models.NonSequentialTimeSeries`, which
+carries an explicit timestamp per value, so the days are in the data rather than implied by
+arithmetic.
+
+One consequence worth stating: Python's own `datetime` arithmetic is *wall clock* whenever
+both operands share a `tzinfo`, so `initial_timestamp + n * resolution` can drift off the
+grid across a transition. Derive a `start_time` through UTC instead:
+
+```python
+    start = (series.initial_timestamp.astimezone(timezone.utc) + 30 * resolution).astimezone(
+        series.initial_timestamp.tzinfo
+    )
+```
+
 ## Behaviors
 
-Users can customize time series behavior with these flags passed to the `System` constructor:
+The `System` stores all time series arrays and their metadata in the Rust-backed
+`infrastore` backend (HDF5 arrays plus a SQLite database). Users can customize time series
+behavior with these keyword arguments passed to the `System` constructor:
 
-- `time_series_in_memory`: The `System` stores each array of data in an Arrow file by default. This
-  is a binary file that enables efficient storage and row access. Set this flag to store the data in
-  memory instead.
 - `time_series_read_only`: The default behavior allows users to add and remove time series data.
   Set this flag to disable mutation. That can be useful if you are de-serializing a system, won't be
   changing it, and want to avoid copying the data.
@@ -146,5 +293,8 @@ Users can customize time series behavior with these flags passed to the `System`
   default. This filesystem may be of limited size. If your data will exceed that limit, such as what
   is likely to happen on an HPC compute node, set this parameter to an alternate location (such as
   `/tmp/scratch` on NREL's HPC systems).
+- `time_series_compression`, `time_series_compression_level`, `time_series_shuffle`: Control HDF5
+  compression of the stored arrays. By default the backend uses `"deflate"` compression at level `3`
+  with byte shuffle enabled; set `time_series_compression="none"` to disable compression.
 
 Refer to the [Time Series API](#time-series-api) for more information.

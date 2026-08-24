@@ -45,14 +45,14 @@ def test_supplemental_attribute_manager(tmp_path):
 
     def check_attrs(attrs):
         assert len(attrs) == 2
-        assert attrs[0] == attr1 or attrs[0] == attr2
-        assert attrs[1] == attr1 or attrs[1] == attr2
+        coordinates = {tuple(x.geo_json["geometry"]["coordinates"]) for x in attrs}
+        assert coordinates == {(125.6, 10.1), (1.0, 2.0)}
 
     for attr_type in (GeographicInfo, SupplementalAttribute):
         attrs = list(system.get_supplemental_attributes(attr_type))
         check_attrs(attrs)
 
-    assert system.get_supplemental_attribute_by_uuid(attr1.uuid) is attr1
+    assert system.get_supplemental_attribute_by_id(attr1.id) is attr1
 
     components = system.get_components_with_supplemental_attribute(attr1)
     assert len(components) == 1
@@ -116,7 +116,7 @@ def test_supplemental_attribute_removals():
     system.remove_supplemental_attribute_from_component(bus, attr2)
     assert not list(system.get_supplemental_attributes(GeographicInfo))
     with pytest.raises(ISNotStored):
-        system.get_supplemental_attribute_by_uuid(attr1.uuid)
+        system.get_supplemental_attribute_by_id(attr1.id)
     with pytest.raises(ISNotStored):
         system.remove_supplemental_attribute(attr1)
     with pytest.raises(ISNotStored):
@@ -202,7 +202,7 @@ def test_add_supplemental_attribute_with_metadata_context_rolls_back_on_error():
     assert system.get_num_supplemental_attributes() == 0
     assert system.get_num_components_with_supplemental_attributes() == 0
     with pytest.raises(ISNotStored):
-        system.get_supplemental_attribute_by_uuid(attr1.uuid)
+        system.get_supplemental_attribute_by_id(attr1.id)
 
 
 def test_add_supplemental_attribute_rejects_connection_kwarg():
@@ -213,13 +213,12 @@ def test_add_supplemental_attribute_rejects_connection_kwarg():
     system.add_component(gen)
 
     with pytest.raises(TypeError):
-        system.add_supplemental_attribute(bus, attr1, **{"connection": system._con})
+        system.add_supplemental_attribute(bus, attr1, **{"connection": object()})
 
     assert not system.get_supplemental_attributes_with_component(bus)
     assert system.get_num_supplemental_attributes() == 0
     assert system.get_num_components_with_supplemental_attributes() == 0
-    with pytest.raises(ISNotStored):
-        system.get_supplemental_attribute_by_uuid(attr1.uuid)
+    assert attr1.id is None
 
 
 def test_supplemental_attribute_manager_metadata_context_rolls_back_on_error():
@@ -270,7 +269,7 @@ def test_remove_supplemental_attribute_in_metadata_context_rolls_back():
             msg = "boom"
             raise RuntimeError(msg)
 
-    assert system.get_supplemental_attribute_by_uuid(attr1.uuid) is attr1
+    assert system.get_supplemental_attribute_by_id(attr1.id) is attr1
     attrs = system.get_supplemental_attributes_with_component(bus)
     assert len(attrs) == 1
     assert attrs[0] is attr1
@@ -284,15 +283,14 @@ def test_association_read_queries_accept_transaction_connection():
     system.add_component(gen)
     system.add_supplemental_attribute(bus, attr1)
 
-    with system.open_metadata_store() as connection:
-        associations = system._supplemental_attr_mgr._associations
-        assert associations.has_association_by_component_and_attribute(
-            bus, attr1, connection=connection
+    with system.open_metadata_store() as store:
+        assert store.has_supplemental_attribute_association(
+            component_id=bus.id, attribute_id=attr1.id
         )
-        assert associations.has_association_by_attribute(attr1, connection=connection)
-        assert associations.has_association_by_component(bus, connection=connection)
-        assert associations.has_association_by_component_and_attribute_type(
-            bus, GeographicInfo.__name__, connection=connection
+        assert store.has_supplemental_attribute_association(attribute_id=attr1.id)
+        assert store.has_supplemental_attribute_association(component_id=bus.id)
+        assert store.has_supplemental_attribute_association(
+            component_id=bus.id, attribute_types=[GeographicInfo.__name__]
         )
 
 
@@ -310,7 +308,7 @@ def test_remove_supplemental_attribute_from_component_in_metadata_context_rolls_
             msg = "boom"
             raise RuntimeError(msg)
 
-    assert system.get_supplemental_attribute_by_uuid(attr1.uuid) is attr1
+    assert system.get_supplemental_attribute_by_id(attr1.id) is attr1
     attrs = system.get_supplemental_attributes_with_component(bus)
     assert len(attrs) == 1
     assert attrs[0] is attr1
@@ -323,7 +321,8 @@ def test_rollback_attribute_addition_handles_missing_and_empty_type_maps():
 
     manager.rollback_attribute_addition(attr1)
 
-    manager._attributes[type(attr1)] = {attr1.uuid: attr1}
+    attr1.id = 1
+    manager._attributes[type(attr1)] = {attr1.id: attr1}
     manager.rollback_attribute_addition(attr1)
 
     assert type(attr1) not in manager._attributes
@@ -338,3 +337,276 @@ def test_supplemental_attribute_manager_raise_if_attached():
 
     with pytest.raises(ISAlreadyAttached, match="already attached"):
         system._supplemental_attr_mgr.raise_if_attached(attr1)
+
+
+def test_list_associated_component_ids():
+    """Test list_associated_component_ids returns correct component IDs."""
+    bus = SimpleBus(name="test-bus", voltage=1.1)
+    gen = SimpleGenerator(name="gen1", active_power=1.0, rating=1.0, bus=bus, available=True)
+    attr1 = GeographicInfo.example()
+    system = SimpleSystem(auto_add_composed_components=True)
+    system.add_component(gen)
+    system.add_supplemental_attribute(bus, attr1)
+    system.add_supplemental_attribute(gen, attr1)
+
+    ids = system._supplemental_attr_mgr.get_component_ids_with_attribute(attr1)
+    assert len(ids) == 2
+    assert bus.id in ids
+    assert gen.id in ids
+
+
+def test_list_associated_supplemental_attribute_ids_with_type_filter():
+    """Test list_associated_supplemental_attribute_ids with attribute_type filter."""
+    bus = SimpleBus(name="test-bus", voltage=1.1)
+    gen = SimpleGenerator(name="gen1", active_power=1.0, rating=1.0, bus=bus, available=True)
+    attr1 = GeographicInfo.example()
+    attr2 = Attribute(energy=Energy(10.0, "kWh"))
+    system = SimpleSystem(auto_add_composed_components=True)
+    system.add_component(gen)
+    system.add_supplemental_attribute(bus, attr1)
+    system.add_supplemental_attribute(bus, attr2)
+
+    store = system._supplemental_attr_mgr._store
+    # Without type filter — both attributes
+    ids = store.list_supplemental_attribute_ids(component_id=bus.id)
+    assert len(ids) == 2
+    assert attr1.id in ids
+    assert attr2.id in ids
+
+    # With type filter — only GeographicInfo
+    ids = store.list_supplemental_attribute_ids(
+        component_id=bus.id, attribute_types=["GeographicInfo"]
+    )
+    assert ids == [attr1.id]
+
+
+def test_get_supplemental_attribute_counts():
+    """Test get_num_attributes and get_num_components_with_attributes."""
+    bus = SimpleBus(name="bus1", voltage=1.1)
+    bus2 = SimpleBus(name="bus2", voltage=1.1)
+    gen = SimpleGenerator(name="gen1", active_power=1.0, rating=1.0, bus=bus, available=True)
+    attr1 = GeographicInfo.example()
+    system = SimpleSystem(auto_add_composed_components=True)
+    system.add_component(gen)
+    system.add_component(bus2)
+    system.add_supplemental_attribute(bus, attr1)
+    system.add_supplemental_attribute(bus2, attr1)
+
+    assert system.get_num_supplemental_attributes() == 1
+    assert system.get_num_components_with_supplemental_attributes() == 2
+
+
+def test_supplemental_attribute_by_id():
+    """Test get_supplemental_attribute_by_id."""
+    bus = SimpleBus(name="test-bus", voltage=1.1)
+    gen = SimpleGenerator(name="gen1", active_power=1.0, rating=1.0, bus=bus, available=True)
+    attr1 = GeographicInfo.example()
+    system = SimpleSystem(auto_add_composed_components=True)
+    system.add_component(gen)
+    system.add_supplemental_attribute(bus, attr1)
+    assert attr1.id is not None
+    assert system.get_supplemental_attribute_by_id(attr1.id) is attr1
+
+
+def test_add_duplicate_supplemental_attribute_association_raises():
+    """A second add of the same (component, attribute) pair raises ISAlreadyAttached."""
+    bus = SimpleBus(name="test-bus", voltage=1.1)
+    gen = SimpleGenerator(name="gen1", active_power=1.0, rating=1.0, bus=bus, available=True)
+    attr1 = GeographicInfo.example()
+    system = SimpleSystem(auto_add_composed_components=True)
+    system.add_component(gen)
+    system.add_supplemental_attribute(bus, attr1)
+
+    with pytest.raises(ISAlreadyAttached):
+        system.add_supplemental_attribute(bus, attr1)
+
+    # The failed add must not have disturbed the stored state.
+    assert system.get_num_supplemental_attributes() == 1
+    assert len(system.get_supplemental_attributes_with_component(bus)) == 1
+    assert system.get_supplemental_attribute_by_id(attr1.id) is attr1
+
+
+def test_metadata_context_restores_removed_associations():
+    """A failure inside open_metadata_store restores association rows that were removed."""
+    bus = SimpleBus(name="test-bus", voltage=1.1)
+    gen = SimpleGenerator(name="gen1", active_power=1.0, rating=1.0, bus=bus, available=True)
+    attr1 = GeographicInfo.example()
+    attr2 = Attribute(energy=Energy(10.0, "kWh"))
+    system = SimpleSystem(auto_add_composed_components=True)
+    system.add_component(gen)
+    system.add_supplemental_attribute(bus, attr1)
+    system.add_supplemental_attribute(gen, attr2)
+
+    store = system._supplemental_attr_mgr._store
+    before = store.list_supplemental_attribute_associations()
+    assert len(before) == 2
+
+    with pytest.raises(RuntimeError):
+        with system.open_metadata_store():
+            system.remove_supplemental_attribute(attr1)
+            system.remove_supplemental_attribute(attr2)
+            assert not store.list_supplemental_attribute_associations()
+            msg = "boom"
+            raise RuntimeError(msg)
+
+    assert set(store.list_supplemental_attribute_associations()) == set(before)
+    assert system.get_num_supplemental_attributes() == 2
+    assert system.get_supplemental_attribute_by_id(attr1.id) is attr1
+    assert system.get_supplemental_attributes_with_component(bus) == [attr1]
+    assert system.get_supplemental_attributes_with_component(gen) == [attr2]
+
+
+def test_supplemental_attribute_associations_survive_round_trip(tmp_path):
+    """Association rows persist in the store's SQLite catalog across save/load."""
+    bus = SimpleBus(name="test-bus", voltage=1.1)
+    gen = SimpleGenerator(name="gen1", active_power=1.0, rating=1.0, bus=bus, available=True)
+    attr1 = GeographicInfo.example()
+    attr2 = Attribute(energy=Energy(10.0, "kWh"))
+    system = SimpleSystem(auto_add_composed_components=True)
+    system.add_component(gen)
+    system.add_supplemental_attribute(bus, attr1)
+    system.add_supplemental_attribute(gen, attr1)
+    system.add_supplemental_attribute(gen, attr2)
+
+    save_dir = tmp_path / "test_system"
+    system.save(save_dir)
+    system2 = SimpleSystem.from_json(save_dir / "system.json")
+
+    bus2 = system2.get_component(SimpleBus, "test-bus")
+    gen2 = system2.get_component(SimpleGenerator, "gen1")
+    assert system2.get_num_supplemental_attributes() == 2
+    assert system2.get_num_components_with_supplemental_attributes() == 2
+    assert [x.id for x in system2.get_supplemental_attributes_with_component(bus2)] == [attr1.id]
+    assert sorted(
+        x.id for x in system2.get_supplemental_attributes_with_component(gen2)
+    ) == sorted([attr1.id, attr2.id])
+    attr1_in_system2 = system2.get_supplemental_attribute_by_id(attr1.id)
+    assert sorted(
+        x.id for x in system2.get_components_with_supplemental_attribute(attr1_in_system2)
+    ) == sorted([bus.id, gen.id])
+
+
+def test_components_and_attributes_share_one_id_stream(tmp_path):
+    """Components and supplemental attributes must never be assigned the same ID."""
+    system = SimpleSystem(auto_add_composed_components=True)
+    bus = SimpleBus(name="test-bus", voltage=1.1)
+    gen = SimpleGenerator(name="gen1", active_power=1.0, rating=1.0, bus=bus, available=True)
+    system.add_component(gen)
+    attr1 = GeographicInfo.example()
+    attr2 = GeographicInfo.example()
+    attr2.geo_json["geometry"]["coordinates"] = [1.0, 2.0]
+    system.add_supplemental_attribute(bus, attr1)
+    system.add_supplemental_attribute(bus, attr2)
+
+    ids = [bus.id, gen.id, attr1.id, attr2.id]
+    assert len(set(ids)) == len(ids)
+
+    # The stream must survive a round trip: a new component cannot reuse a stored ID.
+    save_dir = tmp_path / "test_system"
+    system.save(save_dir)
+    system2 = SimpleSystem.from_json(save_dir / "system.json")
+    new_bus = SimpleBus(name="new-bus", voltage=1.2)
+    system2.add_component(new_bus)
+    assert new_bus.id not in ids
+
+
+def test_remove_component_detaches_supplemental_attributes():
+    """A removed component must not leave association rows pointing at it."""
+    bus = SimpleBus(name="test-bus", voltage=1.1)
+    gen = SimpleGenerator(name="gen1", active_power=1.0, rating=1.0, bus=bus, available=True)
+    attr = GeographicInfo.example()
+    system = SimpleSystem(auto_add_composed_components=True)
+    system.add_component(gen)
+    system.add_supplemental_attribute(gen, attr)
+    ts = SingleTimeSeries.from_array(
+        [1.0, 2.0, 3.0], "active_power", datetime(2030, 1, 1), timedelta(hours=1)
+    )
+    system.add_time_series(ts, attr)
+
+    system.remove_component(gen, cascade_down=False)
+
+    assert system.get_num_supplemental_attributes() == 0
+    assert system.get_num_components_with_supplemental_attributes() == 0
+    with pytest.raises(ISNotStored):
+        system.get_supplemental_attribute_by_id(attr.id)
+    # The attribute went with the component, so its time series must go too.
+    assert system._time_series_mgr.get_time_series_counts().reference_count == 0
+
+
+def test_remove_component_keeps_attribute_shared_with_another_component():
+    bus = SimpleBus(name="test-bus", voltage=1.1)
+    gen1 = SimpleGenerator(name="gen1", active_power=1.0, rating=1.0, bus=bus, available=True)
+    gen2 = SimpleGenerator(name="gen2", active_power=1.0, rating=1.0, bus=bus, available=True)
+    attr = GeographicInfo.example()
+    system = SimpleSystem(auto_add_composed_components=True)
+    system.add_components(gen1, gen2)
+    system.add_supplemental_attribute(gen1, attr)
+    system.add_supplemental_attribute(gen2, attr)
+
+    system.remove_component(gen1, cascade_down=False)
+
+    assert system.get_supplemental_attribute_by_id(attr.id) is attr
+    assert system.get_supplemental_attributes_with_component(gen2) == [attr]
+    assert system.get_num_components_with_supplemental_attributes() == 1
+
+
+def test_removing_last_association_removes_the_attributes_time_series():
+    bus = SimpleBus(name="test-bus", voltage=1.1)
+    gen = SimpleGenerator(name="gen1", active_power=1.0, rating=1.0, bus=bus, available=True)
+    attr = GeographicInfo.example()
+    system = SimpleSystem(auto_add_composed_components=True)
+    system.add_component(gen)
+    system.add_supplemental_attribute(gen, attr)
+    ts = SingleTimeSeries.from_array(
+        [1.0, 2.0, 3.0], "active_power", datetime(2030, 1, 1), timedelta(hours=1)
+    )
+    system.add_time_series(ts, attr)
+    assert system._time_series_mgr.get_time_series_counts().reference_count == 1
+
+    system.remove_supplemental_attribute_from_component(gen, attr)
+
+    assert system.get_num_supplemental_attributes() == 0
+    assert system._time_series_mgr.get_time_series_counts().reference_count == 0
+
+
+def test_cascaded_child_removal_detaches_its_attributes_and_time_series():
+    """A component removed by cascade_down gets the same cleanup as a direct removal."""
+    bus = SimpleBus(name="test-bus", voltage=1.1)
+    gen = SimpleGenerator(name="gen1", active_power=1.0, rating=1.0, bus=bus, available=True)
+    attr = GeographicInfo.example()
+    system = SimpleSystem(auto_add_composed_components=True)
+    system.add_component(gen)
+    system.add_supplemental_attribute(bus, attr)
+    ts = SingleTimeSeries.from_array(
+        [1.0, 2.0, 3.0], "active_power", datetime(2030, 1, 1), timedelta(hours=1)
+    )
+    system.add_time_series(ts, bus)
+
+    # No other component holds the bus, so removing the generator cascades to it.
+    system.remove_component(gen, cascade_down=True)
+
+    assert not list(system.get_components(SimpleBus))
+    assert system.get_num_supplemental_attributes() == 0
+    assert system._time_series_mgr.get_time_series_counts().reference_count == 0
+
+
+def test_refused_removal_leaves_attributes_and_time_series_attached():
+    """A component that cannot be removed must not be stripped on the way to the refusal."""
+    bus = SimpleBus(name="test-bus", voltage=1.1)
+    gen = SimpleGenerator(name="gen1", active_power=1.0, rating=1.0, bus=bus, available=True)
+    attr = GeographicInfo.example()
+    system = SimpleSystem(auto_add_composed_components=True)
+    system.add_component(gen)
+    system.add_supplemental_attribute(bus, attr)
+    ts = SingleTimeSeries.from_array(
+        [1.0, 2.0, 3.0], "active_power", datetime(2030, 1, 1), timedelta(hours=1)
+    )
+    system.add_time_series(ts, bus)
+
+    # The generator still holds the bus, so force=False refuses the removal.
+    with pytest.raises(ISOperationNotAllowed):
+        system.remove_component(bus)
+
+    assert system.get_component(SimpleBus, "test-bus") is bus
+    assert system.get_supplemental_attributes_with_component(bus) == [attr]
+    assert system._time_series_mgr.get_time_series_counts().reference_count == 1

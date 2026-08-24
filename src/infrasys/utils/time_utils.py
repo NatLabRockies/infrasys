@@ -1,8 +1,11 @@
 import re
 from collections import OrderedDict
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone, tzinfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dateutil.relativedelta import relativedelta
+
+from infrasys.exceptions import ISInvalidParameter
 
 REGEX_DURATIONS = OrderedDict(
     {
@@ -189,3 +192,100 @@ def str_timedelta_to_iso_8601(delta_str: str) -> str:
     delta = timedelta(days=days, hours=hours, minutes=minutes, seconds=seconds)
 
     return to_iso_8601(delta)
+
+
+def is_zoneless(value: datetime) -> bool:
+    """Return True if ``value`` is a wall clock rather than an instant.
+
+    A naive datetime names no instant, and neither does an aware one whose ``tzinfo``
+    declines to place it. The store partitions series on exactly this predicate, so
+    infrasys asks the same question the same way.
+    """
+    return value.utcoffset() is None
+
+
+def tzinfo_from_reference(reference: str | None) -> tzinfo | None:
+    """Return the ``tzinfo`` that spells a stored ``time_reference``, or None if zoneless.
+
+    ``reference`` is the store's spelling of how a series' timestamps were written:
+    ``"utc"``, ``"zoneless"``, a fixed offset such as ``"-07:00"``, or an IANA zone name
+    such as ``"America/Denver"``. ``None`` means the series left the reference unset,
+    which is not a claim of a wall clock: it is read as UTC, matching the store.
+
+    Raises
+    ------
+    ISInvalidParameter
+        Raised if ``reference`` is a zone name this interpreter's tz database does not
+        have. The instants are intact either way; only the label cannot be resolved here.
+    """
+    if reference is None or reference == "utc":
+        return timezone.utc
+    if reference == "zoneless":
+        return None
+    match = re.match(r"^([+-])(\d{2}):(\d{2})$", reference)
+    if match:
+        sign = -1 if match.group(1) == "-" else 1
+        minutes = sign * (int(match.group(2)) * 60 + int(match.group(3)))
+        return timezone(timedelta(minutes=minutes))
+    try:
+        return ZoneInfo(reference)
+    except (ZoneInfoNotFoundError, ValueError) as exc:
+        msg = (
+            f"time_reference names the IANA zone {reference!r}, which this interpreter's "
+            "tz database does not have; the instants are stored either way, but rendering "
+            "them in that zone needs a database that knows it (try installing or updating "
+            "the tzdata package)"
+        )
+        raise ISInvalidParameter(msg) from exc
+
+
+def from_catalog_timestamp(text: str, reference: str | None) -> datetime:
+    """Parse one catalog timestamp back into the spelling its series was written in.
+
+    The store renders a catalog timestamp honestly: a zoneless row's timestamps are wall
+    clocks with no offset, and everything that names an instant is RFC 3339 UTC. This
+    turns that text plus the row's ``time_reference`` back into the datetime the caller
+    handed in.
+    """
+    value = datetime.fromisoformat(text)
+    zone = tzinfo_from_reference(reference)
+    if zone is None:
+        # A wall clock. The text carries no offset, so it parses naive already; strip
+        # anything an unexpected spelling added rather than asserting an instant.
+        return value.replace(tzinfo=None)
+    if value.tzinfo is None:
+        # Defensive: an instant-bearing row whose text lost its offset is read as UTC,
+        # which is the frame the store writes it in.
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(zone)
+
+
+def as_instant(value: datetime) -> datetime:
+    """Return ``value`` in the frame its arithmetic is well defined in.
+
+    An aware value becomes UTC; a wall clock is returned unchanged, because it has no
+    other frame. This exists because Python's ``datetime`` arithmetic is *wall clock*
+    whenever both operands share a ``tzinfo`` object: subtracting two
+    ``ZoneInfo("America/Denver")`` timestamps that straddle a transition is off by the
+    offset change, and ordering them can disagree with the order of the instants they
+    name. Converting both sides first makes the comparison and the difference say what
+    the store means by them.
+    """
+    return value if value.utcoffset() is None else value.astimezone(timezone.utc)
+
+
+def advance(instant: datetime, delta: timedelta) -> datetime:
+    """Return ``instant`` moved forward by ``delta``, keeping the spelling it arrived in.
+
+    A time series grid is stepped in *instants*: ``resolution`` is a fixed duration, so
+    the store's own arithmetic runs on UTC. Python's ``datetime`` addition is wall-clock
+    arithmetic even for an aware value --- it carries the ``tzinfo`` across unchanged and
+    lets the offset be recomputed --- so adding a day to a ``ZoneInfo("America/Denver")``
+    timestamp across a transition moves the instant by 23 or 25 hours, not 24. Doing the
+    addition in UTC and re-spelling the result is what keeps infrasys's bounds on the
+    same grid the store slices.
+    """
+    if instant.utcoffset() is None:
+        return instant + delta
+    zone = instant.tzinfo
+    return (instant.astimezone(timezone.utc) + delta).astimezone(zone)

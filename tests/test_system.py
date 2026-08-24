@@ -4,10 +4,9 @@ from uuid import uuid4
 
 import numpy as np
 import pytest
+from pydantic import ValidationError
 
-from infrasys import TIME_SERIES_ASSOCIATIONS_TABLE, Component, Location, SingleTimeSeries
-from infrasys.arrow_storage import ArrowTimeSeriesStorage
-from infrasys.chronify_time_series_storage import ChronifyTimeSeriesStorage
+from infrasys import Component, Location, SingleTimeSeries
 from infrasys.exceptions import (
     ISAlreadyAttached,
     ISConflictingArguments,
@@ -15,7 +14,11 @@ from infrasys.exceptions import (
     ISOperationNotAllowed,
 )
 from infrasys.quantities import ActivePower
-from infrasys.time_series_models import TimeSeriesKey, TimeSeriesStorageType
+from infrasys.time_series_models import (
+    Deterministic,
+    NonSequentialTimeSeries,
+    TimeSeriesStorageType,
+)
 from infrasys.utils.time_utils import to_iso_8601
 
 from .models.simple_system import (
@@ -93,9 +96,9 @@ def test_get_components(simple_system: SimpleSystem):
     assert len(list(system.list_components_by_name(RenewableGenerator, "renewable-gen"))) == 5
 
     generator = all_components[0]
-    assert system.get_component_by_uuid(generator.uuid) is generator
+    assert system.get_component_by_id(generator.id) is generator
     with pytest.raises(ISNotStored):
-        system.get_component_by_uuid(uuid4())
+        system.get_component_by_id(999999)
 
     stored_types = sorted((x.__name__ for x in system.get_component_types()))
     assert stored_types == [
@@ -184,7 +187,7 @@ def test_component_associations(tmp_path):
     check_attached_components(system, SimpleGenerator, SimpleBus)
     check_attached_components(system, GeneratorBase, Component)
     check_attached_components(system, Component, Component)
-    system._component_mgr._associations.clear()
+    system._component_mgr.clear_associations()
     for component in system.iter_all_components():
         assert not system.list_parent_components(component)
 
@@ -257,11 +260,7 @@ def test_single_time_series():
     assert not system.has_time_series(gen2, name=variable_name)
 
 
-TS_STORAGE_OPTIONS = (
-    TimeSeriesStorageType.ARROW,
-    TimeSeriesStorageType.CHRONIFY,
-    TimeSeriesStorageType.MEMORY,
-)
+TS_STORAGE_OPTIONS = (TimeSeriesStorageType.TIME_SERIES_STORE,)
 
 
 @pytest.mark.parametrize(
@@ -349,7 +348,7 @@ def test_time_series_retrieval(storage_type, use_quantity):
 
 
 @pytest.mark.parametrize("storage_type", TS_STORAGE_OPTIONS)
-def test_open_time_series_store(storage_type: TimeSeriesStorageType):
+def test_time_series_transaction(storage_type: TimeSeriesStorageType):
     system = SimpleSystem(time_series_storage_type=storage_type)
     bus = SimpleBus(name="test-bus", voltage=1.1)
     gen = SimpleGenerator(name="gen", active_power=1.0, rating=1.0, bus=bus, available=True)
@@ -359,14 +358,14 @@ def test_open_time_series_store(storage_type: TimeSeriesStorageType):
     initial_time = datetime(year=2020, month=1, day=1)
     timestamps = [initial_time + timedelta(hours=i) for i in range(length)]
     time_series_arrays: list[SingleTimeSeries] = []
-    with system.open_time_series_store() as conn:
+    with system.time_series_transaction() as txn:
         for i in range(5):
             ts = SingleTimeSeries.from_time_array(np.random.rand(length), f"ts{i}", timestamps)
             system.add_time_series(ts, gen)
             time_series_arrays.append(ts)
-    with system.open_time_series_store() as conn:
+    with system.time_series_transaction() as txn:
         for i in range(5):
-            ts = system.get_time_series(gen, name=f"ts{i}", context=conn)
+            ts = txn.get_time_series(gen, name=f"ts{i}")
             assert np.array_equal(
                 system.get_time_series(gen, f"ts{i}").data, time_series_arrays[i].data
             )
@@ -380,14 +379,12 @@ def test_time_series_removal():
     system.add_components(bus, gen1, gen2)
 
     variable_names = ["active_power", "reactive_power"]
-    uuids = []
     for variable_name in variable_names:
         length = 8784
         data = range(length)
         start = datetime(year=2020, month=1, day=1)
         resolution = timedelta(hours=1)
         ts = SingleTimeSeries.from_array(data, variable_name, start, resolution)
-        uuids.append(ts.uuid)
         for gen in (gen1, gen2):
             system.add_time_series(ts, gen, scenario="high", model_year="2030")
             system.add_time_series(ts, gen, scenario="high", model_year="2035")
@@ -516,7 +513,7 @@ def test_copy_component(simple_system_with_time_series: SimpleSystem):
     gen1 = system.get_component(SimpleGenerator, "test-gen")
 
     gen2 = system.copy_component(gen1)
-    assert gen2.uuid != gen1.uuid
+    assert gen2.id is None
     assert gen2.name == gen1.name
     assert gen2.bus is gen1.bus
 
@@ -534,8 +531,8 @@ def test_deepcopy_component(simple_system_with_time_series: SimpleSystem):
     system.add_component(subsystem)
     gen2 = system.deepcopy_component(gen1)
     assert gen2.name == gen1.name
-    assert gen2.uuid == gen1.uuid
-    assert gen2.bus.uuid == gen1.bus.uuid
+    assert gen2.id == gen1.id
+    assert gen2.bus.id == gen1.bus.id
     assert gen2.bus is not gen1.bus
 
 
@@ -565,7 +562,7 @@ def test_remove_component(inputs):
     assert not system.has_time_series(gen1)
     assert system.has_time_series(gen2)
 
-    system.remove_component_by_uuid(gen2.uuid, cascade_down=cascade_down)
+    system.remove_component_by_id(gen2.id, cascade_down=cascade_down)
     assert system.has_component(bus) != cascade_down
     assert not system.has_time_series(gen2)
 
@@ -592,7 +589,8 @@ def test_system_to_dict():
 
     component_dict: list[dict] = list(system.to_records(SimpleGenerator))
     assert len(component_dict) == 3  # 3 generators
-    assert component_dict[0].get("uuid") is not None
+    assert component_dict[0].get("id") is not None
+    assert component_dict[0].get("uuid") is None
     assert component_dict[0]["bus"] == gen1.bus.label
 
     exclude_first_level_fields = {"name": True, "available": True}
@@ -616,90 +614,24 @@ def test_system_to_dict():
     assert len(component_dicts) == 3  # 3 generators
 
 
-def test_time_series_metadata_sql():
-    system = SimpleSystem(name="test-system", auto_add_composed_components=True)
-    gen1 = SimpleGenerator.example()
-    system.add_components(gen1)
-    gen2 = system.copy_component(gen1, name="gen2", attach=True)
-    variable_name = "active_power"
-    length = 8784
-    data = range(length)
-    start = datetime(year=2020, month=1, day=1)
-    resolution = timedelta(hours=1)
-    ts1 = SingleTimeSeries.from_array(data, variable_name, start, resolution)
-    ts2 = SingleTimeSeries.from_array(data, variable_name, start, resolution)
-    system.add_time_series(ts1, gen1)
-    system.add_time_series(ts2, gen2)
-    rows = system.time_series.metadata_store.sql(
-        f"""
-        SELECT owner_type, time_series_type, owner_uuid, time_series_uuid
-        FROM {TIME_SERIES_ASSOCIATIONS_TABLE}
-        WHERE owner_uuid = '{gen1.uuid}'
-    """
-    )
-    assert len(rows) == 1
-    row = rows[0]
-    assert row[0] == SimpleGenerator.__name__
-    assert row[1] == SingleTimeSeries.__name__
-    assert row[2] == str(gen1.uuid)
-    assert row[3] == str(ts1.uuid)
-
-
-def test_time_series_metadata_list_rows():
-    system = SimpleSystem(name="test-system", auto_add_composed_components=True)
-    gen1 = SimpleGenerator.example()
-    system.add_components(gen1)
-    gen2 = system.copy_component(gen1, name="gen2", attach=True)
-    variable_name = "active_power"
-    length = 8784
-    data = range(length)
-    start = datetime(year=2020, month=1, day=1)
-    resolution = timedelta(hours=1)
-    ts1 = SingleTimeSeries.from_array(data, variable_name, start, resolution)
-    ts2 = SingleTimeSeries.from_array(data, variable_name, start, resolution)
-    system.add_time_series(ts1, gen1)
-    system.add_time_series(ts2, gen2)
-    columns = [
-        "owner_type",
-        "time_series_type",
-        "owner_uuid",
-        "time_series_uuid",
-    ]
-    rows = system.time_series.metadata_store.list_rows(
-        gen2,
-        name=variable_name,
-        time_series_type=SingleTimeSeries.__name__,
-        columns=columns,
-    )
-    assert len(rows) == 1
-    row = rows[0]
-    assert row[0] == SimpleGenerator.__name__
-    assert row[1] == SingleTimeSeries.__name__
-    assert row[2] == str(gen2.uuid)
-    assert row[3] == str(ts2.uuid)
-
-
 def test_system_counts():
     system = SimpleSystem(name="test-system", auto_add_composed_components=True)
     gen1 = SimpleGenerator.example()
     gen2 = SimpleGenerator.example()
     system.add_components(gen1, gen2)
     variable_name = "active_power"
-    data = range(10)
 
     def add_time_series(iteration, initial_time, resolution):
         for i in range(5):
+            # Distinct values per (iteration, i) so each is a distinct stored array;
+            # ts1 and ts2 share the same values, so they deduplicate to one array.
+            data = np.arange(10, dtype=float) + (iteration * 100 + i)
+            name = f"{variable_name}_{iteration}_{i}"
             ts1 = SingleTimeSeries.from_array(
-                data,
-                f"{variable_name}_{iteration}_{i}",
-                initial_time + resolution * i,
-                resolution,
+                data, name, initial_time + resolution * i, resolution
             )
             ts2 = SingleTimeSeries.from_array(
-                data,
-                f"{variable_name}_{iteration}_{i}",
-                initial_time + resolution * i,
-                resolution,
+                data, name, initial_time + resolution * i, resolution
             )
             system.add_time_series(ts1, gen1, gen2)
             system.add_time_series(ts2, gen1.bus)
@@ -712,8 +644,11 @@ def test_system_counts():
     components_by_type = system._components.get_num_components_by_type()
     assert components_by_type[SimpleGenerator] == 2
     assert components_by_type[SimpleBus] == 2
-    ts_counts = system.time_series.metadata_store.get_time_series_counts()
-    assert ts_counts.time_series_count == 2 * 10
+    ts_counts = system.time_series.get_time_series_counts()
+    # 2 iterations x 5 distinct value-arrays each = 10 unique stored arrays.
+    assert ts_counts.time_series_count == 10
+    # Each array is referenced by gen1, gen2 (via ts1) and gen1.bus (via ts2) = 3 references.
+    assert ts_counts.reference_count == 30
     assert (
         ts_counts.time_series_type_count[
             (
@@ -744,7 +679,7 @@ def test_system_printing(simple_system_with_time_series):
 
 def test_system_show_components(simple_system_with_time_series):
     simple_system_with_time_series.show_components(SimpleBus)
-    simple_system_with_time_series.show_components(SimpleBus, show_uuid=True)
+    simple_system_with_time_series.show_components(SimpleBus, show_id=True)
     simple_system_with_time_series.show_components(SimpleBus, show_time_series=True)
     simple_system_with_time_series.show_components(SimpleBus, show_supplemental=True)
 
@@ -843,64 +778,13 @@ def test_many_supplemental_attributes(simple_system):
     assert simple_system.get_num_supplemental_attributes() == 50
 
 
-def test_convert_chronify_to_arrow_in_deserialize(tmp_path):
-    system = SimpleSystem(time_series_storage_type=TimeSeriesStorageType.CHRONIFY)
-    assert isinstance(system.time_series.storage, ChronifyTimeSeriesStorage)
-    assert system.time_series.storage.get_database_url()
-    assert system.time_series.storage.get_engine_name() == "duckdb"
-    bus = SimpleBus(name="test-bus", voltage=1.1)
-    gen = SimpleGenerator(name="gen", active_power=1.0, rating=1.0, bus=bus, available=True)
-    system.add_components(bus, gen)
-    length = 10
-    initial_time = datetime(year=2020, month=1, day=1)
-    timestamps = [initial_time + timedelta(hours=i) for i in range(length)]
-    ts = SingleTimeSeries.from_time_array(np.random.rand(length), "test_ts", timestamps)
-    system.add_time_series(ts, gen)
-    filename = tmp_path / "system.json"
-    system.to_json(filename)
-    system2 = SimpleSystem.from_json(
-        filename, time_series_storage_type=TimeSeriesStorageType.ARROW
-    )
-    assert isinstance(system2.time_series.storage, ArrowTimeSeriesStorage)
-    gen2 = system2.get_component(SimpleGenerator, "gen")
-    ts2 = system2.get_time_series(gen2, "test_ts")
-    assert np.array_equal(ts.data, ts2.data)
-
-
-def test_chronfiy_storage():
-    system = SimpleSystem(time_series_storage_type=TimeSeriesStorageType.CHRONIFY)
-    assert isinstance(system.time_series.storage, ChronifyTimeSeriesStorage)
-    bus = SimpleBus(name="test-bus", voltage=1.1)
-    gen = SimpleGenerator(name="gen", active_power=1.0, rating=1.0, bus=bus, available=True)
-    system.add_components(bus, gen)
-    time_series: list[SingleTimeSeries] = []
-    for i in range(2):
-        for initial_time, resolution, length in (
-            (datetime(year=2020, month=1, day=1), timedelta(hours=1), 10),
-            (datetime(year=2020, month=2, day=1), timedelta(minutes=5), 15),
-        ):
-            data = np.random.rand(length)
-            name = f"test_ts_{length}_{i}"
-            ts = SingleTimeSeries.from_array(data, name, initial_time, resolution)
-            system.add_time_series(ts, gen)
-            time_series.append(ts)
-
-    for expected_ts in time_series:
-        actual_ts = system.get_time_series(
-            gen, time_series_type=SingleTimeSeries, name=expected_ts.name
-        )
-        assert np.array_equal(expected_ts.data, actual_ts.data)
-
-
 def test_bulk_add_time_series():
-    system = SimpleSystem(time_series_storage_type=TimeSeriesStorageType.CHRONIFY)
-    assert isinstance(system.time_series.storage, ChronifyTimeSeriesStorage)
+    system = SimpleSystem()
     bus = SimpleBus(name="test-bus", voltage=1.1)
     gen = SimpleGenerator(name="gen", active_power=1.0, rating=1.0, bus=bus, available=True)
     system.add_components(bus, gen)
     time_series: list[SingleTimeSeries] = []
-    keys: list[TimeSeriesKey] = []
-    with system.open_time_series_store() as conn:
+    with system.time_series_transaction() as txn:
         for i in range(2):
             for initial_time, resolution, length in (
                 (datetime(year=2020, month=1, day=1), timedelta(hours=1), 10),
@@ -909,20 +793,13 @@ def test_bulk_add_time_series():
                 data = np.random.rand(length)
                 name = f"test_ts_{length}_{i}"
                 ts = SingleTimeSeries.from_array(data, name, initial_time, resolution)
-                key = system.add_time_series(ts, gen, context=conn)
-                keys.append(key)
+                txn.add_time_series(ts, gen)
                 time_series.append(ts)
 
-        for key in keys:
-            system.time_series.storage.check_timestamps(key, context=conn.data_context)
-
-    with system.open_time_series_store() as conn:
+    with system.time_series_transaction() as txn:
         for expected_ts in time_series:
-            actual_ts = system.get_time_series(
-                gen,
-                time_series_type=SingleTimeSeries,
-                name=expected_ts.name,
-                context=conn,
+            actual_ts = txn.get_time_series(
+                gen, time_series_type=SingleTimeSeries, name=expected_ts.name
             )
             assert np.array_equal(expected_ts.data, actual_ts.data)
 
@@ -935,14 +812,470 @@ def test_bulk_add_time_series_with_rollback(storage_type: TimeSeriesStorageType)
     system.add_components(bus, gen)
     ts_name = "test_ts"
     with pytest.raises(ISAlreadyAttached):
-        with system.open_time_series_store() as conn:
+        with system.time_series_transaction() as txn:
             initial_time = datetime(year=2020, month=1, day=1)
             resolution = timedelta(hours=1)
             length = 10
             data = np.random.rand(length)
             ts = SingleTimeSeries.from_array(data, ts_name, initial_time, resolution)
-            system.add_time_series(ts, gen, context=conn)
-            assert system.has_time_series(gen, name=ts_name)
-            system.add_time_series(ts, gen, context=conn)
+            txn.add_time_series(ts, gen)
+            # Staged additions are visible through the context that staged them.
+            assert txn.has_time_series(gen, name=ts_name)
+            txn.add_time_series(ts, gen)
 
     assert not system.has_time_series(gen, name=ts_name)
+
+
+def test_bulk_add_deterministic_time_series():
+    system = SimpleSystem()
+    bus = SimpleBus(name="test-bus", voltage=1.1)
+    gen = SimpleGenerator(name="gen", active_power=1.0, rating=1.0, bus=bus, available=True)
+    system.add_components(bus, gen)
+
+    initial_time = datetime(year=2020, month=9, day=1)
+    resolution = timedelta(hours=1)
+    horizon = timedelta(hours=8)
+    interval = timedelta(hours=1)
+    window_count = 3
+
+    time_series: list[Deterministic] = []
+    with system.time_series_transaction() as txn:
+        for i in range(5):
+            data = np.random.rand(window_count, 8)
+            ts = Deterministic.from_array(
+                data,
+                f"forecast_{i}",
+                initial_time,
+                resolution,
+                horizon,
+                interval,
+                window_count,
+            )
+            txn.add_time_series(ts, gen)
+            time_series.append(ts)
+
+    with system.time_series_transaction() as txn:
+        for expected_ts in time_series:
+            actual_ts = txn.get_time_series(
+                gen, time_series_type=Deterministic, name=expected_ts.name
+            )
+            assert isinstance(actual_ts, Deterministic)
+            np.testing.assert_array_equal(actual_ts.data_array, expected_ts.data_array)
+            assert actual_ts.horizon == horizon
+            assert actual_ts.interval == interval
+            assert actual_ts.window_count == window_count
+
+
+@pytest.mark.parametrize("storage_type", TS_STORAGE_OPTIONS)
+def test_bulk_add_deterministic_time_series_with_rollback(storage_type: TimeSeriesStorageType):
+    system = SimpleSystem(time_series_storage_type=storage_type)
+    bus = SimpleBus(name="test-bus", voltage=1.1)
+    gen = SimpleGenerator(name="gen", active_power=1.0, rating=1.0, bus=bus, available=True)
+    system.add_components(bus, gen)
+    ts_name = "forecast"
+    with pytest.raises(ISAlreadyAttached):
+        with system.time_series_transaction() as txn:
+            ts = Deterministic.from_array(
+                np.random.rand(3, 8),
+                ts_name,
+                datetime(year=2020, month=9, day=1),
+                timedelta(hours=1),
+                timedelta(hours=8),
+                timedelta(hours=1),
+                3,
+            )
+            txn.add_time_series(ts, gen)
+            assert txn.has_time_series(gen, name=ts_name, time_series_type=Deterministic)
+            txn.add_time_series(ts, gen)
+
+    assert not system.has_time_series(gen, name=ts_name, time_series_type=Deterministic)
+
+
+def test_bulk_add_nonsequential_time_series():
+    system = SimpleSystem()
+    bus = SimpleBus(name="test-bus", voltage=1.1)
+    gen = SimpleGenerator(name="gen", active_power=1.0, rating=1.0, bus=bus, available=True)
+    system.add_components(bus, gen)
+
+    length = 4
+    timestamps = np.array(
+        [datetime(year=2020, month=1, day=1) + timedelta(hours=4 * i) for i in range(length)],
+        dtype=object,
+    )
+
+    time_series: list[NonSequentialTimeSeries] = []
+    with system.time_series_transaction() as txn:
+        for i in range(5):
+            data = np.random.rand(length)
+            ts = NonSequentialTimeSeries.from_array(data, timestamps, f"events_{i}")
+            txn.add_time_series(ts, gen)
+            time_series.append(ts)
+
+    with system.time_series_transaction() as txn:
+        for expected_ts in time_series:
+            actual_ts = txn.get_time_series(
+                gen, time_series_type=NonSequentialTimeSeries, name=expected_ts.name
+            )
+            assert isinstance(actual_ts, NonSequentialTimeSeries)
+            np.testing.assert_array_equal(actual_ts.data, expected_ts.data)
+            np.testing.assert_array_equal(actual_ts.timestamps, expected_ts.timestamps)
+
+
+@pytest.mark.parametrize("storage_type", TS_STORAGE_OPTIONS)
+def test_bulk_add_nonsequential_time_series_with_rollback(storage_type: TimeSeriesStorageType):
+    system = SimpleSystem(time_series_storage_type=storage_type)
+    bus = SimpleBus(name="test-bus", voltage=1.1)
+    gen = SimpleGenerator(name="gen", active_power=1.0, rating=1.0, bus=bus, available=True)
+    system.add_components(bus, gen)
+    ts_name = "events"
+    timestamps = np.array(
+        [datetime(year=2020, month=1, day=1) + timedelta(hours=4 * i) for i in range(4)],
+        dtype=object,
+    )
+    with pytest.raises(ISAlreadyAttached):
+        with system.time_series_transaction() as txn:
+            ts = NonSequentialTimeSeries.from_array(np.random.rand(4), timestamps, ts_name)
+            txn.add_time_series(ts, gen)
+            assert txn.has_time_series(gen, name=ts_name, time_series_type=NonSequentialTimeSeries)
+            txn.add_time_series(ts, gen)
+
+    assert not system.has_time_series(gen, name=ts_name, time_series_type=NonSequentialTimeSeries)
+
+
+def test_component_associations_clear():
+    """Test that clearing component associations works correctly."""
+    system = SimpleSystem()
+    bus = SimpleBus(name="bus1", voltage=1.1)
+    gen = SimpleGenerator(name="gen1", active_power=1.0, rating=1.0, bus=bus, available=True)
+    system.add_components(bus, gen)
+
+    # Verify associations exist — generator composes bus
+    children = system._component_mgr.list_child_component_ids(gen)
+    assert len(children) > 0
+    assert bus.id in children
+
+    # Clear all associations
+    system._component_mgr.clear_associations()
+    children = system._component_mgr.list_child_component_ids(gen)
+    assert len(children) == 0
+
+
+def test_component_associations_list_with_type_filter():
+    """Test list_child_components and list_parent_components with type filter."""
+    from infrasys.component import Component
+
+    system = SimpleSystem()
+    bus = SimpleBus(name="bus2", voltage=1.1)
+    gen = SimpleGenerator(name="gen2", active_power=1.0, rating=1.0, bus=bus, available=True)
+    system.add_components(bus, gen)
+
+    # list_child_component_ids with matching type filter — generator composes bus
+    children = system._component_mgr.list_child_component_ids(gen, component_type=Component)
+    assert len(children) >= 1
+    assert bus.id in children
+
+    # list_parent_component_ids with matching type filter — gen's parent
+    parents = system._component_mgr.list_parent_component_ids(bus, component_type=Component)
+    assert len(parents) >= 1
+    assert gen.id in parents
+
+
+def test_remove_component_cleans_up_indexes():
+    """Test that removing a component cleans up ID/UUID indexes even when other
+    components share the same type/name key (multi-component container)."""
+    system = SimpleSystem(auto_add_composed_components=True)
+
+    # Create two generators with the SAME name to exercise the list-container
+    # code path in ComponentManager.remove.
+    bus = SimpleBus(name="shared-bus", voltage=1.1)
+    gen1 = SimpleGenerator(name="gen", active_power=1.0, rating=1.0, bus=bus, available=True)
+    gen2 = SimpleGenerator(name="gen", active_power=2.0, rating=2.0, bus=bus, available=True)
+    system.add_components(bus, gen1, gen2)
+
+    assert gen1.id is not None
+    assert gen2.id is not None
+
+    # Both should be findable by ID
+    assert system.get_component_by_id(gen1.id) is not None
+    assert system.get_component_by_id(gen2.id) is not None
+
+    # Remove gen1
+    system.remove_component(gen1, cascade_down=False)
+
+    # gen1 should no longer be findable by ID
+    with pytest.raises(ISNotStored):
+        system.get_component_by_id(gen1.id)
+
+    # gen2 should still be findable
+    assert system.get_component_by_id(gen2.id) is not None
+
+    # Remove gen2
+    system.remove_component(gen2, cascade_down=False)
+    with pytest.raises(ISNotStored):
+        system.get_component_by_id(gen2.id)
+
+
+def test_rejects_foreign_component_with_colliding_system_local_id():
+    """Components from another system are not attached even if system-local IDs collide."""
+
+    def make_system() -> tuple[SimpleSystem, SimpleGenerator, SimpleBus]:
+        bus = SimpleBus(name="bus", voltage=1.1)
+        gen = SimpleGenerator(
+            name="gen",
+            active_power=1.0,
+            rating=1.0,
+            bus=bus,
+            available=True,
+        )
+        system = SimpleSystem(auto_add_composed_components=True)
+        system.add_component(gen)
+        return system, gen, bus
+
+    _, foreign_gen, foreign_bus = make_system()
+    system, local_gen, local_bus = make_system()
+
+    assert foreign_gen.id is not None
+    assert local_gen.id is not None
+    assert foreign_gen.id == local_gen.id
+    assert foreign_gen is not local_gen
+    assert foreign_bus.id == local_bus.id
+    assert foreign_bus is not local_bus
+    assert not system.has_component(foreign_gen)
+
+    with pytest.raises(ISNotStored):
+        system.remove_component(foreign_gen, cascade_down=False)
+    with pytest.raises(ISNotStored):
+        system.list_child_components(foreign_gen)
+    with pytest.raises(ISNotStored):
+        system.list_parent_components(foreign_bus)
+
+    assert system.get_component_by_id(local_gen.id) is local_gen
+    assert system.list_child_components(local_gen) == [local_bus]
+    assert system.list_parent_components(local_bus) == [local_gen]
+
+
+def test_rejects_foreign_composed_component_with_colliding_system_local_id():
+    system = SimpleSystem()
+    local_bus = SimpleBus(name="bus", voltage=1.1)
+    system.add_component(local_bus)
+
+    foreign_system = SimpleSystem()
+    foreign_bus = SimpleBus(name="bus", voltage=1.1)
+    foreign_system.add_component(foreign_bus)
+
+    assert foreign_bus.id == local_bus.id
+    assert foreign_bus is not local_bus
+
+    gen = SimpleGenerator(
+        name="gen",
+        active_power=1.0,
+        rating=1.0,
+        bus=foreign_bus,
+        available=True,
+    )
+    with pytest.raises(ISOperationNotAllowed):
+        system.add_component(gen)
+
+
+def test_get_by_label_with_integer_id():
+    """Test that get_by_label resolves integer ID-based labels."""
+    system = SimpleSystem(auto_add_composed_components=True)
+    gen = SimpleGenerator.example()
+    system.add_component(gen)
+    assert gen.id is not None
+    label = f"SimpleGenerator.{gen.id}"
+    found = system.get_component_by_label(label)
+    assert found.id == gen.id
+
+
+def test_get_by_label_integer_name_wrong_type():
+    """Test that get_by_label raises when an integer-based label matches by ID
+    but the resolved component's type does not match."""
+    system = SimpleSystem(auto_add_composed_components=True)
+    bus = SimpleBus(name="test-bus", voltage=1.1)
+    system.add_component(bus)
+    assert bus.id is not None
+    label = f"SimpleGenerator.{bus.id}"
+    with pytest.raises(ISNotStored, match="No component with"):
+        system.get_component_by_label(label)
+
+
+def test_has_component_with_none_id():
+    """Test that has_component returns False when component has no id."""
+    system = SimpleSystem()
+    gen = SimpleGenerator(
+        name="unattached",
+        active_power=1.0,
+        rating=1.0,
+        bus=SimpleBus(name="bus", voltage=1.1),
+        available=True,
+    )
+    assert gen.id is None
+    assert not system.has_component(gen)
+
+
+def test_serialize_component_reference_without_id():
+    """Test that serialize_component_reference raises ValueError when component has no id."""
+    from infrasys.component import serialize_component_reference
+
+    gen = SimpleGenerator(
+        name="unattached",
+        active_power=1.0,
+        rating=1.0,
+        bus=SimpleBus(name="bus", voltage=1.1),
+        available=True,
+    )
+    with pytest.raises(ValueError, match="must be attached before it can be serialized"):
+        serialize_component_reference(gen)
+
+
+def test_component_rejects_uuid_field():
+    """Components no longer carry a UUID; passing one must be rejected."""
+    with pytest.raises(ValidationError):
+        SimpleBus(name="bus", voltage=1.1, uuid=uuid4())
+
+
+def test_example_not_implemented():
+    """Test that Component.example raises NotImplementedError."""
+    from infrasys import Component
+
+    with pytest.raises(NotImplementedError, match="does not implement example"):
+        Component.example()
+
+
+def test_component_associations_error_no_id():
+    """Test that the association lookups raise when a component has no id."""
+    system = SimpleSystem()
+    gen = SimpleGenerator(
+        name="unattached",
+        active_power=1.0,
+        rating=1.0,
+        bus=SimpleBus(name="bus", voltage=1.1),
+        available=True,
+    )
+    mgr = system._component_mgr
+
+    with pytest.raises(ISOperationNotAllowed, match="does not have an id"):
+        mgr.list_child_component_ids(gen)
+    with pytest.raises(ISOperationNotAllowed, match="does not have an id"):
+        mgr.list_parent_component_ids(gen)
+    with pytest.raises(ISOperationNotAllowed, match="does not have an id"):
+        mgr.remove_associations(gen)
+
+
+def test_component_associations_make_association_no_id():
+    """Test that _make_association raises when either component has no id."""
+    system = SimpleSystem()
+    bus = SimpleBus(name="bus1", voltage=1.1)
+    gen = SimpleGenerator(name="gen1", active_power=1.0, rating=1.0, bus=bus, available=True)
+    mgr = system._component_mgr
+
+    with pytest.raises(ISOperationNotAllowed, match="does not have an id"):
+        mgr._make_association(gen, bus)
+
+    system.add_component(bus)
+    with pytest.raises(ISOperationNotAllowed, match="does not have an id"):
+        mgr._make_association(gen, bus)
+
+
+def test_component_add_with_preexisting_id():
+    """Test adding a component with a pre-assigned ID during deserialization."""
+    system = SimpleSystem(auto_add_composed_components=True)
+    gen = SimpleGenerator.example()
+    # Pre-assign an ID that the ID manager hasn't seen yet.
+    gen.id = 42
+    system.add_component(gen)
+    assert gen.id == 42
+    assert system.get_component_by_id(42) is gen
+
+
+def test_supplemental_attribute_get_by_id_not_found():
+    """Test that get_supplemental_attribute_by_id raises when ID is not stored."""
+    system = SimpleSystem()
+    with pytest.raises(ISNotStored, match="No supplemental attribute"):
+        system.get_supplemental_attribute_by_id(999)
+
+
+def test_component_associations_duplicate_child_references():
+    """A component may reference the same child from two fields without a duplicate error."""
+    from infrasys import Component
+
+    class TwoBusBranch(Component):
+        from_bus: SimpleBus
+        to_bus: SimpleBus
+
+    system = SimpleSystem(auto_add_composed_components=True)
+    bus = SimpleBus(name="shared-bus", voltage=1.1)
+    branch = TwoBusBranch(name="branch1", from_bus=bus, to_bus=bus)
+    system.add_component(branch)
+
+    assert system._component_mgr.list_child_component_ids(branch) == [bus.id]
+    assert system.list_parent_components(bus) == [branch]
+
+    # The rebuild path must tolerate the same duplication.
+    system.rebuild_component_associations()
+    assert system._component_mgr.list_child_component_ids(branch) == [bus.id]
+
+
+def test_component_associations_survive_round_trip(tmp_path):
+    """Component associations persist in the store's SQLite catalog across save/load."""
+    system = SimpleSystem()
+    geo = Location(x=1.0, y=2.0)
+    bus = SimpleBus(name="bus1", voltage=1.1, coordinates=geo)
+    gen = SimpleGenerator(name="gen1", active_power=1.0, rating=1.0, bus=bus, available=True)
+    system.add_components(geo, bus, gen)
+
+    save_dir = tmp_path / "test_system"
+    system.save(save_dir)
+    system2 = SimpleSystem.from_json(save_dir / "system.json")
+
+    bus2 = system2.get_component(SimpleBus, "bus1")
+    gen2 = system2.get_component(SimpleGenerator, "gen1")
+    assert system2.list_parent_components(bus2) == [gen2]
+    assert system2.list_child_components(gen2) == [bus2]
+    # The rows must not have been duplicated by deserialization.
+    assert len(system2._component_mgr._store.list_parent_child_associations()) == 2
+
+
+def test_read_only_system_refuses_removal_before_mutating(tmp_path):
+    """A refused removal must leave the system exactly as it found it.
+
+    The store writes happen after the managers update their in-memory containers, so a
+    read-only refusal that arrives late leaves the system describing a store it no longer
+    agrees with.
+    """
+    system = SimpleSystem(auto_add_composed_components=True)
+    bus = SimpleBus(name="test-bus", voltage=1.1)
+    gen = SimpleGenerator(name="gen1", active_power=1.0, rating=1.0, bus=bus, available=True)
+    system.add_component(gen)
+    filename = tmp_path / "system.json"
+    system.to_json(filename)
+    system.close()
+
+    read_only = SimpleSystem.from_json(filename, time_series_read_only=True)
+    gen2 = read_only.get_component(SimpleGenerator, "gen1")
+    bus2 = read_only.get_component(SimpleBus, "test-bus")
+    parents_before = read_only._component_mgr.list_parent_component_ids(bus2)
+
+    with pytest.raises(ISOperationNotAllowed):
+        read_only.remove_component(gen2, cascade_down=False)
+
+    assert read_only.get_component(SimpleGenerator, "gen1") is gen2
+    assert read_only._component_mgr.list_parent_component_ids(bus2) == parents_before
+
+
+def test_read_only_system_refuses_addition(tmp_path):
+    system = SimpleSystem(auto_add_composed_components=True)
+    bus = SimpleBus(name="test-bus", voltage=1.1)
+    system.add_component(bus)
+    filename = tmp_path / "system.json"
+    system.to_json(filename)
+    system.close()
+
+    read_only = SimpleSystem.from_json(filename, time_series_read_only=True)
+    bus2 = SimpleBus(name="test-bus2", voltage=1.1)
+    with pytest.raises(ISOperationNotAllowed):
+        read_only.add_component(bus2)
+
+    with pytest.raises(ISNotStored):
+        read_only.get_component(SimpleBus, "test-bus2")

@@ -1,19 +1,22 @@
 """Manages components"""
 
+import copy
 import itertools
 from collections import defaultdict
 from typing import Any, Callable, Iterable, Optional, Type
-from uuid import UUID
 from loguru import logger
+from infrastore import ParentChildAssociation, Store
 
+from infrasys.time_series_store_storage import TimeSeriesStoreStorage
 from infrasys.component import Component
-from infrasys.component_associations import ComponentAssociations
 from infrasys.exceptions import (
     ISAlreadyAttached,
     ISNotStored,
     ISOperationNotAllowed,
 )
+from infrasys.id_manager import IDManager
 from infrasys.models import make_label, get_class_and_name_from_label
+from infrasys.utils.classes import get_all_concrete_subclasses
 
 
 class ComponentManager:
@@ -22,11 +25,25 @@ class ComponentManager:
     def __init__(
         self,
         auto_add_composed_components: bool,
+        storage: TimeSeriesStoreStorage,
+        id_manager: IDManager,
     ) -> None:
         self._components: dict[Type, dict[str | None, list[Component]]] = {}
-        self._components_by_uuid: dict[UUID, Component] = {}
+        self._components_by_id: dict[int, Component] = {}
+        # Shared with the system's other managers so that every stored object draws from
+        # one stream of IDs.
+        self._id_manager = id_manager
         self._auto_add_composed_components = auto_add_composed_components
-        self._associations = ComponentAssociations()
+        self._storage = storage
+
+    @property
+    def _store(self) -> Store:
+        """Resolve the store on every access rather than caching it.
+
+        The storage closes and reopens its files when serializing, which yields a new
+        handle, so a reference captured here would go stale after the first save.
+        """
+        return self._storage.store
 
     @property
     def auto_add_composed_components(self) -> bool:
@@ -45,14 +62,26 @@ class ComponentManager:
         ------
         ISAlreadyAttached
             Raised if a component is already attached to a system.
+        ISOperationNotAllowed
+            Raised if the store was opened read-only.
         """
         if not components:
             return
 
+        # The association write at the end of this method is what a read-only store
+        # refuses, and by then the components are already in the containers. Refuse up
+        # front instead. Deserialization is exempt: it populates the containers from a
+        # store that already holds the associations, and writes nothing.
+        if not deserialization_in_progress:
+            self._storage.raise_if_read_only()
+
         for component in components:
             self._add(component, deserialization_in_progress)
 
-        self._associations.add(*components)
+        if not deserialization_in_progress:
+            # Associations are persisted alongside the time series data and so they are
+            # already present when a system is deserialized.
+            self.add_associations(*components)
 
     def get(self, component_type: Type[Component], name: str) -> Any:
         """Return the component with the passed type and name.
@@ -84,7 +113,7 @@ class ComponentManager:
 
     def get_num_components(self) -> int:
         """Return the number of stored components."""
-        return len(self._components_by_uuid)
+        return len(self._components_by_id)
 
     def get_num_components_by_type(self) -> dict[Type, int]:
         """Return the number of stored components by type."""
@@ -102,20 +131,29 @@ class ComponentManager:
         ISOperationNotAllowed
             Raised if there is more than one matching component.
         """
-        class_name, name_or_uuid = get_class_and_name_from_label(label)
-        if isinstance(name_or_uuid, UUID):
-            return self.get_by_uuid(name_or_uuid)
+        class_name, name = get_class_and_name_from_label(label)
 
+        # Try name-based lookup first (handles numeric component names like "123").
+        # Only falls through to ID-based lookup when no name match is found.
         for component_type, components_by_name in self._components.items():
             if component_type.__name__ == class_name:
-                components = components_by_name.get(name_or_uuid)
-                if components is None:
-                    msg = f"No component with {label=} is stored."
-                    raise ISNotStored(msg)
-                if len(components) > 1:
-                    msg = f"There is more than one component with {label=}."
-                    raise ISOperationNotAllowed(msg)
-                return components[0]
+                components = components_by_name.get(name)
+                if components is not None:
+                    if len(components) > 1:
+                        msg = f"There is more than one component with {label=}."
+                        raise ISOperationNotAllowed(msg)
+                    return components[0]
+
+        # Name not found; try to parse as integer ID.
+        try:
+            component_id = int(name)
+        except ValueError:
+            msg = f"No component with {label=} is stored."
+            raise ISNotStored(msg)
+
+        component = self.get_by_id(component_id)
+        if type(component).__name__ == class_name:
+            return component
 
         msg = f"No component with {label=} is stored."
         raise ISNotStored(msg)
@@ -126,7 +164,10 @@ class ComponentManager:
 
     def has_component(self, component) -> bool:
         """Return True if the component is attached."""
-        return component.uuid in self._components_by_uuid
+        if component.id is None:
+            return False
+        stored_component = self._components_by_id.get(component.id)
+        return stored_component is not None and _component_matches(stored_component, component)
 
     def iter(
         self, *component_types: Type[Component], filter_func: Callable | None = None
@@ -162,45 +203,117 @@ class ComponentManager:
         """
         return list(self.iter(component_type, filter_func=lambda x: x.name == name))
 
-    def get_by_uuid(self, uuid: UUID) -> Any:
-        """Return the component with the input UUID.
+    def get_by_id(self, id_: int) -> Any:
+        """Return the component with the input integer ID.
 
         Raises
         ------
         ISNotStored
-            Raised if the UUID is not stored.
+            Raised if the ID is not stored.
         """
-        component = self._components_by_uuid.get(uuid)
+        component = self._components_by_id.get(id_)
         if component is None:
-            msg = f"No component with {uuid=} is stored"
+            msg = f"No component with id={id_} is stored"
             raise ISNotStored(msg)
         return component
 
+    def get_by_id_or_none(self, id_: int) -> Any:
+        """Return the component with the input integer ID, or None if it is not stored."""
+        return self._components_by_id.get(id_)
+
     def iter_all(self) -> Iterable[Any]:
         """Return an iterator over all components."""
-        return self._components_by_uuid.values()
+        return self._components_by_id.values()
+
+    def add_associations(self, *components: Component) -> None:
+        """Store an association between each component and its directly attached subcomponents.
+
+        - Inspects the type of each field of each component's type. Looks for subtypes of
+          Component and lists of subtypes of Component.
+        - Does not consider component fields that are dictionaries or other data structures.
+        """
+        associations: list[ParentChildAssociation] = []
+        seen: set[tuple[int, int]] = set()
+        for component in components:
+            for field in type(component).model_fields:
+                val = getattr(component, field)
+                if isinstance(val, Component):
+                    children = [val]
+                elif isinstance(val, list) and val and isinstance(val[0], Component):
+                    children = val
+                else:
+                    continue
+                for child in children:
+                    association = self._make_association(component, child)
+                    # A component may reference the same child from more than one field.
+                    # The store rejects duplicates, so de-duplicate here.
+                    pair = (association.parent_id, association.child_id)
+                    if pair in seen:
+                        continue
+                    seen.add(pair)
+                    associations.append(association)
+
+        if associations:
+            self._store.add_parent_child_associations(associations)
+
+    def clear_associations(self) -> None:
+        """Clear all component associations."""
+        self._store.remove_parent_child_associations()
+        logger.info("Cleared all component associations.")
+
+    def remove_associations(self, component: Component) -> None:
+        """Remove all associations that reference this component in either direction."""
+        component_id = _get_id(component)
+        self._store.remove_parent_child_associations(parent_id=component_id)
+        self._store.remove_parent_child_associations(child_id=component_id)
+        logger.debug("Removed all associations with component {}", component.label)
+
+    def list_child_component_ids(
+        self, component: Component, component_type: Optional[Type[Component]] = None
+    ) -> list[int]:
+        """Return the IDs of all components that this component composes."""
+        return self._store.list_children(
+            parent_id=_get_id(component),
+            child_types=_make_type_names(component_type),
+        )
+
+    def list_parent_component_ids(
+        self, component: Component, component_type: Optional[Type[Component]] = None
+    ) -> list[int]:
+        """Return the IDs of all components that compose this component."""
+        return self._store.list_parents(
+            child_id=_get_id(component),
+            parent_types=_make_type_names(component_type),
+        )
 
     def list_child_components(
         self, component: Component, component_type: Optional[Type[Component]] = None
     ) -> list[Component]:
         """Return a list of all components that this component composes."""
+        self.raise_if_not_attached(component)
         return [
-            self.get_by_uuid(x)
-            for x in self._associations.list_child_components(
-                component, component_type=component_type
-            )
+            self.get_by_id(x)
+            for x in self.list_child_component_ids(component, component_type=component_type)
         ]
 
     def list_parent_components(
         self, component: Component, component_type: Optional[Type[Component]] = None
     ) -> list[Component]:
         """Return a list of all components that compose this component."""
+        self.raise_if_not_attached(component)
         return [
-            self.get_by_uuid(x)
-            for x in self._associations.list_parent_components(
-                component, component_type=component_type
-            )
+            self.get_by_id(x)
+            for x in self.list_parent_component_ids(component, component_type=component_type)
         ]
+
+    @staticmethod
+    def _make_association(parent: Component, child: Component) -> ParentChildAssociation:
+        return ParentChildAssociation(
+            _get_id(parent),
+            type(parent).__name__,
+            _get_id(child),
+            type(child).__name__,
+        )
 
     def to_records(
         self,
@@ -227,14 +340,31 @@ class ComponentManager:
                         subcomponent[i] = sub_component_.label
             yield data
 
-    def remove(self, component: Component, cascade_down: bool = True, force: bool = False) -> None:
-        """Remove the component from the system.
+    def remove(
+        self, component: Component, cascade_down: bool = True, force: bool = False
+    ) -> list[int]:
+        """Remove the component from the system and return the ids it orphaned.
+
+        Only ``component`` is removed here. When ``cascade_down`` is set, the children it
+        was the last parent of come back as ids for the caller to remove in turn, rather
+        than being removed by a recursive call: dropping a component also means detaching
+        its supplemental attributes and its time series, and this manager owns neither.
+        See :meth:`infrasys.system.System.remove_component`, which drives the cascade.
 
         Notes
         -----
         Users should not call this directly. It should be called through the system
         so that time series is handled.
+
+        Raises
+        ------
+        ISOperationNotAllowed
+            Raised if the store was opened read-only.
         """
+        # `remove_associations` below writes to the store, and the containers have
+        # already been popped by then, so a read-only refusal would leave the system
+        # without the component but with its association rows. Refuse first.
+        self._storage.raise_if_read_only()
         component_type = type(component)
         # The system method should have already performed the check, but for completeness in case
         # someone calls it directly, check here.
@@ -243,42 +373,62 @@ class ComponentManager:
             msg = f"{component.label} is not stored"
             raise ISNotStored(msg)
 
-        self._check_parent_components_for_remove(component, force)
         container = self._components[component_type][key]
-        for i, comp in enumerate(container):
-            if comp.uuid == component.uuid:
-                container.pop(i)
-                if not self._components[component_type][key]:
-                    self._components[component_type].pop(key)
-                    self._components_by_uuid.pop(component.uuid)
-                if not self._components[component_type]:
-                    self._components.pop(component_type)
-                logger.debug("Removed component {}", component.label)
-                if cascade_down:
-                    child_components = self._associations.list_child_components(component)
-                else:
-                    child_components = []
-                self._associations.remove(component)
-                for child_uuid in child_components:
-                    child = self.get_by_uuid(child_uuid)
-                    parent_components = self.list_parent_components(child)
-                    if not parent_components:
-                        self.remove(child, cascade_down=cascade_down, force=force)
-                return
+        matches = [
+            (i, comp) for i, comp in enumerate(container) if _component_matches(comp, component)
+        ]
+        if not matches:
+            msg = f"Component {component.label} is not stored"
+            raise ISNotStored(msg)
+        matched_index, matched_component = matches[0]
+        self._check_parent_components_for_remove(matched_component, force)
+        container.pop(matched_index)
+        # Always clean up the ID index for the removed component, regardless of
+        # whether other components remain under the same key.
+        if matched_component.id is not None:
+            self._components_by_id.pop(matched_component.id, None)
+        if not self._components[component_type][key]:
+            self._components[component_type].pop(key)
+        if not self._components[component_type]:
+            self._components.pop(component_type)
+        logger.debug("Removed component {}", matched_component.label)
+        if cascade_down:
+            child_ids = self.list_child_component_ids(matched_component)
+        else:
+            child_ids = []
+        self.remove_associations(matched_component)
+        # Nothing is removed here: the parent's associations are gone, so a child with no
+        # remaining parent is now an orphan, and the caller removes it the same way it
+        # removed this one.
+        return [
+            child_id
+            for child_id in child_ids
+            if not self.list_parent_components(self.get_by_id(child_id))
+        ]
 
-        msg = f"Component {component.label} is not stored"
-        raise ISNotStored(msg)
+    def raise_if_removal_blocked(self, component: Component, force: bool) -> None:
+        """Raise if other components hold references to this one and ``force`` is not set.
 
-    def _check_parent_components_for_remove(self, component: Component, force: bool) -> None:
+        The same gate :meth:`remove` applies, minus the force-path warning, so
+        :meth:`infrasys.system.System.remove_component` can run it before it detaches the
+        component's supplemental attributes and time series. A refusal that arrives after
+        that work would leave the component in place but stripped.
+        """
+        self._check_parent_components_for_remove(component, force, warn=False)
+
+    def _check_parent_components_for_remove(
+        self, component: Component, force: bool, warn: bool = True
+    ) -> None:
         parent_components = self.list_parent_components(component)
         if parent_components:
             parent_labels = ", ".join((x.label for x in parent_components))
             if force:
-                logger.warning(
-                    "Remove {} even though it is attached to these components: {}",
-                    component.label,
-                    parent_labels,
-                )
+                if warn:
+                    logger.warning(
+                        "Remove {} even though it is attached to these components: {}",
+                        component.label,
+                        parent_labels,
+                    )
             else:
                 msg = (
                     f"Cannot remove {component.label} because it is attached to these components: "
@@ -299,7 +449,7 @@ class ComponentManager:
             if field == "name" and name:
                 # Name is special-cased because it is a frozen field.
                 val = name
-            elif field in ("uuid",):
+            elif field == "id":
                 continue
             else:
                 val = cur_val
@@ -315,22 +465,14 @@ class ComponentManager:
 
     def deepcopy(self, component: Component) -> Component:
         """Create a deep copy of the component."""
-        values = component.model_dump()
-        return type(component)(**values)
-
-    def change_uuid(self, component: Component) -> None:
-        """Change the component UUID."""
-        # TODO: would need to change the component UUID in time series and
-        # supplemental attribute association tables.
-        msg = "change_component_uuid"
-        raise NotImplementedError(msg)
+        return copy.deepcopy(component)
 
     def rebuild_component_associations(self) -> None:
         """Clear the component associations and rebuild the table. This may be necessary
         if a user reassigns connected components that are part of a system.
         """
-        self._associations.clear()
-        self._associations.add(*self.iter_all())
+        self.clear_associations()
+        self.add_associations(*self.iter_all())
         logger.info("Rebuilt all component associations.")
 
     def update(
@@ -352,9 +494,13 @@ class ComponentManager:
             # We could prevent the user from changing the JSON with a checksum.
             self._check_component_addition(component)
             component.check_component_addition()
-        if component.uuid in self._components_by_uuid:
-            msg = f"{component.label} with UUID={component.uuid} is already stored"
+        if component.id is None:
+            component.id = self._id_manager.get_next_id()
+        elif component.id in self._components_by_id:
+            msg = f"{component.label} with id={component.id} is already stored"
             raise ISAlreadyAttached(msg)
+        else:
+            self._id_manager.advance_past(component.id)
 
         cls = type(component)
         if cls not in self._components:
@@ -365,7 +511,7 @@ class ComponentManager:
             self._components[cls][name] = []
 
         self._components[cls][name].append(component)
-        self._components_by_uuid[component.uuid] = component
+        self._components_by_id[component.id] = component
 
         logger.debug("Added {} to the system", component.label)
 
@@ -375,52 +521,85 @@ class ComponentManager:
         for field in type(component).model_fields:
             val = getattr(component, field)
             if isinstance(val, Component):
-                self._handle_composed_component(val)
+                self._handle_composed_component(val, parent_label=component.label)
                 # Recurse.
                 self._check_component_addition(val)
             elif isinstance(val, list) and val and isinstance(val[0], Component):
                 for item in val:
-                    self._handle_composed_component(item)
+                    self._handle_composed_component(item, parent_label=component.label)
                     # Recurse.
                     self._check_component_addition(item)
 
-    def _handle_composed_component(self, component: Component) -> None:
+    def _handle_composed_component(
+        self, component: Component, parent_label: str | None = None
+    ) -> None:
         """Do what's needed for a composed component depending on system settings:
-        nothing, add, or raise an exception."""
-        if component.uuid in self._components_by_uuid:
+        nothing, add, or raise an exception.
+
+        Parameters
+        ----------
+        component
+            The composed (child) component.
+        parent_label
+            The label of the parent component that contains this composed component.
+            Used to produce a clearer error message.
+        """
+        if self.has_component(component):
             return
 
         if self._auto_add_composed_components:
             logger.debug("Auto-add composed component {}", component.label)
             self._add(component, False)
         else:
+            parent = parent_label or component.label
             msg = (
-                f"Component {component.label} cannot be added to the system because "
+                f"Component {parent} cannot be added to the system because "
                 f"its composed component {component.label} is not already attached."
             )
             raise ISOperationNotAllowed(msg)
 
     def close(self) -> None:
-        """Release resources held by the component manager."""
-        try:
-            self._associations.close()
-        except Exception:
-            logger.debug("Error closing component associations", exc_info=True)
+        """Release resources held by the component manager.
+
+        Associations live in the time series store, which is closed by its own manager, so
+        there is nothing to release here.
+        """
 
     def raise_if_attached(self, component: Component):
         """Raise an exception if this component is attached to a system."""
-        if component.uuid in self._components_by_uuid:
+        if component.id is not None and component.id in self._components_by_id:
             msg = f"{component.label} is already attached to the system"
             raise ISAlreadyAttached(msg)
 
     def raise_if_not_attached(self, component: Component):
-        """Raise an exception if this component is not attached to a system.
-
-        Parameters
-        ----------
-        system_uuid : UUID
-            The component must be attached to the system with this UUID.
-        """
-        if component.uuid not in self._components_by_uuid:
+        """Raise an exception if this component is not attached to a system."""
+        if not self.has_component(component):
             msg = f"{component.label} is not attached to the system"
             raise ISNotStored(msg)
+
+
+def _get_id(component: Component) -> int:
+    """Return the component's ID, raising if one has not been assigned."""
+    if component.id is None:
+        msg = f"{component.label} does not have an id assigned."
+        raise ISOperationNotAllowed(msg)
+    return component.id
+
+
+def _make_type_names(component_type: Optional[Type[Component]]) -> list[str] | None:
+    """Expand a possibly-abstract component type into concrete type names."""
+    if component_type is None:
+        return None
+    subclasses = get_all_concrete_subclasses(component_type) or [component_type]
+    return [cls.__name__ for cls in subclasses]
+
+
+def _component_matches(a: Component, b: Component) -> bool:
+    """Return True if two component references identify the same stored component.
+
+    IDs are only unique within one system, so a component from a different system can
+    collide with a local ID. Identity is the discriminator.
+    """
+    if a.id is None or b.id is None:
+        return False
+    return a is b
