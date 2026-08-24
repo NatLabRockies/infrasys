@@ -440,6 +440,7 @@ class TimeSeriesStorageContext:
         name: str | None = None,
         name_glob: str | None = None,
         owner_type: str | None = None,
+        zoneless: bool | None = None,
         **features: Any,
     ) -> "TimeSeriesReader":
         """Build a cross-sectional reader over the matching ``SingleTimeSeries``.
@@ -454,6 +455,7 @@ class TimeSeriesStorageContext:
             name=name,
             name_glob=name_glob,
             owner_type=owner_type,
+            zoneless=zoneless,
             **features,
         )
 
@@ -465,6 +467,7 @@ class TimeSeriesStorageContext:
         name: str | None = None,
         name_glob: str | None = None,
         owner_type: str | None = None,
+        zoneless: bool | None = None,
         **features: Any,
     ) -> "ForecastReader":
         """Build a cross-sectional reader over the matching forecasts.
@@ -480,6 +483,7 @@ class TimeSeriesStorageContext:
             name=name,
             name_glob=name_glob,
             owner_type=owner_type,
+            zoneless=zoneless,
             **features,
         )
 

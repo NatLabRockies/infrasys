@@ -29,6 +29,7 @@ from infrasys.exceptions import (
 )
 from infrasys.models import InfraSysBaseModel
 from infrasys.normalization import NormalizationModel
+from infrasys.utils.time_utils import as_instant, is_zoneless
 
 TIME_COLUMN = "timestamp"
 VALUE_COLUMN = "value"
@@ -198,7 +199,13 @@ class SingleTimeSeries(TimeSeriesData):
         )
 
     def make_timestamps(self) -> NDArray:
-        """Return the timestamps as a numpy array."""
+        """Return the timestamps as a numpy array.
+
+        The array is ``datetime64``, which has no room for a time zone, so a series
+        whose ``initial_timestamp`` is aware comes back as the *instants* in UTC rather
+        than in the zone it was written in --- ``initial_timestamp`` itself is where the
+        spelling lives. A zoneless series' wall clocks are returned as they stand.
+        """
         return pd.date_range(
             start=self.initial_timestamp, periods=len(self.data), freq=self.resolution
         ).values
@@ -366,13 +373,26 @@ def single_time_series_range(
     if start_time is None:
         index = 0
     else:
-        if start_time < initial_timestamp:
+        if is_zoneless(start_time) != is_zoneless(initial_timestamp):
+            # Python refuses to order a naive datetime against an aware one, and the
+            # store refuses to slice across the same line. Say which two values
+            # disagree rather than letting a bare TypeError out.
+            msg = (
+                f"{start_time=} and {initial_timestamp=} are spelled differently: one "
+                "names an instant and the other is a wall clock. Spell start_time the "
+                "way the series is."
+            )
+            raise ISConflictingArguments(msg)
+        # The grid is stepped in instants, and Python's aware arithmetic is wall clock
+        # whenever both sides share a tzinfo, so compare and subtract in one frame.
+        start, origin = as_instant(start_time), as_instant(initial_timestamp)
+        if start < origin:
             msg = f"{start_time=} is less than {initial_timestamp=}"
             raise ISConflictingArguments(msg)
-        if start_time >= initial_timestamp + length * resolution:
+        if start >= origin + length * resolution:
             msg = f"{start_time=} is too large for {initial_timestamp=}, {length=}"
             raise ISConflictingArguments(msg)
-        diff = start_time - initial_timestamp
+        diff = start - origin
         if (diff % resolution).total_seconds() != 0.0:
             msg = f"{start_time=} conflicts with {initial_timestamp=} and {resolution=}"
             raise ISConflictingArguments(msg)
@@ -447,15 +467,30 @@ class NonSequentialTimeSeries(TimeSeriesData):
             msg = "Duplicate timestamps found. Timestamps must be unique."
             raise ValueError(msg)
 
-        time_array = np.array(timestamps, dtype="datetime64[ns]")
-        if not np.all(np.diff(time_array) > np.timedelta64(0, "s")):
+        as_array = timestamps if isinstance(timestamps, np.ndarray) else np.array(timestamps)
+        if as_array.dtype == object:
+            # Python datetimes, which may carry a tzinfo. numpy cannot hold one --- it
+            # drops the offset with a warning --- so the ordering check runs in Python,
+            # where an aware comparison is an instant comparison. Mixed spellings are
+            # rejected first because comparing them raises a bare TypeError, and because
+            # one series records exactly one spelling in the store.
+            values = list(as_array)
+            zoneless = {is_zoneless(x) for x in values}
+            if len(zoneless) > 1:
+                msg = (
+                    "Timestamps are spelled inconsistently: some name an instant and "
+                    "others are wall clocks. One series records one spelling."
+                )
+                raise ValueError(msg)
+            in_order = all(a < b for a, b in zip(values, values[1:]))
+        else:
+            time_array = as_array.astype("datetime64[ns]")
+            in_order = bool(np.all(np.diff(time_array) > np.timedelta64(0, "s")))
+        if not in_order:
             msg = "Timestamps must be in chronological order."
             raise ValueError(msg)
 
-        if not isinstance(timestamps, np.ndarray):
-            return np.array(timestamps)
-
-        return timestamps
+        return as_array
 
     @classmethod
     def from_array(

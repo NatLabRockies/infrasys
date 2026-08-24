@@ -309,6 +309,7 @@ class TimeSeriesManager:
         name: str | None = None,
         name_glob: str | None = None,
         component_type: Type[Component] | None = None,
+        zoneless: bool | None = None,
         **features: Any,
     ) -> TimeSeriesReader:
         """Build a cross-sectional reader over the matching ``SingleTimeSeries``."""
@@ -318,6 +319,7 @@ class TimeSeriesManager:
                 name=name,
                 name_glob=name_glob,
                 owner_type=None if component_type is None else component_type.__name__,
+                zoneless=zoneless,
                 **features,
             )
 
@@ -329,6 +331,7 @@ class TimeSeriesManager:
         name: str | None = None,
         name_glob: str | None = None,
         component_type: Type[Component] | None = None,
+        zoneless: bool | None = None,
         **features: Any,
     ) -> ForecastReader:
         """Build a cross-sectional reader over the matching forecasts."""
@@ -339,6 +342,7 @@ class TimeSeriesManager:
                 name=name,
                 name_glob=name_glob,
                 owner_type=None if component_type is None else component_type.__name__,
+                zoneless=zoneless,
                 **features,
             )
 

@@ -1457,6 +1457,7 @@ class System:
         name: str | None = None,
         name_glob: str | None = None,
         component_type: Type[Component] | None = None,
+        zoneless: bool | None = None,
         **features: Any,
     ) -> TimeSeriesReader:
         """Build a reader that returns every matching component's value at one timestamp.
@@ -1479,6 +1480,12 @@ class System:
             Only read series whose name matches this glob pattern (``*`` and ``?``).
         component_type
             Only read series owned by components of this type.
+        zoneless
+            Only read series spelled one way: ``True`` for the wall-clock (zoneless)
+            series, ``False`` for every series that names an instant, which includes any
+            that left the spelling unset. A reader materializes one timestamp axis, so
+            the store refuses to build one over a mix; this is how a mixed system is
+            split into two readers that each build.
         features
             Only read series carrying these feature key/value pairs.
 
@@ -1490,8 +1497,9 @@ class System:
         Raises
         ------
         InvalidParameterError
-            Raised by the store if no series match, or if the matched series do not share
-            one grid.
+            Raised by the store if no series match, if the matched series do not share
+            one grid, or if they disagree about how their timestamps are spelled --- see
+            ``zoneless``.
 
         Examples
         --------
@@ -1509,6 +1517,7 @@ class System:
             name=name,
             name_glob=name_glob,
             component_type=component_type,
+            zoneless=zoneless,
             **features,
         )
 
@@ -1520,6 +1529,7 @@ class System:
         name: str | None = None,
         name_glob: str | None = None,
         component_type: Type[Component] | None = None,
+        zoneless: bool | None = None,
         **features: Any,
     ) -> ForecastReader:
         """Build a reader that returns every matching component's forecast window at one time.
@@ -1543,6 +1553,12 @@ class System:
             Only read forecasts whose name matches this glob pattern (``*`` and ``?``).
         component_type
             Only read forecasts owned by components of this type.
+        zoneless
+            Only read forecasts spelled one way: ``True`` for the wall-clock (zoneless)
+            forecasts, ``False`` for every forecasts that names an instant, which includes any
+            that left the spelling unset. A reader materializes one timestamp axis, so
+            the store refuses to build one over a mix; this is how a mixed system is
+            split into two readers that each build.
         features
             Only read forecasts carrying these feature key/value pairs.
 
@@ -1554,8 +1570,9 @@ class System:
         Raises
         ------
         InvalidParameterError
-            Raised by the store if no forecasts match, or if the matched forecasts do not
-            share one window timeline.
+            Raised by the store if no forecasts match, if the matched forecasts do not
+            share one window timeline, or if they disagree about how their timestamps are
+            spelled --- see ``zoneless``.
 
         Examples
         --------
@@ -1580,6 +1597,7 @@ class System:
             name=name,
             name_glob=name_glob,
             component_type=component_type,
+            zoneless=zoneless,
             **features,
         )
 

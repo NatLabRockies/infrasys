@@ -86,11 +86,23 @@ system.build_time_series_reader(resolution, component_type=SimpleGenerator)
 system.build_time_series_reader(resolution, scenario="high")
 ```
 
-Two constraints are worth knowing up front, because both surface as an
+Three constraints are worth knowing up front, because all three surface as an
 `InvalidParameterError` at build time rather than mid-loop:
 
 - All matched series must share one grid — the same initial timestamp, resolution, and
   length. A filter that spans two different grids is rejected.
+- All matched series must agree on how their timestamps are spelled, because a reader
+  materializes one timestamp axis. A cohort mixing wall-clock (naive) series with
+  instant-bearing (aware) ones is rejected; narrow it with `zoneless`:
+
+  ```python
+  system.build_time_series_reader(resolution, name="load", zoneless=True)   # wall clocks
+  system.build_time_series_reader(resolution, name="load", zoneless=False)  # instants
+  ```
+
+  The timestamps a reader hands back are always spelled the way its `read` expects them, so
+  driving the loop from `reader.timestamps` never hits this. See
+  [Time zones](#time-series-time-zones).
 - A filter matching nothing is rejected, rather than returning a reader that reads nothing.
 
 A reader is a snapshot of the associations that matched when it was built. Adding or

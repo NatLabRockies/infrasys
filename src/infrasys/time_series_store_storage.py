@@ -23,6 +23,16 @@ one catalog transaction for the block instead of one per series.
 This class holds no batch state and no reference to any context. The index it keeps
 describes *committed* associations only; staged additions live on the context until
 that context flushes them, so a batch is visible to itself and to nothing else.
+
+Timestamps cross this boundary in the spelling the caller wrote them in. The store
+records how each series' timestamps were spelled --- an instant in UTC, an instant at a
+fixed offset, an instant in a named IANA zone, or a wall clock naming no instant --- and
+hands the same spelling back on read, so infrasys neither attaches a zone to a naive
+timestamp nor strips one from an aware timestamp. A naive datetime is a wall clock and
+comes back naive; an aware one comes back aware in the same zone. Read bounds must be
+spelled the way the series is; the store refuses to coerce across that line, and
+:func:`infrasys.utils.time_utils.advance` is what keeps a derived bound on the instant
+grid the store slices.
 """
 
 import atexit
@@ -81,7 +91,7 @@ from infrasys.time_series_models import (
 )
 from infrasys.time_series_reader import ForecastReader, TimeSeriesReader
 from infrasys.utils.path_utils import clean_tmp_folder
-from infrasys.utils.time_utils import as_naive_utc, as_utc, to_iso_8601
+from infrasys.utils.time_utils import advance, from_catalog_timestamp, to_iso_8601
 
 # Store-side time-series type names that infrasys exposes as ``Deterministic``.
 _FORECAST_TYPES = frozenset({"Deterministic", "DeterministicSingleTimeSeries"})
@@ -566,12 +576,19 @@ class TimeSeriesStoreStorage:
         name: str | None = None,
         name_glob: str | None = None,
         owner_type: str | None = None,
+        zoneless: bool | None = None,
         **features: Any,
     ) -> TimeSeriesReader:
         """Build a cross-sectional reader over the matching ``SingleTimeSeries``.
 
         The store builds the reader from its own catalog, so anything ``context`` has
         staged is flushed first or it would be invisible to the reader.
+
+        ``zoneless`` narrows a cohort that spans both spellings. A reader materializes
+        one timestamp axis, so the store refuses to build one over a mix of wall-clock
+        series and instant-bearing ones. Pass ``True`` for the zoneless group or
+        ``False`` for everything that names an instant --- which includes any series
+        that left the reference unset --- and each half builds on its own.
         """
         context.flush()
         reader = self._store.build_static_reader(
@@ -580,6 +597,7 @@ class TimeSeriesStoreStorage:
             owner_type=owner_type,
             name=name,
             name_glob=name_glob,
+            zoneless=zoneless,
             features=features or None,
         )
         group_component_ids = [
@@ -602,12 +620,19 @@ class TimeSeriesStoreStorage:
         name: str | None = None,
         name_glob: str | None = None,
         owner_type: str | None = None,
+        zoneless: bool | None = None,
         **features: Any,
     ) -> ForecastReader:
         """Build a cross-sectional reader over the matching forecasts.
 
         The store builds the reader from its own catalog, so anything ``context`` has
         staged is flushed first or it would be invisible to the reader.
+
+        ``zoneless`` narrows a cohort that spans both spellings. A reader materializes
+        one timestamp axis, so the store refuses to build one over a mix of wall-clock
+        series and instant-bearing ones. Pass ``True`` for the zoneless group or
+        ``False`` for everything that names an instant --- which includes any series
+        that left the reference unset --- and each half builds on its own.
         """
         context.flush()
         reader = self._store.build_forecast_reader(
@@ -617,6 +642,7 @@ class TimeSeriesStoreStorage:
             owner_type=owner_type,
             name=name,
             name_glob=name_glob,
+            zoneless=zoneless,
             features=features or None,
         )
         entries = reader.entries()
@@ -720,10 +746,13 @@ class TimeSeriesStoreStorage:
         index, result_length = single_time_series_range(
             stored.initial_timestamp, stored.resolution, stored.length, start_time, length
         )
-        result_initial_timestamp = stored.initial_timestamp + index * stored.resolution
+        # `advance` rather than `+`: the bound has to land on the instant grid the store
+        # slices, and Python's aware addition is wall-clock arithmetic. The bounds keep
+        # the series' own spelling, which is what the store requires of them.
+        result_initial_timestamp = advance(stored.initial_timestamp, index * stored.resolution)
         time_range = (
-            as_utc(result_initial_timestamp),
-            as_utc(result_initial_timestamp + result_length * stored.resolution),
+            result_initial_timestamp,
+            advance(result_initial_timestamp, result_length * stored.resolution),
         )
         return key, time_range, result_initial_timestamp
 
@@ -750,10 +779,7 @@ class TimeSeriesStoreStorage:
             return NonSequentialTimeSeries(
                 name=stored.name,
                 data=data,
-                timestamps=np.asarray(
-                    [as_naive_utc(x) for x in rust_result.timestamps],
-                    dtype=object,
-                ),
+                timestamps=np.asarray(rust_result.timestamps, dtype=object),
             )
         if stored.time_series_type in _FORECAST_TYPES:
             # The Rust store returns (horizon_steps, count); infrasys uses (window_count,
@@ -761,7 +787,7 @@ class TimeSeriesStoreStorage:
             return Deterministic(
                 name=stored.name,
                 data=data.T,
-                initial_timestamp=as_naive_utc(rust_result.initial_timestamp),
+                initial_timestamp=rust_result.initial_timestamp,
                 resolution=_parse_resolution(rust_result.resolution),
                 horizon=_parse_resolution(rust_result.horizon),
                 interval=_parse_resolution(rust_result.interval),
@@ -866,7 +892,11 @@ class TimeSeriesStoreStorage:
         horizon = interval = None
         window_count = None
         if record.get("initial_timestamp"):
-            initial_timestamp = as_naive_utc(datetime.fromisoformat(record["initial_timestamp"]))
+            # The catalog renders the instant and records the spelling beside it; both
+            # are needed to hand back the datetime the caller originally wrote.
+            initial_timestamp = from_catalog_timestamp(
+                record["initial_timestamp"], record.get("time_reference")
+            )
         if ts_type in _FORECAST_TYPES:
             horizon = _parse_resolution(record["horizon"])
             interval = _parse_resolution(record["interval"])
@@ -964,14 +994,14 @@ def _data_type_name(time_series: TimeSeriesData) -> str:
 def _to_rust_time_series(time_series: TimeSeriesData):
     if isinstance(time_series, SingleTimeSeries):
         return RustSingleTimeSeries(
-            as_utc(time_series.initial_timestamp),
+            time_series.initial_timestamp,
             time_series.resolution,
             np.asarray(time_series.data_array, dtype=np.float64),
             time_series.name,
         )
     if isinstance(time_series, NonSequentialTimeSeries):
         return RustNonSequentialTimeSeries(
-            [as_utc(x) for x in time_series.timestamps.astype("datetime64[us]").tolist()],
+            _timestamps_as_datetimes(time_series.timestamps),
             np.asarray(time_series.data_array, dtype=np.float64),
             time_series.name,
         )
@@ -980,7 +1010,7 @@ def _to_rust_time_series(time_series: TimeSeriesData):
         # the transpose (horizon_steps, count).
         data = np.ascontiguousarray(np.asarray(time_series.data_array, dtype=np.float64).T)
         return RustDeterministic(
-            as_utc(time_series.initial_timestamp),
+            time_series.initial_timestamp,
             time_series.resolution,
             time_series.horizon,
             time_series.interval,
@@ -990,6 +1020,19 @@ def _to_rust_time_series(time_series: TimeSeriesData):
         )
     msg = f"add_time_series not implemented for {type(time_series)}"
     raise NotImplementedError(msg)
+
+
+def _timestamps_as_datetimes(timestamps: np.ndarray) -> list[datetime]:
+    """Return a ``NonSequentialTimeSeries`` timestamp array as Python datetimes.
+
+    An object array already holds ``datetime`` objects and keeps whatever ``tzinfo`` the
+    caller wrote, so it is handed over as it stands. A ``datetime64`` array cannot carry
+    a zone at all, so it converts to naive datetimes --- wall clocks, which is exactly
+    what the store records as zoneless.
+    """
+    if timestamps.dtype == object:
+        return list(timestamps)
+    return timestamps.astype("datetime64[us]").tolist()
 
 
 def _units_from_data(time_series: TimeSeriesData) -> QuantityMetadata | None:

@@ -14,7 +14,6 @@ from datetime import datetime
 from typing import Any
 
 from infrasys.time_series_models import QuantityMetadata
-from infrasys.utils.time_utils import as_naive_utc, as_utc
 
 
 class TimeSeriesReader:
@@ -65,8 +64,12 @@ class TimeSeriesReader:
 
     @property
     def timestamps(self) -> list[datetime]:
-        """Return every timestamp on the reader's grid, in order."""
-        return [as_naive_utc(x) for x in self._reader.timestamps()]
+        """Return every timestamp on the reader's grid, in order.
+
+        Each timestamp is spelled the way the cohort's series were written: naive for a
+        zoneless cohort, aware otherwise. Feed them straight back to :meth:`read`.
+        """
+        return list(self._reader.timestamps())
 
     def read(self, when: datetime) -> dict[int, Any]:
         """Return ``{component id: value}`` for every covered series at ``when``.
@@ -74,9 +77,12 @@ class TimeSeriesReader:
         Raises
         ------
         InvalidParameterError
-            Raised by the store if ``when`` is not on the reader's grid.
+            Raised by the store if ``when`` is not on the reader's grid, or if it is
+            spelled differently than the cohort --- a naive ``when`` against series that
+            record instants, or an aware one against a zoneless cohort. Use a timestamp
+            from :attr:`timestamps` and the spelling always matches.
         """
-        self._store.static_read(self._reader, as_utc(when))
+        self._store.static_read(self._reader, when)
         values: dict[int, Any] = {}
         for index, component_ids in enumerate(self._group_component_ids):
             group = self._reader.group_values(index)
@@ -92,7 +98,7 @@ class TimeSeriesReader:
         arrays come straight from the store with no per-value Python objects. Each array
         is shaped ``(num_components, *element_shape)`` and aligned to its id tuple.
         """
-        self._store.static_read(self._reader, as_utc(when))
+        self._store.static_read(self._reader, when)
         return [
             (component_ids, self._reader.group_values(index))
             for index, component_ids in enumerate(self._group_component_ids)
@@ -150,8 +156,12 @@ class ForecastReader:
 
     @property
     def timestamps(self) -> list[datetime]:
-        """Return every window start timestamp, in order."""
-        return [as_naive_utc(x) for x in self._reader.timestamps()]
+        """Return every window start timestamp, in order.
+
+        Each timestamp is spelled the way the cohort's forecasts were written: naive for
+        a zoneless cohort, aware otherwise. Feed them straight back to :meth:`read`.
+        """
+        return list(self._reader.timestamps())
 
     @property
     def num_slots(self) -> int:
@@ -185,7 +195,9 @@ class ForecastReader:
         Raises
         ------
         InvalidParameterError
-            Raised by the store if ``when`` is not on the reader's timeline.
+            Raised by the store if ``when`` is not on the reader's timeline, or if it is
+            spelled differently than the cohort. Use a timestamp from :attr:`timestamps`
+            and the spelling always matches.
         """
         windows = self.read_slots(when)
         return {
@@ -195,7 +207,7 @@ class ForecastReader:
 
     def read_slots(self, when: datetime) -> dict[int, Any]:
         """Return ``{slot: window array}`` at ``when``, one entry per unique window."""
-        self._store.forecast_read(self._reader, as_utc(when))
+        self._store.forecast_read(self._reader, when)
         return {
             slot: self._reader.entry_values(entry_index)
             for slot, entry_index in self._representatives.items()

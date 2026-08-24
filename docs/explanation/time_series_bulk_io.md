@@ -117,7 +117,10 @@ rather than one call per series:
    type, and features. This touches only lightweight descriptors --- never array data.
 2. The context is flushed, so staged arrays are readable.
 3. Each descriptor is *planned*: the store key is resolved, and a `start_time`/`length`
-   request is translated into a UTC time range.
+   request is translated into a time range. The bounds are spelled the way the series is
+   --- naive against a wall-clock series, aware against one that names instants --- because
+   the store refuses to coerce across that line. See
+   [Time zones](#time-series-time-zones).
 4. Plans are grouped by time range, because `Store.bulk_read` applies one range to every key
    it is given. Unsliced reads all share a range of `None`, so the common case --- read every
    matching series whole --- goes to the store as a single call, and the store decompresses

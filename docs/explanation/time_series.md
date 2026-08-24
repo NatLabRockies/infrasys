@@ -211,6 +211,75 @@ storage, and validation.
 For example, a `timedelta` of 1 month will be converted to the ISO format string
 `P1M` and a `timedelta` of 1 hour will be converted to `P0DT1H`.
 
+```{eval-rst}
+.. _time-series-time-zones:
+```
+
+## Time zones
+
+A time series records **how its timestamps were spelled**, and reads hand that spelling
+back. infrasys passes your `datetime` objects to the store as they stand: it never
+attaches a zone to a naive timestamp, and never strips one from an aware timestamp.
+
+There are four spellings, and the store keeps them apart:
+
+| What you pass | Recorded as | What a read returns |
+|---|---|---|
+| a naive `datetime` | `zoneless` --- a wall clock naming no instant | the same naive `datetime` |
+| `tzinfo=timezone.utc` | `utc` | aware, UTC |
+| `tzinfo=timezone(timedelta(hours=-7))` | the fixed offset `-07:00` | aware, at that offset |
+| `tzinfo=ZoneInfo("America/Denver")` | the zone name | aware, in that zone |
+
+```python
+    # Modeled data with no time zone, and none wanted: 24-hour days, stored as written.
+    profile = SingleTimeSeries.from_array(
+        data=[random.random() for _ in range(24)],
+        name="active_power",
+        initial_time=datetime(2030, 1, 1),
+        resolution=timedelta(hours=1),
+    )
+    system.add_time_series(profile, generator)
+    assert system.get_time_series(generator, name="active_power").initial_timestamp.tzinfo is None
+```
+
+One system can hold both kinds --- a Denver load profile beside a zoneless modeled one ---
+because the spelling is per series, not per store.
+
+### What this means for reads
+
+- **A `start_time` must be spelled the way the series is.** A naive bound against a series
+  that names instants, or an aware bound against a zoneless one, has no defined meaning, so
+  it is refused rather than coerced. An aware bound need not match the series' *own* zone:
+  any offset naming the same instant works, because slicing is instant arithmetic.
+- **A reader covers one spelling.** {py:meth}`infrasys.system.System.build_time_series_reader`
+  materializes a single timestamp axis, so it refuses to build over a cohort that mixes
+  wall-clock series with instant-bearing ones. Pass `zoneless=True` for the wall-clock group
+  or `zoneless=False` for everything else --- which includes any series that left the
+  spelling unset --- and each half builds on its own. The timestamps a reader hands back are
+  always spelled the way its `read` expects them.
+
+### A spelling is not a grid
+
+`resolution`, `horizon`, and `interval` are fixed durations, so a series steps **instants**
+whatever its timestamps say. A named zone changes how a timestamp is *rendered*, not which
+instants the series contains: an hourly Denver series runs on hourly instants straight
+through a DST transition, and the wall clock it renders as simply skips or repeats an hour.
+
+If you need a local-clock grid instead --- a 23-hour day in March, a 25-hour day in
+November --- use {py:class}`infrasys.time_series_models.NonSequentialTimeSeries`, which
+carries an explicit timestamp per value, so the days are in the data rather than implied by
+arithmetic.
+
+One consequence worth stating: Python's own `datetime` arithmetic is *wall clock* whenever
+both operands share a `tzinfo`, so `initial_timestamp + n * resolution` can drift off the
+grid across a transition. Derive a `start_time` through UTC instead:
+
+```python
+    start = (series.initial_timestamp.astimezone(timezone.utc) + 30 * resolution).astimezone(
+        series.initial_timestamp.tzinfo
+    )
+```
+
 ## Behaviors
 
 The `System` stores all time series arrays and their metadata in the Rust-backed
