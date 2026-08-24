@@ -26,10 +26,13 @@ class ComponentManager:
         self,
         auto_add_composed_components: bool,
         storage: TimeSeriesStoreStorage,
+        id_manager: IDManager,
     ) -> None:
         self._components: dict[Type, dict[str | None, list[Component]]] = {}
         self._components_by_id: dict[int, Component] = {}
-        self._id_manager = IDManager(next_id=1)
+        # Shared with the system's other managers so that every stored object draws from
+        # one stream of IDs.
+        self._id_manager = id_manager
         self._auto_add_composed_components = auto_add_composed_components
         self._storage = storage
 

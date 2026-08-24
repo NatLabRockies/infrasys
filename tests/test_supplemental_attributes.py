@@ -484,3 +484,27 @@ def test_supplemental_attribute_associations_survive_round_trip(tmp_path):
     assert sorted(
         x.id for x in system2.get_components_with_supplemental_attribute(attr1_in_system2)
     ) == sorted([bus.id, gen.id])
+
+
+def test_components_and_attributes_share_one_id_stream(tmp_path):
+    """Components and supplemental attributes must never be assigned the same ID."""
+    system = SimpleSystem(auto_add_composed_components=True)
+    bus = SimpleBus(name="test-bus", voltage=1.1)
+    gen = SimpleGenerator(name="gen1", active_power=1.0, rating=1.0, bus=bus, available=True)
+    system.add_component(gen)
+    attr1 = GeographicInfo.example()
+    attr2 = GeographicInfo.example()
+    attr2.geo_json["geometry"]["coordinates"] = [1.0, 2.0]
+    system.add_supplemental_attribute(bus, attr1)
+    system.add_supplemental_attribute(bus, attr2)
+
+    ids = [bus.id, gen.id, attr1.id, attr2.id]
+    assert len(set(ids)) == len(ids)
+
+    # The stream must survive a round trip: a new component cannot reuse a stored ID.
+    save_dir = tmp_path / "test_system"
+    system.save(save_dir)
+    system2 = SimpleSystem.from_json(save_dir / "system.json")
+    new_bus = SimpleBus(name="new-bus", voltage=1.2)
+    system2.add_component(new_bus)
+    assert new_bus.id not in ids

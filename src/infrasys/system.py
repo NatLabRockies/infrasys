@@ -26,6 +26,7 @@ from .exceptions import (
     ISInvalidParameter,
     ISOperationNotAllowed,
 )
+from .id_manager import IDManager
 from .migrations.metadata_migration import (
     component_needs_metadata_migration,
     migrate_component_metadata,
@@ -68,7 +69,6 @@ class System:
         description: Optional[str] = None,
         auto_add_composed_components: bool = False,
         time_series_manager: Optional[TimeSeriesManager] = None,
-        supplemental_attribute_manager: Optional[SupplementalAttributeManager] = None,
         uuid: Optional[UUID] = None,
         **kwargs: Any,
     ) -> None:
@@ -113,10 +113,13 @@ class System:
         # attribute associations, so it must exist before the managers that use it.
         self._time_series_mgr = time_series_manager or TimeSeriesManager(**time_series_kwargs)
         storage = self._time_series_mgr.storage
-        self._component_mgr = ComponentManager(auto_add_composed_components, storage)
-        self._supplemental_attr_mgr = (
-            supplemental_attribute_manager or SupplementalAttributeManager(storage)
+        # Components and supplemental attributes draw from one stream of IDs so that an ID
+        # identifies exactly one object in the system, whatever its kind.
+        self._id_manager = IDManager(next_id=1)
+        self._component_mgr = ComponentManager(
+            auto_add_composed_components, storage, self._id_manager
         )
+        self._supplemental_attr_mgr = SupplementalAttributeManager(storage, self._id_manager)
         self._closed = False
 
         self._data_format_version: Optional[str] = None
@@ -454,11 +457,9 @@ class System:
         time_series_manager = TimeSeriesManager.deserialize(
             data["time_series"], ts_path, **ts_kwargs
         )
-        supplemental_attribute_manager = SupplementalAttributeManager(time_series_manager.storage)
         system = cls(
             name=system_data.get("name"),
             description=system_data.get("description"),
-            supplemental_attribute_manager=supplemental_attribute_manager,
             time_series_manager=time_series_manager,
             uuid=UUID(system_data["uuid"]),
             **kwargs,

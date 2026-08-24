@@ -24,11 +24,13 @@ T = TypeVar("T", bound="SupplementalAttribute")
 class SupplementalAttributeManager:
     """Manages supplemental attributes"""
 
-    def __init__(self, storage: "TimeSeriesStoreStorage", **kwargs) -> None:
+    def __init__(self, storage: "TimeSeriesStoreStorage", id_manager: IDManager, **kwargs) -> None:
         self._storage = storage
         self._attributes: dict[Type, dict[int, SupplementalAttribute]] = {}
         self._attributes_by_id: dict[int, SupplementalAttribute] = {}
-        self._id_manager = IDManager(next_id=1)
+        # Shared with the system's other managers so that every stored object draws from
+        # one stream of IDs.
+        self._id_manager = id_manager
         self._in_context = False
         self._context_new_attributes: list[SupplementalAttribute] = []
         self._context_removed_attributes: list[SupplementalAttribute] = []
