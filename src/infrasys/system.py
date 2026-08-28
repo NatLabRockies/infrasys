@@ -54,6 +54,7 @@ from .time_series_models import (
     TimeSeriesMetadata,
     TimeSeriesStorageContext,
 )
+from .utils.metadata_utils import create_supplemental_attribute_associations_table
 from .utils.sqlite import backup, create_in_memory_db, restore
 from .utils.time_utils import from_iso_8601
 
@@ -462,6 +463,9 @@ class System:
         time_series_manager = TimeSeriesManager.deserialize(
             con, data["time_series"], ts_path, **ts_kwargs
         )
+        # Databases from older versions may predate supplemental attributes; ensure the
+        # table exists before deserializing with a non-initializing manager.
+        create_supplemental_attribute_associations_table(con)
         supplemental_attribute_manager = SupplementalAttributeManager(con, initialize=False)
         system = cls(
             name=system_data.get("name"),
