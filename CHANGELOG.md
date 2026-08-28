@@ -5,6 +5,15 @@
 
 ### Bug Fixes
 
+* bumping down. ([#166](https://github.com/NatLabRockies/infrasys/issues/166)) ([6c94916](https://github.com/NatLabRockies/infrasys/commit/6c94916c68333baa7cff5f15452bd60beb3f843a))
+* metadata migration and deserialization of empty lists ([83280e5](https://github.com/NatLabRockies/infrasys/commit/83280e565cf4d47752b5b10e8098be051e3301f2))
+* metadata migration and deserialization of empty lists ([a80d7b5](https://github.com/NatLabRockies/infrasys/commit/a80d7b5b4fbe9c1e7be8d893c22817f7552d07dd))
+
+## [1.2.1](https://github.com/NatLabRockies/infrasys/compare/v1.2.0...v1.2.1) (2026-08-28)
+
+
+### Bug Fixes
+
 * metadata migration and deserialization of empty lists ([83280e5](https://github.com/NatLabRockies/infrasys/commit/83280e565cf4d47752b5b10e8098be051e3301f2))
 * metadata migration and deserialization of empty lists ([a80d7b5](https://github.com/NatLabRockies/infrasys/commit/a80d7b5b4fbe9c1e7be8d893c22817f7552d07dd))
 
