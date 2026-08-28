@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.2](https://github.com/NatLabRockies/infrasys/compare/v1.2.1...v1.2.2) (2026-08-28)
+
+
+### Bug Fixes
+
+* bumping down. ([#166](https://github.com/NatLabRockies/infrasys/issues/166)) ([6c94916](https://github.com/NatLabRockies/infrasys/commit/6c94916c68333baa7cff5f15452bd60beb3f843a))
+
 ## [1.2.1](https://github.com/NatLabRockies/infrasys/compare/v1.2.0...v1.2.1) (2026-08-28)
 
 
