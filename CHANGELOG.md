@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.3.0](https://github.com/NatLabRockies/infrasys/compare/v1.2.1...v1.3.0) (2026-10-06)
+
+
+### Features
+
+* **system:** add typed show_components columns ([#160](https://github.com/NatLabRockies/infrasys/issues/160)) ([ab55bd9](https://github.com/NatLabRockies/infrasys/commit/ab55bd9bfd91a71d75d81503f6a6c75462a8fe1f))
+
+
+### Bug Fixes
+
+* bumping down. ([#166](https://github.com/NatLabRockies/infrasys/issues/166)) ([6c94916](https://github.com/NatLabRockies/infrasys/commit/6c94916c68333baa7cff5f15452bd60beb3f843a))
+
 ## [1.2.1](https://github.com/NatLabRockies/infrasys/compare/v1.2.0...v1.2.1) (2026-08-28)
 
 
