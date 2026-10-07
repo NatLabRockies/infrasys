@@ -107,7 +107,7 @@ def test_naive_timestamps_are_stored_as_wall_clocks(tmp_path):
         ),
         generator,
     )
-    (record,) = system._time_series_mgr._storage.store.list_time_series()
+    (record,) = system._time_series_mgr._storage.store.list_metadata()
     assert record["time_reference"] == "zoneless"
     # No trailing offset: a `Z` here would assert an instant the row does not name.
     assert record["initial_timestamp"] == "2024-01-01T00:00:00"
@@ -130,7 +130,7 @@ def test_aware_timestamps_record_how_they_were_written(tmp_path, initial_timesta
         ),
         generator,
     )
-    (record,) = system._time_series_mgr._storage.store.list_time_series()
+    (record,) = system._time_series_mgr._storage.store.list_metadata()
     assert record["time_reference"] == expected
 
 

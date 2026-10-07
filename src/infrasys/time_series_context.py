@@ -6,9 +6,9 @@ so that many additions reach the store as one bulk call. That is what buys block
 HDF5 writes and feature-set dedup, and a store transaction deliberately does not
 provide it.
 
-Atomicity is the store's job. A context opened by ``time_series_transaction`` begins an
-``infrastore`` transaction and commits or rolls it back on exit, so undoing a failed
-block is one call rather than a compensating-removal log. Two things follow that used
+Atomicity is the store's job. ``TimeSeriesManager.time_series_transaction`` yields a
+context inside infrastore's transaction manager, which commits on clean exit and rolls
+back on failure. That replaces the compensating-removal log. Two things follow that used
 to need machinery here:
 
 * **A mid-block flush is harmless.** Flushed work is still inside the transaction, so
@@ -40,15 +40,13 @@ and it makes handing a context to the wrong storage unrepresentable rather than 
 checked.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from loguru import logger
-
 from infrasys.exceptions import ISOperationNotAllowed
-from infrasys.time_series_models import QuantityMetadata, TimeSeriesData
+from infrasys.time_series_models import TimeSeriesData, TimeSeriesKey
 
 if TYPE_CHECKING:
     from infrasys.time_series_reader import ForecastReader, TimeSeriesReader
@@ -61,32 +59,10 @@ AssocKey = tuple
 
 
 @dataclass
-class _StoredSeries:
-    """The infrasys-side descriptor of one owner's reference to a time series."""
-
-    name: str
-    time_series_type: str
-    owner_type: str
-    length: int
-    features: dict[str, Any] = field(default_factory=dict)
-    units: QuantityMetadata | None = None
-    resolution: timedelta | None = None
-    initial_timestamp: datetime | None = None
-    # Forecast-only parameters (populated for Deterministic/DeterministicSingleTimeSeries).
-    horizon: timedelta | None = None
-    interval: timedelta | None = None
-    window_count: int | None = None
-    # The store's key for this association, cached to avoid re-scanning the owner's keys on
-    # every read. None until the series is committed and the key is known.
-    store_key: Any = None
-
-
-@dataclass
 class _PendingAdd:
-    """One buffered addition: the store's bulk item plus where it lives in the index."""
+    """One buffered store request and its staged association identity."""
 
     item: dict[str, Any]
-    stored: _StoredSeries
     owner_key: OwnerKey
     assoc_key: AssocKey
     # Estimated bytes of array data this entry keeps buffered. A multi-owner add shares
@@ -113,10 +89,9 @@ class TimeSeriesStorageContext:
 
     Additions are buffered until :meth:`flush` writes them to the store in a single bulk
     call; a batch that grows past ``auto_flush_threshold`` flushes on its own so an
-    arbitrarily large block holds a bounded amount of data in memory. A transactional
-    context (one from ``time_series_transaction``) wraps everything it does in a store
-    transaction, so :meth:`discard` undoes the whole block — flushed work and removals
-    included.
+    arbitrarily large block holds a bounded amount of data in memory. When used inside
+    ``time_series_transaction``, infrastore's transaction context owns atomicity while
+    this context owns only the unflushed additions.
 
     Every time series operation is a method on the context (see `Operations` below), so
     nothing has to pass a context around to reach the store.
@@ -129,7 +104,6 @@ class TimeSeriesStorageContext:
     def __init__(
         self,
         storage: "TimeSeriesStoreStorage",
-        transactional: bool = False,
         auto_flush_threshold: int = AUTO_FLUSH_THRESHOLD,
         auto_flush_bytes: int = AUTO_FLUSH_BYTES,
     ) -> None:
@@ -145,8 +119,7 @@ class TimeSeriesStorageContext:
         self._pending: list[_PendingAdd] = []
         # An index over `_pending` so a duplicate can be caught before the flush that
         # would let the store catch it. Cleared whenever the buffer drains.
-        self._staged: dict[OwnerKey, dict[AssocKey, _StoredSeries]] = {}
-        self._transactional = transactional
+        self._staged: dict[OwnerKey, set[AssocKey]] = {}
         self._auto_flush_threshold = auto_flush_threshold
         self._auto_flush_bytes = auto_flush_bytes
         self._staged_bytes = 0
@@ -161,17 +134,6 @@ class TimeSeriesStorageContext:
     def has_staged_data(self) -> bool:
         """Return True if additions are buffered but not yet written."""
         return bool(self._pending)
-
-    def begin(self) -> None:
-        """Open the store transaction backing this context.
-
-        Called by ``time_series_transaction``. Contexts created for a single operation
-        skip this: that operation is already atomic, and beginning a transaction would
-        take a write lock needlessly — and fail outright on a read-only store.
-        """
-        self.check_open()
-        self._transactional = True
-        self._storage.store.begin_transaction()
 
     def check_open(self) -> None:
         """Raise if this context has already been committed or discarded.
@@ -216,7 +178,7 @@ class TimeSeriesStorageContext:
         self.check_open()
         self._pending.extend(entries)
         for entry in entries:
-            self._staged.setdefault(entry.owner_key, {})[entry.assoc_key] = entry.stored
+            self._staged.setdefault(entry.owner_key, set()).add(entry.assoc_key)
             self._staged_bytes += entry.nbytes
         if (
             len(self._pending) >= self._auto_flush_threshold
@@ -224,21 +186,17 @@ class TimeSeriesStorageContext:
         ):
             self.flush()
 
-    def staged_for(self, owner_key: OwnerKey) -> dict[AssocKey, _StoredSeries]:
-        """Return this context's buffered associations for one owner.
-
-        The context knows only what it has buffered. Resolving that against what the
-        store already holds is the storage's job, since the storage owns that index.
-        """
-        return self._staged.get(owner_key, {})
+    def staged_for(self, owner_key: OwnerKey) -> set[AssocKey]:
+        """Return this context's buffered association identities for one owner."""
+        return self._staged.get(owner_key, set())
 
     def flush(self) -> None:
         """Write buffered additions to the store in one bulk call.
 
         A no-op when nothing is buffered. Any operation that needs the arrays physically
-        present — a read, a reader build, a removal, serialization — flushes first. Inside
-        a transactional context that costs nothing in recoverability: the write lands in
-        the open transaction and rolls back with it.
+        present — a read, a reader build, a removal, serialization — flushes first. When
+        this context is used inside ``Store.transaction()``, writes remain reversible
+        until that store transaction commits.
         """
         self.check_open()
         if not self._pending:
@@ -246,58 +204,36 @@ class TimeSeriesStorageContext:
         pending = self._pending
         # Reset before writing so a failed write cannot leave the entries buffered a
         # second time, and so the context stays usable for further additions. The
-        # overlay goes with it: once written, the store's index is authoritative.
+        # overlay goes with it: once written, the store's catalog is authoritative.
         self._pending = []
         self._staged = {}
         self._staged_bytes = 0
         self._storage.write_pending(pending)
 
     def commit(self) -> None:
-        """Flush buffered additions, commit the transaction, and close the context."""
+        """Flush buffered additions and close the context."""
         try:
             self.flush()
-            if self._transactional:
-                self._storage.store.commit_transaction()
         finally:
             self._closed = True
 
     def discard(self) -> None:
-        """Abandon this batch, undoing everything it did.
+        """Drop buffered additions and close the context.
 
-        Buffered additions never reached the store, so they are dropped outright.
-        Everything the block did write — including removals, which are reversible only
-        inside a transaction — is undone by rolling the store transaction back.
-
-        The in-memory index is rebuilt from the store afterwards, because entries added
-        or dropped as work was flushed describe a catalog state that no longer exists.
-
-        A failure in the rollback itself is logged rather than raised: this runs while an
-        exception is already propagating, and the error that caused the unwind is the one
-        the caller needs to see.
+        If this context ran inside a store transaction, its caller lets
+        ``Store.transaction()`` roll back flushed writes and removals.
         """
         self._pending = []
         self._staged = {}
         self._staged_bytes = 0
         self._closed = True
-        if not self._transactional:
-            return
-        try:
-            self._storage.store.rollback_transaction()
-        except Exception as e:  # noqa: BLE001 - must not mask the original exception
-            logger.error(
-                "Rolling back the time series transaction failed; the store may retain "
-                "partial work from this block: {}",
-                e,
-            )
-            return
-        self._storage.rehydrate()
 
     # ------------------------------------------------------------------
     # Operations
     # ------------------------------------------------------------------
     # Each entry point checks that the batch is still open and then hands itself to the
-    # storage, which owns the index and the store. The storage side is private: the
-    # context is the only supported way in, which is what keeps `context` out of the
+    # storage adapter. Those operations are private. The context is the only supported
+    # way in, which keeps `context` out of the
     # caller's `**features`.
 
     def add_time_series(
@@ -326,8 +262,8 @@ class TimeSeriesStorageContext:
         name: str | None = None,
         time_series_type: str | None = None,
         **features: Any,
-    ) -> _StoredSeries:
-        """Return the single stored-series descriptor matching the inputs.
+    ) -> dict[str, Any]:
+        """Return the single infrastore metadata row matching the inputs.
 
         Raises
         ------
@@ -347,11 +283,11 @@ class TimeSeriesStorageContext:
         name: str | None = None,
         time_series_type: str | None = None,
         **features: Any,
-    ) -> list[_StoredSeries]:
-        """Return all stored-series descriptors matching the inputs across the owners.
+    ) -> list[dict[str, Any]]:
+        """Return infrastore metadata rows matching the inputs across the owners.
 
-        Resolves against this batch's staged additions as well as the committed index, so
-        a caller sees its own uncommitted work and no one else's.
+        Resolves against this batch's staged additions and infrastore's committed rows,
+        so a caller sees its own uncommitted work and no one else's.
         """
         self.check_open()
         return self._storage._list_metadata(
@@ -377,8 +313,8 @@ class TimeSeriesStorageContext:
         name: str | None = None,
         time_series_type: str | None = None,
         **features: Any,
-    ) -> list[_StoredSeries]:
-        """Remove all associations matching the inputs and return their descriptors.
+    ) -> int:
+        """Remove all matching associations and return their count.
 
         Staged additions are flushed first, so a series added and removed inside one
         block is removed rather than silently committed by a later flush.
@@ -395,7 +331,7 @@ class TimeSeriesStorageContext:
 
     def get_time_series(
         self,
-        stored: _StoredSeries,
+        metadata: dict[str, Any],
         owner: Any,
         start_time: datetime | None = None,
         length: int | None = None,
@@ -403,12 +339,12 @@ class TimeSeriesStorageContext:
         """Return the array for one stored series, flushing this batch first."""
         self.check_open()
         return self._storage._get_time_series(
-            self, stored, owner, start_time=start_time, length=length
+            self, metadata, owner, start_time=start_time, length=length
         )
 
     def get_time_series_bulk(
         self,
-        records: list[_StoredSeries],
+        records: list[dict[str, Any]],
         owner: Any,
         start_time: datetime | None = None,
         length: int | None = None,
@@ -506,6 +442,6 @@ class TimeSeriesStorageContext:
         self.check_open()
         self._storage._serialize(self, data, dst, src=src)
 
-    def key_for(self, stored: _StoredSeries) -> Any:
-        """Build the public ``TimeSeriesKey`` for a stored-series descriptor."""
-        return self._storage.key_for(stored)
+    def key_for(self, metadata: dict[str, Any]) -> TimeSeriesKey:
+        """Build an infrasys public key from an infrastore metadata row."""
+        return self._storage.key_for(metadata)

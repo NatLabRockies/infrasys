@@ -116,8 +116,28 @@ def test_reader_raises_when_nothing_matches(tmp_path):
 def test_reader_rejects_off_grid_timestamp(tmp_path):
     system, _, _ = make_system(tmp_path)
     reader = system.build_time_series_reader(RESOLUTION)
+
     with pytest.raises(InvalidParameterError):
         reader.read(INITIAL_TIMESTAMP + timedelta(minutes=17))
+
+
+def test_reader_requires_a_uniform_grid(tmp_path):
+    system, _, _ = make_system(tmp_path)
+    bus = system.get_component(SimpleBus, "bus")
+    offset = SimpleGenerator(name="offset", active_power=1.0, rating=1.0, bus=bus, available=True)
+    system.add_component(offset)
+    system.add_time_series(
+        SingleTimeSeries.from_array(
+            np.zeros(LENGTH, dtype=np.float64),
+            "load",
+            INITIAL_TIMESTAMP + timedelta(days=30),
+            RESOLUTION,
+        ),
+        offset,
+    )
+
+    with pytest.raises(InvalidParameterError):
+        system.build_time_series_reader(RESOLUTION, name="load")
 
 
 def test_reader_exposes_units(tmp_path):
@@ -161,24 +181,6 @@ def test_reader_sees_series_staged_in_an_open_batch(tmp_path):
         # the batch; without it the staged series would be invisible to the reader.
         reader = txn.build_time_series_reader(RESOLUTION)
         assert reader.read(INITIAL_TIMESTAMP)[late.id] == 7.0
-
-
-def test_reader_requires_a_uniform_grid(tmp_path):
-    system, _, _ = make_system(tmp_path)
-    bus = system.get_component(SimpleBus, "bus")
-    offset = SimpleGenerator(name="offset", active_power=1.0, rating=1.0, bus=bus, available=True)
-    system.add_component(offset)
-    system.add_time_series(
-        SingleTimeSeries.from_array(
-            np.zeros(LENGTH, dtype=np.float64),
-            "load",
-            INITIAL_TIMESTAMP + timedelta(days=30),
-            RESOLUTION,
-        ),
-        offset,
-    )
-    with pytest.raises(InvalidParameterError):
-        system.build_time_series_reader(RESOLUTION, name="load")
 
 
 def test_forecast_reader_matches_get_time_series(tmp_path):
@@ -240,5 +242,6 @@ def test_forecast_reader_rejects_off_grid_timestamp(tmp_path):
     system, _, _ = make_system(tmp_path)
     system.transform_single_time_series(horizon=timedelta(hours=4), interval=RESOLUTION)
     reader = system.build_forecast_reader(RESOLUTION, name="load")
+
     with pytest.raises(InvalidParameterError):
         reader.read(INITIAL_TIMESTAMP + timedelta(minutes=17))

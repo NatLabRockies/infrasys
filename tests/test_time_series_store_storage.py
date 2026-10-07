@@ -1,9 +1,9 @@
-from datetime import datetime, timedelta, timezone
-
+from datetime import datetime, timedelta
 import numpy as np
 import pytest
+from infrastore import InvalidParameterError
 
-from infrasys.exceptions import ISAlreadyAttached, ISNotStored
+from infrasys.exceptions import ISAlreadyAttached, ISNotStored, ISOperationNotAllowed
 from infrasys.quantities import ActivePower
 from infrasys.time_series_store_storage import TimeSeriesStoreStorage
 from infrasys.time_series_models import (
@@ -47,36 +47,6 @@ def make_system(tmp_path) -> tuple[SimpleSystem, SimpleGenerator]:
     )
     system.add_components(bus, generator)
     return system, generator
-
-
-def _store_accepts_a_zero_interval() -> bool:
-    """Does the installed infrastore accept a zero interval for a single-window forecast?
-
-    A ``window_count=1`` forecast has no second window to step to, so infrastore made
-    ``timedelta(0)`` a valid interval there. Releases before that reject it, and the store
-    validates in the constructor, so probing costs nothing but an object.
-    """
-    from infrastore import Deterministic as RustDeterministic, InvalidParameterError
-
-    try:
-        RustDeterministic(
-            datetime(2024, 1, 1, tzinfo=timezone.utc),
-            timedelta(hours=1),
-            timedelta(hours=4),
-            timedelta(0),
-            1,
-            np.zeros((4, 1), dtype=np.float64),
-            "probe",
-        )
-    except InvalidParameterError:
-        return False
-    return True
-
-
-requires_zero_interval = pytest.mark.skipif(
-    not _store_accepts_a_zero_interval(),
-    reason="the installed infrastore rejects a zero interval for a single-window forecast",
-)
 
 
 def test_time_series_store_is_default():
@@ -164,8 +134,6 @@ def test_compression_options_flow_from_system(tmp_path, compression_kwargs):
 
 
 def test_invalid_compression_rejected(tmp_path):
-    from infrastore import InvalidParameterError
-
     with pytest.raises(InvalidParameterError):
         TimeSeriesStoreStorage.create_with_temp_directory(tmp_path, compression="lz4")
 
@@ -184,6 +152,16 @@ def test_remove_time_series(tmp_path):
 
     with pytest.raises(ISNotStored):
         system.get_time_series(generator, name="active_power")
+
+
+def test_remove_validates_all_owners_before_changing_store(tmp_path):
+    system, generator = make_system(tmp_path)
+    system.add_time_series(make_single(), generator)
+
+    with pytest.raises(ISOperationNotAllowed, match="does not have an id"):
+        system.remove_time_series(generator, SimpleGenerator.example(), name="active_power")
+
+    assert system.has_time_series(generator, name="active_power")
 
 
 def test_serialization_round_trip(tmp_path):
@@ -213,6 +191,30 @@ def test_serialization_round_trip(tmp_path):
     )
 
 
+def test_serialize_from_external_store(tmp_path):
+    system, generator = make_system(tmp_path / "source")
+    system.add_time_series(make_single(), generator)
+    system_path = tmp_path / "source.json"
+    system.to_json(system_path)
+
+    destination = tmp_path / "external_copy"
+    system.time_series.serialize(
+        {},
+        destination,
+        src=system_path.parent / f"{system_path.stem}_time_series",
+    )
+
+    from infrastore import Store
+
+    copied_store = Store.open(
+        str(destination / TimeSeriesStoreStorage.STORAGE_FILE), read_only=True
+    )
+    try:
+        assert len(copied_store.list_metadata()) == 1
+    finally:
+        copied_store.close()
+
+
 @pytest.mark.parametrize("units", [False, True])
 def test_deterministic_round_trip(tmp_path, units):
     system, generator = make_system(tmp_path)
@@ -232,6 +234,51 @@ def test_deterministic_round_trip(tmp_path, units):
         from infrasys.quantities import ActivePower as _AP
 
         assert isinstance(result.data, _AP)
+
+
+def test_duplicate_deterministic_time_series_uses_infrasys_error(tmp_path):
+    system, generator = make_system(tmp_path)
+    forecast = make_deterministic()
+    system.add_time_series(forecast, generator)
+
+    with pytest.raises(ISAlreadyAttached):
+        system.add_time_series(forecast, generator)
+
+
+def test_duplicate_detection_compares_the_complete_feature_set(tmp_path):
+    system, generator = make_system(tmp_path)
+    series = make_single()
+
+    system.add_time_series(series, generator, scenario="high", year=2030)
+    system.add_time_series(series, generator, scenario="high")
+    system.add_time_series(series, generator)
+
+    with pytest.raises(ISAlreadyAttached):
+        system.add_time_series(series, generator, scenario="high", year=2030)
+    with pytest.raises(ISAlreadyAttached):
+        system.add_time_series(series, generator, scenario="high")
+    with pytest.raises(ISAlreadyAttached):
+        system.add_time_series(series, generator)
+
+
+def test_store_rejects_explicit_forecast_when_derived_forecast_exists(tmp_path):
+    system, generator = make_system(tmp_path)
+    system.add_time_series(make_single(), generator)
+    system.transform_single_time_series(horizon=timedelta(hours=2), interval=timedelta(hours=1))
+
+    with pytest.raises(InvalidParameterError, match="mutually exclusive"):
+        system.add_time_series(make_deterministic(), generator)
+
+
+def test_store_rejects_derived_forecast_when_explicit_forecast_exists(tmp_path):
+    system, generator = make_system(tmp_path)
+    system.add_time_series(make_deterministic(), generator)
+    system.add_time_series(make_single(), generator)
+
+    with pytest.raises(InvalidParameterError, match="mutually exclusive"):
+        system.transform_single_time_series(
+            horizon=timedelta(hours=2), interval=timedelta(hours=1)
+        )
 
 
 def test_deterministic_keys(tmp_path):
@@ -310,48 +357,6 @@ def test_transform_single_time_series_round_trip(tmp_path):
         loaded_generator, name="active_power", time_series_type=Deterministic
     )
     np.testing.assert_array_equal(forecast.data_array, expected)
-
-
-def test_deterministic_collides_with_transformed_view(tmp_path):
-    """Adding an explicit Deterministic must be rejected once a transform-derived
-    DeterministicSingleTimeSeries view of the same series exists; they are mutually exclusive.
-    """
-    from infrastore import InvalidParameterError
-
-    system, generator = make_system(tmp_path)
-    single = SingleTimeSeries.from_array(
-        np.arange(12, dtype=np.float64),
-        "active_power",
-        datetime(2024, 1, 1),
-        timedelta(hours=1),
-    )
-    system.add_time_series(single, generator)
-    system.transform_single_time_series(horizon=timedelta(hours=4), interval=timedelta(hours=1))
-
-    with pytest.raises(InvalidParameterError, match="mutually exclusive"):
-        system.add_time_series(make_deterministic(), generator)
-
-
-def test_transform_collides_with_explicit_deterministic(tmp_path):
-    """transform_single_time_series must be rejected once an explicit Deterministic forecast of
-    the same series exists; the derived DeterministicSingleTimeSeries would collide with it.
-    """
-    from infrastore import InvalidParameterError
-
-    system, generator = make_system(tmp_path)
-    system.add_time_series(make_deterministic(), generator)
-    single = SingleTimeSeries.from_array(
-        np.arange(12, dtype=np.float64),
-        "active_power",
-        datetime(2024, 1, 1),
-        timedelta(hours=1),
-    )
-    system.add_time_series(single, generator)
-
-    with pytest.raises(InvalidParameterError, match="mutually exclusive"):
-        system.transform_single_time_series(
-            horizon=timedelta(hours=4), interval=timedelta(hours=1)
-        )
 
 
 def test_forecast_rejects_slicing(tmp_path):
@@ -475,11 +480,13 @@ def test_has_time_series_finds_a_transform_derived_forecast(tmp_path):
     the probe asks for the store's deterministic *family* rather than either tag alone.
     """
     system, generator = make_system(tmp_path)
-    system.add_time_series(make_single(), generator)
+    system.add_time_series(make_single(), generator, scenario="high", year=2030)
     assert not system.has_time_series(generator, time_series_type=Deterministic)
 
     system.transform_single_time_series(horizon=timedelta(hours=2), interval=timedelta(hours=1))
     assert system.has_time_series(generator, time_series_type=Deterministic)
+    assert system.has_time_series(generator, time_series_type=Deterministic, scenario="high")
+    assert not system.has_time_series(generator, time_series_type=Deterministic, scenario="low")
     # The static series the view shares is untouched, and narrower filters still apply.
     assert system.has_time_series(generator, time_series_type=SingleTimeSeries)
     assert system.has_time_series(generator, name="active_power", time_series_type=Deterministic)
@@ -495,7 +502,47 @@ def test_has_time_series_finds_an_explicit_forecast_by_family(tmp_path):
     assert not system.has_time_series(generator, time_series_type=SingleTimeSeries)
 
 
-@requires_zero_interval
+def test_has_time_series_uses_store_existence_probe(tmp_path, monkeypatch):
+    system, generator = make_system(tmp_path)
+    system.add_time_series(make_single(), generator)
+    storage = system.time_series.storage
+    store = storage.store
+    probes = []
+
+    class StoreProbe:
+        def has_any_time_series(self, **filters):
+            probes.append(filters)
+            return store.has_any_time_series(**filters)
+
+        def list_metadata(self, **filters):
+            msg = "existence checks must not materialize metadata rows"
+            raise AssertionError(msg)
+
+    monkeypatch.setattr(storage, "_store", StoreProbe())
+
+    assert system.has_time_series(generator, name="active_power")
+    assert len(probes) == 1
+
+
+def test_has_time_series_returns_false_for_unknown_type(tmp_path):
+    system, generator = make_system(tmp_path)
+    system.add_time_series(make_single(), generator)
+
+    context = system.time_series.storage.new_context()
+    assert not context.has_metadata(generator, time_series_type="UnknownTimeSeries")
+
+
+def test_has_time_series_matches_feature_subsets(tmp_path):
+    system, generator = make_system(tmp_path)
+    system.add_time_series(make_single(), generator, scenario="high", year=2030)
+
+    assert system.has_time_series(generator, scenario="high")
+    assert system.has_time_series(generator, year=2030)
+    assert system.has_time_series(generator)
+    assert not system.has_time_series(generator, scenario="low")
+    assert not system.has_time_series(generator, year=2024)
+
+
 def test_single_window_forecast_with_zero_interval_round_trip(tmp_path):
     """A single-window forecast may carry a zero interval, kept verbatim through a reload."""
     system, generator = make_system(tmp_path / "storage")
@@ -528,7 +575,6 @@ def test_single_window_forecast_with_zero_interval_round_trip(tmp_path):
     np.testing.assert_array_equal(reloaded.data_array, data)
 
 
-@requires_zero_interval
 def test_transform_single_time_series_with_zero_interval(tmp_path):
     """A zero interval asks the store for exactly one window spanning the whole series."""
     system, generator = make_system(tmp_path)
@@ -565,9 +611,9 @@ def test_time_series_transaction_defers_writes(tmp_path):
         # The context sees its own staged additions, but the store has not been written yet.
         for ts in time_series:
             assert txn.has_time_series(generator, name=ts.name)
-        assert storage.store.list_time_series() == []
+        assert storage.store.list_metadata() == []
 
-    assert len(storage.store.list_time_series()) == len(time_series)
+    assert len(storage.store.list_metadata()) == len(time_series)
     for expected in time_series:
         actual = system.get_time_series(generator, name=expected.name)
         np.testing.assert_array_equal(actual.data, expected.data)
@@ -589,7 +635,7 @@ def test_reading_inside_batch_flushes_pending(tmp_path):
         )
         txn.add_time_series(second, generator)
 
-    assert len(system.time_series.storage.store.list_time_series()) == 2
+    assert len(system.time_series.storage.store.list_metadata()) == 2
 
 
 def test_add_time_series_multiple_owners_is_atomic(tmp_path):
@@ -615,51 +661,6 @@ def test_add_time_series_multiple_owners_is_atomic(tmp_path):
     assert system.has_time_series(other, name="load")
 
 
-def test_rehydrate_does_not_read_arrays(tmp_path):
-    system, generator = make_system(tmp_path)
-    system.add_time_series(make_deterministic(), generator)
-    system.add_time_series(
-        SingleTimeSeries.from_array(
-            np.arange(8, dtype=np.float64), "load", datetime(2024, 1, 1), timedelta(hours=1)
-        ),
-        generator,
-    )
-    filename = tmp_path / "system.json"
-    system.to_json(filename)
-
-    loaded = SimpleSystem.from_json(filename)
-    storage = loaded.time_series.storage
-
-    class NoArrayReads:
-        """Forwards to the real store but fails any attempt to read array data."""
-
-        def __init__(self, store):
-            self._store = store
-
-        def get_time_series(self, *args, **kwargs):
-            msg = "rehydrate must not read array data"
-            raise AssertionError(msg)
-
-        def __getattr__(self, name):
-            return getattr(self._store, name)
-
-    original = storage._store
-    storage._store = NoArrayReads(original)
-    try:
-        storage.rehydrate()
-    finally:
-        storage._store = original
-
-    loaded_generator = loaded.get_component(SimpleGenerator, generator.name)
-    forecast = loaded.get_time_series(
-        loaded_generator, name="active_power", time_series_type=Deterministic
-    )
-    assert forecast.window_count == 3
-    assert forecast.horizon == timedelta(hours=4)
-    assert forecast.interval == timedelta(hours=1)
-    assert forecast.initial_timestamp == datetime(2024, 1, 1)
-
-
 def test_list_time_series_matches_per_series_reads(tmp_path):
     system, generator = make_system(tmp_path)
     initial_timestamp = datetime(2024, 1, 1)
@@ -679,8 +680,10 @@ def test_list_time_series_matches_per_series_reads(tmp_path):
     assert len(listed) == len(expected)
     by_name = {x.name: x for x in listed}
     for time_series in expected:
-        np.testing.assert_array_equal(by_name[time_series.name].data, time_series.data)
-        assert by_name[time_series.name].initial_timestamp == initial_timestamp
+        actual = by_name[time_series.name]
+        assert isinstance(actual, SingleTimeSeries)
+        np.testing.assert_array_equal(actual.data, time_series.data)
+        assert actual.initial_timestamp == initial_timestamp
 
     sliced = {
         x.name: x
@@ -690,6 +693,7 @@ def test_list_time_series_matches_per_series_reads(tmp_path):
     }
     for time_series in expected:
         actual = sliced[time_series.name]
+        assert isinstance(actual, SingleTimeSeries)
         assert actual.initial_timestamp == initial_timestamp + timedelta(hours=3)
         np.testing.assert_array_equal(actual.data, time_series.data[3:5])
 
@@ -701,50 +705,9 @@ def test_list_time_series_reads_forecasts(tmp_path):
 
     listed = system.list_time_series(generator, time_series_type=Deterministic)
     assert len(listed) == 1
+    assert isinstance(listed[0], Deterministic)
     np.testing.assert_array_equal(listed[0].data_array, expected.data_array)
     assert listed[0].window_count == expected.window_count
-
-
-def test_reads_do_not_scan_for_keys(tmp_path):
-    system, generator = make_system(tmp_path)
-    with system.time_series_transaction() as txn:
-        for i in range(3):
-            txn.add_time_series(
-                SingleTimeSeries.from_array(
-                    np.arange(8, dtype=np.float64),
-                    f"load_{i}",
-                    datetime(2024, 1, 1),
-                    timedelta(hours=1),
-                ),
-                generator,
-            )
-    filename = tmp_path / "system.json"
-    system.to_json(filename)
-    loaded = SimpleSystem.from_json(filename)
-    loaded_generator = loaded.get_component(SimpleGenerator, generator.name)
-    storage = loaded.time_series.storage
-
-    class NoKeyScans:
-        """Forwards to the real store but fails any per-owner key scan."""
-
-        def __init__(self, store):
-            self._store = store
-
-        def get_time_series_keys(self, *args, **kwargs):
-            msg = "reads must use the cached store key"
-            raise AssertionError(msg)
-
-        def __getattr__(self, name):
-            return getattr(self._store, name)
-
-    original = storage._store
-    storage._store = NoKeyScans(original)
-    try:
-        assert len(loaded.list_time_series(loaded_generator)) == 3
-        for i in range(3):
-            loaded.get_time_series(loaded_generator, name=f"load_{i}")
-    finally:
-        storage._store = original
 
 
 def test_list_time_series_reads_non_sequential(tmp_path):
@@ -758,6 +721,7 @@ def test_list_time_series_reads_non_sequential(tmp_path):
 
     listed = system.list_time_series(generator, time_series_type=NonSequentialTimeSeries)
     assert len(listed) == 1
+    assert isinstance(listed[0], NonSequentialTimeSeries)
     np.testing.assert_array_equal(listed[0].data, expected.data)
     np.testing.assert_array_equal(listed[0].timestamps, timestamps)
 
@@ -767,7 +731,7 @@ def test_system_close_closes_store(tmp_path):
     store = system.time_series.storage.store
     system.close()
     with pytest.raises(Exception, match="closed"):
-        store.list_keys()
+        store.list_metadata()
 
 
 def make_single(name: str = "active_power") -> SingleTimeSeries:
@@ -792,7 +756,7 @@ def test_remove_component_removes_all_time_series_types(tmp_path):
     store = system.time_series.storage.store
 
     system.remove_component(generator, cascade_down=False)
-    assert not store.list_keys(owner_id=owner_id)
+    assert not store.list_metadata(owner_id=owner_id)
 
 
 def test_remove_component_with_feature_subset_series(tmp_path):
@@ -803,7 +767,7 @@ def test_remove_component_with_feature_subset_series(tmp_path):
     store = system.time_series.storage.store
 
     system.remove_component(generator, cascade_down=False)
-    assert not store.list_keys(owner_id=owner_id)
+    assert not store.list_metadata(owner_id=owner_id)
 
 
 def test_time_series_type_none_matches_all_types(tmp_path):

@@ -37,14 +37,17 @@ def test_staged_adds_are_visible_only_through_their_own_transaction(tmp_path):
     gen = generators[0]
 
     with system.time_series_transaction() as txn:
-        txn.add_time_series(make_series(), gen)
-        # The transaction sees its own work.
+        txn.add_time_series(make_series(), gen, scenario="high", year=2030)
+        # The transaction sees its own work, including feature-subset queries.
         assert txn.has_time_series(gen, name="load")
+        assert txn.has_time_series(gen, scenario="high")
+        assert not txn.has_time_series(gen, scenario="low")
         # A System call runs on its own and sees committed state only.
         assert not system.has_time_series(gen, name="load")
 
     # After the block commits, the addition is visible to everyone.
     assert system.has_time_series(gen, name="load")
+    assert system.has_time_series(gen, scenario="high")
 
 
 def test_second_transaction_does_not_see_anothers_staged_adds(tmp_path):
@@ -152,7 +155,7 @@ def test_exception_undoes_adds_already_flushed_mid_block(tmp_path):
             raise RuntimeError(msg)
 
     assert not system.has_time_series(gen, name="load")
-    assert system.time_series.storage.store.list_time_series() == []
+    assert system.time_series.storage.store.list_metadata() == []
 
 
 def test_transaction_rejects_use_after_its_block_exits(tmp_path):
@@ -203,13 +206,13 @@ def test_auto_flush_bounds_the_buffer(tmp_path):
         for i in range(7):
             txn.add_time_series(make_series(f"ts_{i}"), gen)
         # Two auto-flushes at 3 and 6 drained all but the seventh entry.
-        assert len(store.list_time_series()) == 6
+        assert len(store.list_metadata()) == 6
         assert txn.has_staged_data
         # Flushed or buffered, everything stays visible through the transaction.
         for i in range(7):
             assert txn.has_time_series(gen, name=f"ts_{i}")
 
-    assert len(store.list_time_series()) == 7
+    assert len(store.list_metadata()) == 7
 
 
 def test_auto_flush_by_bytes_bounds_large_arrays(tmp_path):
@@ -223,10 +226,10 @@ def test_auto_flush_by_bytes_bounds_large_arrays(tmp_path):
         for i in range(7):
             txn.add_time_series(make_series(f"ts_{i}"), gen)
         # Byte-triggered flushes at 3 and 6 drained all but the seventh entry.
-        assert len(store.list_time_series()) == 6
+        assert len(store.list_metadata()) == 6
         assert txn.has_staged_data
 
-    assert len(store.list_time_series()) == 7
+    assert len(store.list_metadata()) == 7
 
 
 def test_auto_flushed_work_rolls_back_with_the_block(tmp_path):
@@ -240,7 +243,7 @@ def test_auto_flushed_work_rolls_back_with_the_block(tmp_path):
             msg = "boom"
             raise RuntimeError(msg)
 
-    assert system.time_series.storage.store.list_time_series() == []
+    assert system.time_series.storage.store.list_metadata() == []
 
 
 def test_transient_context_commits_each_call(tmp_path):
@@ -250,7 +253,7 @@ def test_transient_context_commits_each_call(tmp_path):
 
     system.add_time_series(make_series(), gen)
     assert system.has_time_series(gen, name="load")
-    assert len(system.time_series.storage.store.list_time_series()) == 1
+    assert len(system.time_series.storage.store.list_metadata()) == 1
 
 
 def test_storage_holds_no_batch_state(tmp_path):
@@ -264,7 +267,7 @@ def test_storage_holds_no_batch_state(tmp_path):
         # Nothing about the open batch is reachable from storage: it holds no buffer, and
         # a context that staged nothing sees nothing.
         assert not hasattr(storage, "_pending")
-        assert storage.new_context().staged_for((generators[0].id, "Component")) == {}
+        assert storage.new_context().staged_for((generators[0].id, "Component")) == set()
         assert not system.has_time_series(generators[0], name="load")
 
     assert not txn.has_staged_data

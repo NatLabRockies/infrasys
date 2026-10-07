@@ -373,7 +373,7 @@ class TimeSeriesManager:
             )
         logger.info(
             "Removed {} time series matching type={} name={}",
-            len(removed),
+            removed,
             _type_name(time_series_type),
             name,
         )
@@ -465,14 +465,18 @@ class TimeSeriesManager:
             auto_flush_threshold=auto_flush_threshold,
             auto_flush_bytes=auto_flush_bytes,
         )
-        context.begin()
         try:
-            yield context
-        except Exception as e:
-            logger.error(e)
+            with self._storage.store.transaction():
+                try:
+                    yield context
+                except Exception as e:
+                    logger.error(e)
+                    raise
+                else:
+                    context.commit()
+        except BaseException:
             context.discard()
             raise
-        context.commit()
 
     def raise_if_read_only(self) -> None:
         """Raise if this manager refuses time series modifications.
@@ -512,7 +516,7 @@ def _(time_series: SingleTimeSeries, features: dict[str, Any]) -> TimeSeriesKey:
 @make_time_series_key.register(NonSequentialTimeSeries)
 def _(time_series: NonSequentialTimeSeries, features: dict[str, Any]) -> TimeSeriesKey:
     return NonSequentialTimeSeriesKey(
-        length=time_series.length,
+        length=len(time_series.data),
         features=features,
         name=time_series.name,
         time_series_type=NonSequentialTimeSeries,
