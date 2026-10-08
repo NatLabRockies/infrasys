@@ -221,18 +221,19 @@ def test_add_supplemental_attribute_rejects_connection_kwarg():
     assert attr1.id is None
 
 
-def test_supplemental_attribute_manager_metadata_context_rolls_back_on_error():
+@pytest.mark.parametrize("error_type", [RuntimeError, KeyboardInterrupt])
+def test_supplemental_attribute_manager_metadata_context_rolls_back_on_error(error_type):
     bus = SimpleBus(name="test-bus", voltage=1.1)
     gen = SimpleGenerator(name="gen1", active_power=1.0, rating=1.0, bus=bus, available=True)
     attr1 = GeographicInfo.example()
     system = SimpleSystem(auto_add_composed_components=True)
     system.add_component(gen)
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(error_type):
         with system._supplemental_attr_mgr.open_metadata_store():
             system.add_supplemental_attribute(bus, attr1)
             msg = "boom"
-            raise RuntimeError(msg)
+            raise error_type(msg)
 
     assert not system.get_supplemental_attributes_with_component(bus)
     assert system.get_num_supplemental_attributes() == 0
@@ -292,6 +293,17 @@ def test_association_read_queries_accept_transaction_connection():
         assert store.has_supplemental_attribute_association(
             component_id=bus.id, attribute_types=[GeographicInfo.__name__]
         )
+
+
+def test_open_metadata_store_allows_read_only_queries(tmp_path):
+    filename = tmp_path / "system.json"
+    writable = SimpleSystem(auto_add_composed_components=True)
+    writable.add_component(SimpleBus(name="bus", voltage=1.0))
+    writable.to_json(filename)
+    system = SimpleSystem.from_json(filename, time_series_read_only=True)
+
+    with system.open_metadata_store() as store:
+        assert store.list_supplemental_attribute_associations() == []
 
 
 def test_remove_supplemental_attribute_from_component_in_metadata_context_rolls_back():
