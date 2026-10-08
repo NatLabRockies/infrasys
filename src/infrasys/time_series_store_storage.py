@@ -49,6 +49,7 @@ from loguru import logger
 from infrastore import (
     Deterministic as RustDeterministic,
     DuplicateAssociationError,
+    DuplicateTimeSeriesError,
     NonSequentialTimeSeries as RustNonSequentialTimeSeries,
     OwnerCategory,
     SingleTimeSeries as RustSingleTimeSeries,
@@ -341,6 +342,46 @@ class TimeSeriesStoreStorage:
             )
 
         context.stage(staged)
+
+    def _copy_time_series(
+        self,
+        context: TimeSeriesStorageContext,
+        /,
+        dst: Any,
+        src: Any,
+        name_mapping: dict[str, str] | None,
+    ) -> None:
+        """Copy source associations through infrastore without reading their arrays."""
+        src_id, src_category = _owner_identity(src)
+        dst_id, dst_category = _owner_identity(dst)
+        if src_category != dst_category:
+            msg = "Time series can only be copied between owners of the same category."
+            raise ISInvalidParameter(msg)
+
+        context.flush()
+        source_records = self._store.list_metadata(
+            owner_id=src_id,
+            owner_category=src_category,
+        )
+        copies = [
+            (record, None if name_mapping is None else name_mapping[record["name"]])
+            for record in source_records
+            if name_mapping is None or record["name"] in name_mapping
+        ]
+        if not copies:
+            return
+
+        try:
+            with self._store.transaction():
+                for record, new_name in copies:
+                    self._store.copy_time_series(
+                        record["id"],
+                        dst_id,
+                        type(dst).__name__,
+                        new_name=new_name,
+                    )
+        except DuplicateTimeSeriesError as error:
+            raise ISAlreadyAttached(str(error)) from error
 
     def _get_metadata(
         self,

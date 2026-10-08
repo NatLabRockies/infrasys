@@ -1234,19 +1234,19 @@ class System:
 
         Parameters
         ----------
-        dst : Component
-            Destination component
-        src : Component
-            Source component
-        name_mapping : dict[str, str]
-            Optionally map src names to different dst names.
-            If provided and src has a time_series with a name not present in name_mapping, that
-            time_series will not copied. If name_mapping is nothing then all time_series will be
-            copied with src's names.
+        dst : Component | SupplementalAttribute
+            Destination owner.
+        src : Component | SupplementalAttribute
+            Source owner.
+        name_mapping : dict[str, str] | None
+            Optionally map source names to destination names. If provided, only source series
+            whose names are present in the mapping are copied. If omitted, all series are
+            copied with their existing names.
 
         Notes
         -----
-        name_mapping is currently not implemented.
+        Source and destination must both be components or both be supplemental attributes.
+        Cross-category copies raise ``ISInvalidParameter``.
 
         Examples
         --------
