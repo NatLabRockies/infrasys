@@ -1,6 +1,6 @@
 """Manages supplemental"""
 
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from typing import TYPE_CHECKING, Any, Callable, Generator, Iterable, Optional, Type, TypeVar, cast
 
 from loguru import logger
@@ -118,26 +118,23 @@ class SupplementalAttributeManager:
 
         Notes
         -----
-        Nested metadata contexts are disallowed. If a nested context attempt raises
-        and the exception escapes this context manager, all metadata updates already
-        performed in this context are rolled back.
-
-        The backing store has no transaction primitive, so the association rows are
-        snapshotted on entry and restored verbatim if an exception escapes the context.
-        Association rows are small metadata, so a full snapshot is cheap.
+        Nested metadata contexts are disallowed. If an exception escapes this context,
+        the store transaction and in-memory attribute indexes are rolled back. Read-only
+        stores remain available for queries without opening a write transaction.
         """
         if self._in_context:
             msg = "Cannot nest open_metadata_store contexts."
             raise ISOperationNotAllowed(msg)
 
-        snapshot = self._store.list_supplemental_attribute_associations()
+        store = self._store
+        transaction = nullcontext(store) if store.read_only else store.transaction()
         self._in_context = True
         self._context_new_attributes = []
         self._context_removed_attributes = []
         try:
-            yield self._store
-        except Exception:
-            self._restore_associations(snapshot)
+            with transaction:
+                yield store
+        except BaseException:
             self._rollback_new_attributes()
             self._rollback_removed_attributes()
             raise
@@ -146,19 +143,13 @@ class SupplementalAttributeManager:
             self._context_new_attributes = []
             self._context_removed_attributes = []
 
-    def _restore_associations(self, snapshot: list[SupplementalAttributeAssociation]) -> None:
-        """Replace all stored associations with the ones captured in the snapshot."""
-        self._store.remove_supplemental_attribute_associations()
-        if snapshot:
-            self._store.add_supplemental_attribute_associations(snapshot)
-
     def _rollback_new_attributes(self) -> None:
         for attribute in self._context_new_attributes:
             self.rollback_attribute_addition(attribute)
 
     def _rollback_removed_attributes(self) -> None:
-        # Association rows are restored by self._restore_associations() before this
-        # method runs. This only repairs in-memory attribute bookkeeping.
+        # The store transaction restores association rows before this repairs the
+        # in-memory attribute bookkeeping.
         for attribute in self._context_removed_attributes:
             attr_type = type(attribute)
             if attr_type not in self._attributes:
