@@ -3,7 +3,13 @@ import numpy as np
 import pytest
 from infrastore import InvalidParameterError
 
-from infrasys.exceptions import ISAlreadyAttached, ISNotStored, ISOperationNotAllowed
+from infrasys import GeographicInfo
+from infrasys.exceptions import (
+    ISAlreadyAttached,
+    ISInvalidParameter,
+    ISNotStored,
+    ISOperationNotAllowed,
+)
 from infrasys.quantities import ActivePower
 from infrasys.time_series_store_storage import TimeSeriesStoreStorage
 from infrasys.time_series_models import (
@@ -136,6 +142,100 @@ def test_compression_options_flow_from_system(tmp_path, compression_kwargs):
 def test_invalid_compression_rejected(tmp_path):
     with pytest.raises(InvalidParameterError):
         TimeSeriesStoreStorage.create_with_temp_directory(tmp_path, compression="lz4")
+
+
+def test_copy_time_series_preserves_metadata_and_shares_array(tmp_path):
+    system, source = make_system(tmp_path)
+    destination = system.copy_component(source, name="destination", attach=True)
+    values = np.arange(5, dtype=np.float64)
+    series = SingleTimeSeries.from_array(
+        values,
+        "active_power",
+        datetime(2024, 1, 1),
+        timedelta(hours=1),
+    )
+    system.add_time_series(series, source, scenario="high")
+    store = system.time_series.storage.store
+    source_metadata = store.list_metadata(owner_id=source.id, name="active_power")[0]
+    array_count = store.num_distinct_arrays()
+
+    system.copy_time_series(destination, source)
+
+    destination_metadata = store.list_metadata(owner_id=destination.id, name="active_power")[0]
+    assert destination_metadata["features"] == source_metadata["features"]
+    assert destination_metadata["data_hash"] == source_metadata["data_hash"]
+    assert destination_metadata["id"] != source_metadata["id"]
+    assert store.num_distinct_arrays() == array_count
+    copied = system.get_time_series(destination, name="active_power", scenario="high")
+    np.testing.assert_array_equal(copied.data, values)
+
+
+def test_copy_time_series_name_mapping_skips_unmapped_series(tmp_path):
+    system, source = make_system(tmp_path)
+    destination = system.copy_component(source, name="destination", attach=True)
+    start = datetime(2024, 1, 1)
+    resolution = timedelta(hours=1)
+    system.add_time_series(
+        SingleTimeSeries.from_array(np.arange(3), "selected", start, resolution), source
+    )
+    system.add_time_series(
+        SingleTimeSeries.from_array(np.arange(3) + 3, "skipped", start, resolution), source
+    )
+
+    system.copy_time_series(destination, source, name_mapping={"selected": "renamed"})
+
+    assert system.has_time_series(destination, name="renamed")
+    assert not system.has_time_series(destination, name="selected")
+    assert not system.has_time_series(destination, name="skipped")
+
+
+def test_copy_time_series_rejects_cross_category(tmp_path):
+    system, source = make_system(tmp_path)
+    attribute = GeographicInfo.example()
+    system.add_supplemental_attribute(source, attribute)
+
+    with pytest.raises(ISInvalidParameter, match="same category"):
+        system.copy_time_series(attribute, source)
+
+
+def test_copy_time_series_in_transaction_copies_staged_source(tmp_path):
+    system, source = make_system(tmp_path)
+    destination = system.copy_component(source, name="destination", attach=True)
+    series = SingleTimeSeries.from_array(
+        np.arange(3),
+        "active_power",
+        datetime(2024, 1, 1),
+        timedelta(hours=1),
+    )
+
+    with system.time_series_transaction() as transaction:
+        transaction.add_time_series(series, source, scenario="high")
+        transaction.copy_time_series(destination, source)
+        assert transaction.has_time_series(destination, name="active_power", scenario="high")
+
+    assert system.has_time_series(destination, name="active_power", scenario="high")
+
+
+def test_copy_time_series_rolls_back_all_copies_on_duplicate(tmp_path):
+    system, source = make_system(tmp_path)
+    destination = system.copy_component(source, name="destination", attach=True)
+    start = datetime(2024, 1, 1)
+    resolution = timedelta(hours=1)
+    system.add_time_series(
+        SingleTimeSeries.from_array(np.arange(3), "first", start, resolution), source
+    )
+    system.add_time_series(
+        SingleTimeSeries.from_array(np.arange(3) + 3, "duplicate", start, resolution), source
+    )
+    system.add_time_series(
+        SingleTimeSeries.from_array(np.arange(3) + 6, "duplicate", start, resolution),
+        destination,
+    )
+
+    with pytest.raises(ISAlreadyAttached):
+        system.copy_time_series(destination, source)
+
+    assert not system.has_time_series(destination, name="first")
 
 
 def test_remove_time_series(tmp_path):
