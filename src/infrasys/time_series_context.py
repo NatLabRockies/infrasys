@@ -258,6 +258,16 @@ class TimeSeriesStorageContext:
         self.check_open()
         self._storage._add_time_series(self, time_series, *owners, **features)
 
+    def copy_time_series(
+        self,
+        dst: Any,
+        src: Any,
+        name_mapping: dict[str, str] | None = None,
+    ) -> None:
+        """Copy the source owner's series through infrastore's catalog API."""
+        self.check_open()
+        self._storage._copy_time_series(self, dst, src, name_mapping)
+
     def get_metadata(
         self,
         owner: Any,
