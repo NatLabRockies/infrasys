@@ -11,6 +11,7 @@ from infrasys.quantities import ActivePower
 from infrasys.time_series_metadata_store import (
     TimeSeriesMetadataStore,
     _deserialize_time_series_metadata,
+    _serialize_scaling_factor_multiplier,
 )
 from infrasys.time_series_models import (
     Deterministic,
@@ -222,6 +223,7 @@ def test_deterministic_single_time_series_backwards_compatibility(tmp_path: Any)
             "owner_type": "SimpleGenerator",
             "owner_category": "Component",
             "features": "[]",  # empty features
+            "scaling_factor_multiplier": None,
             "units": legacy_metadata_dict["units"],
             "metadata_uuid": legacy_metadata_dict["metadata_uuid"],
         }
@@ -263,3 +265,31 @@ def test_deserialize_metadata_preserves_all_features() -> None:
     }
     metadata = _deserialize_time_series_metadata(metadata_dict)
     assert metadata.features == features
+
+
+def test_deserialize_metadata_preserves_scaling_factor_multiplier() -> None:
+    scaling_factor_multiplier = {
+        "module": "PowerSystems",
+        "name": "get_max_active_power",
+    }
+    metadata_dict: dict[str, Any] = {
+        "metadata_uuid": str(uuid.uuid4()),
+        "time_series_uuid": str(uuid.uuid4()),
+        "time_series_type": "SingleTimeSeries",
+        "name": "max_active_power",
+        "initial_timestamp": datetime(2020, 1, 1),
+        "resolution": "PT1H",
+        "length": 24,
+        "features": "[]",
+        "scaling_factor_multiplier": json.dumps(scaling_factor_multiplier),
+        "units": None,
+    }
+    metadata = _deserialize_time_series_metadata(metadata_dict)
+    assert metadata.scaling_factor_multiplier == scaling_factor_multiplier
+
+
+def test_serialize_scaling_factor_multiplier_is_compatible_with_is_jl() -> None:
+    value = {"module": "PowerSystems", "name": "get_max_active_power"}
+    assert _serialize_scaling_factor_multiplier(value) == {
+        "__metadata__": {"module": "PowerSystems", "function": "get_max_active_power"}
+    }

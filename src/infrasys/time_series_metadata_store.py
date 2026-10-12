@@ -36,6 +36,10 @@ from .utils.metadata_utils import (
     get_window_count,
 )
 
+_IS_METADATA_KEY = "__metadata__"
+_IS_FUNCTION_KEY = "function"
+_IS_MODULE_KEY = "module"
+
 
 class TimeSeriesMetadataStore:
     """Stores time series metadata in a SQLite database."""
@@ -116,6 +120,13 @@ class TimeSeriesMetadataStore:
                 "owner_type": owner.__class__.__name__,
                 "owner_category": "Component",
                 "features": make_features_string(metadata.features),
+                "scaling_factor_multiplier": (
+                    orjson.dumps(
+                        _serialize_scaling_factor_multiplier(metadata.scaling_factor_multiplier)
+                    )
+                    if metadata.scaling_factor_multiplier is not None
+                    else None
+                ),
                 "units": units,
                 "metadata_uuid": str(metadata.uuid),
             }
@@ -376,11 +387,11 @@ class TimeSeriesMetadataStore:
         INSERT INTO {TIME_SERIES_ASSOCIATIONS_TABLE} (
             time_series_uuid, time_series_type, initial_timestamp, resolution,
             horizon, interval, window_count, length, name, owner_uuid,
-            owner_type, owner_category, features, units, metadata_uuid
+            owner_type, owner_category, features, scaling_factor_multiplier, units, metadata_uuid
         ) VALUES (
             :time_series_uuid, :time_series_type, :initial_timestamp,
             :resolution, :horizon, :interval, :window_count, :length, :name,
-            :owner_uuid, :owner_type, :owner_category, :features, :units,
+            :owner_uuid, :owner_type, :owner_category, :features, :scaling_factor_multiplier, :units,
             :metadata_uuid
         )
         """
@@ -501,6 +512,19 @@ def _make_features_filter(features: dict[str, Any], params: list[str]) -> str:
 
 def _make_features_dict(features: dict[str, Any]) -> dict[str, Any]:
     return {k: features[k] for k in sorted(features)}
+
+
+def _serialize_scaling_factor_multiplier(data: dict[str, Any]) -> dict[str, Any]:
+    """Serialize scaling multiplier metadata in the format expected by InfrastructureSystems.jl."""
+    if _IS_METADATA_KEY in data:
+        return data
+
+    module = data.get("module")
+    function = data.get("function") or data.get("name")
+    if isinstance(module, str) and isinstance(function, str):
+        return {_IS_METADATA_KEY: {_IS_MODULE_KEY: module, _IS_FUNCTION_KEY: function}}
+
+    return data
 
 
 def _deserialize_time_series_metadata(data: dict) -> TimeSeriesMetadata:
