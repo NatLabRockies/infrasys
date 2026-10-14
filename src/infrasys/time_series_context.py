@@ -49,6 +49,8 @@ from infrasys.exceptions import ISOperationNotAllowed
 from infrasys.time_series_models import TimeSeriesData, TimeSeriesKey
 
 if TYPE_CHECKING:
+    from infrastore import TimeSeriesAddItem, TimeSeriesMetadata
+
     from infrasys.time_series_reader import ForecastReader, TimeSeriesReader
     from infrasys.time_series_store_storage import TimeSeriesCounts, TimeSeriesStoreStorage
 
@@ -62,7 +64,7 @@ AssocKey = tuple
 class _PendingAdd:
     """One buffered store request and its staged association identity."""
 
-    item: dict[str, Any]
+    item: "TimeSeriesAddItem"
     owner_key: OwnerKey
     assoc_key: AssocKey
     # Estimated bytes of array data this entry keeps buffered. A multi-owner add shares
@@ -262,7 +264,7 @@ class TimeSeriesStorageContext:
         name: str | None = None,
         time_series_type: str | None = None,
         **features: Any,
-    ) -> dict[str, Any]:
+    ) -> "TimeSeriesMetadata":
         """Return the single infrastore metadata row matching the inputs.
 
         Raises
@@ -283,7 +285,7 @@ class TimeSeriesStorageContext:
         name: str | None = None,
         time_series_type: str | None = None,
         **features: Any,
-    ) -> list[dict[str, Any]]:
+    ) -> list["TimeSeriesMetadata"]:
         """Return infrastore metadata rows matching the inputs across the owners.
 
         Resolves against this batch's staged additions and infrastore's committed rows,
@@ -331,7 +333,7 @@ class TimeSeriesStorageContext:
 
     def get_time_series(
         self,
-        metadata: dict[str, Any],
+        metadata: "TimeSeriesMetadata",
         owner: Any,
         start_time: datetime | None = None,
         length: int | None = None,
@@ -344,7 +346,7 @@ class TimeSeriesStorageContext:
 
     def get_time_series_bulk(
         self,
-        records: list[dict[str, Any]],
+        records: list["TimeSeriesMetadata"],
         owner: Any,
         start_time: datetime | None = None,
         length: int | None = None,
@@ -442,6 +444,6 @@ class TimeSeriesStorageContext:
         self.check_open()
         self._storage._serialize(self, data, dst, src=src)
 
-    def key_for(self, metadata: dict[str, Any]) -> TimeSeriesKey:
+    def key_for(self, metadata: "TimeSeriesMetadata") -> TimeSeriesKey:
         """Build an infrasys public key from an infrastore metadata row."""
         return self._storage.key_for(metadata)

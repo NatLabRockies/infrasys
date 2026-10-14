@@ -40,7 +40,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from tempfile import mkdtemp
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import orjson
@@ -55,6 +55,9 @@ from infrastore import (
     Store,
     TimeSeriesType as RustTimeSeriesType,
 )
+
+if TYPE_CHECKING:
+    from infrastore import StaticReaderGroup, TimeSeriesAddItem, TimeSeriesMetadata
 
 from infrasys.component import Component
 from infrasys.exceptions import (
@@ -168,7 +171,8 @@ class TimeSeriesStoreStorage:
         if not pending:
             return
         try:
-            ids = self._store.add_time_series_bulk([entry.item for entry in pending])
+            items: list[TimeSeriesAddItem] = [entry.item for entry in pending]
+            ids = self._store.add_time_series_bulk(items)
         except DuplicateAssociationError as error:
             raise ISAlreadyAttached(str(error)) from error
         if len(ids) != len(pending):
@@ -320,7 +324,7 @@ class TimeSeriesStoreStorage:
                 )
                 raise ISAlreadyAttached(msg)
             seen.add((owner_key, assoc_key))
-            item = {
+            item: TimeSeriesAddItem = {
                 "owner_id": owner_id,
                 "owner_type": owner_type,
                 "owner_category": category,
@@ -346,7 +350,7 @@ class TimeSeriesStoreStorage:
         name: str | None = None,
         time_series_type: str | None = None,
         **features: Any,
-    ) -> dict[str, Any]:
+    ) -> "TimeSeriesMetadata":
         """Return the single infrastore metadata row matching the inputs.
 
         Raises
@@ -375,7 +379,7 @@ class TimeSeriesStoreStorage:
         name: str | None = None,
         time_series_type: str | None = None,
         **features: Any,
-    ) -> list[dict[str, Any]]:
+    ) -> list["TimeSeriesMetadata"]:
         """Return matching infrastore metadata rows across owners.
 
         The context flushes buffered additions first, so every returned row and ID comes
@@ -385,7 +389,7 @@ class TimeSeriesStoreStorage:
             msg = "At least one owner must be passed."
             raise ISOperationNotAllowed(msg)
         context.flush()
-        results: list[dict[str, Any]] = []
+        results: list[TimeSeriesMetadata] = []
         for owner in owners:
             owner_id, category = _owner_identity(owner)
             results.extend(
@@ -400,7 +404,7 @@ class TimeSeriesStoreStorage:
         name: str | None,
         time_series_type: str | None,
         features: dict[str, Any],
-    ) -> list[dict[str, Any]]:
+    ) -> list["TimeSeriesMetadata"]:
         """List an owner's metadata rows directly from infrastore."""
         rust_type = _store_type_filter(time_series_type)
         if time_series_type is not None and rust_type is None:
@@ -493,7 +497,7 @@ class TimeSeriesStoreStorage:
                 raise ISNotStored(msg)
         return removed
 
-    def key_for(self, metadata: dict[str, Any]) -> TimeSeriesKey:
+    def key_for(self, metadata: "TimeSeriesMetadata") -> TimeSeriesKey:
         """Build the public :class:`TimeSeriesKey` from a Store metadata row."""
         return _key_from_metadata(metadata)
 
@@ -574,8 +578,9 @@ class TimeSeriesStoreStorage:
             zoneless=zoneless,
             features=features or None,
         )
-        group_metadata = [
-            self._store.list_metadata_by_ids(group["ids"]) for group in reader.groups()
+        groups: list[StaticReaderGroup] = reader.groups()
+        group_metadata: list[list[TimeSeriesMetadata]] = [
+            self._store.list_metadata_by_ids(group["ids"]) for group in groups
         ]
         group_component_ids = [
             tuple(record["owner_id"] for record in records) for records in group_metadata
@@ -622,15 +627,15 @@ class TimeSeriesStoreStorage:
             zoneless=zoneless,
             features=features or None,
         )
-        entries = reader.entries()
-        records = self._store.list_metadata_by_ids(entries)
+        entries: list[int] = reader.entries()
+        records: list[TimeSeriesMetadata] = self._store.list_metadata_by_ids(entries)
         component_ids = tuple(record["owner_id"] for record in records)
         slots = tuple(reader.entry_slot(index) for index in range(len(entries)))
         units = {record["owner_id"]: self._units_for_metadata(record) for record in records}
         return ForecastReader(self._store, reader, component_ids, slots, units)
 
     @staticmethod
-    def _units_for_metadata(record: dict[str, Any]) -> QuantityMetadata | None:
+    def _units_for_metadata(record: "TimeSeriesMetadata") -> QuantityMetadata | None:
         """Return Infrasys quantity metadata carried in Store application data."""
         return _deserialize_units(record.get("application_data"))
 
@@ -641,7 +646,7 @@ class TimeSeriesStoreStorage:
         self,
         context: TimeSeriesStorageContext,
         /,
-        metadata: dict[str, Any],
+        metadata: "TimeSeriesMetadata",
         owner: Any,
         start_time: datetime | None = None,
         length: int | None = None,
@@ -664,7 +669,7 @@ class TimeSeriesStoreStorage:
         self,
         context: TimeSeriesStorageContext,
         /,
-        records: list[dict[str, Any]],
+        records: list["TimeSeriesMetadata"],
         owner: Any,
         start_time: datetime | None = None,
         length: int | None = None,
@@ -696,7 +701,7 @@ class TimeSeriesStoreStorage:
 
     def _plan_read(
         self,
-        metadata: dict[str, Any],
+        metadata: "TimeSeriesMetadata",
         owner_id: int,
         category: OwnerCategory,
         start_time: datetime | None,
@@ -729,10 +734,14 @@ class TimeSeriesStoreStorage:
         if start_time is None and length is None:
             return association_id, None, initial_timestamp, None
 
+        series_length = metadata["length"]
+        if series_length is None:
+            msg = f"Incomplete SingleTimeSeries metadata for {metadata['name']}"
+            raise ISNotStored(msg)
         index, read_length = single_time_series_range(
             initial_timestamp,
             resolution,
-            metadata["length"],
+            series_length,
             start_time,
             length,
         )
@@ -746,7 +755,7 @@ class TimeSeriesStoreStorage:
 
     def _build_result(
         self,
-        metadata: dict[str, Any],
+        metadata: "TimeSeriesMetadata",
         rust_result: Any,
         result_initial_timestamp: datetime | None,
     ) -> TimeSeriesData:
@@ -854,30 +863,35 @@ class TimeSeriesStoreStorage:
     # ------------------------------------------------------------------
 
 
-def _key_from_metadata(record: dict[str, Any]) -> TimeSeriesKey:
+def _key_from_metadata(record: "TimeSeriesMetadata") -> TimeSeriesKey:
     time_series_type = record["time_series_type"]
     features = dict(record.get("features") or {})
     name = record["name"]
     if time_series_type == "SingleTimeSeries":
         initial_timestamp = _initial_timestamp_from_metadata(record)
         resolution = record.get("resolution")
-        if initial_timestamp is None or resolution is None:
+        length = record["length"]
+        if initial_timestamp is None or resolution is None or length is None:
             msg = f"Incomplete SingleTimeSeries metadata for {name}"
             raise ISNotStored(msg)
         return SingleTimeSeriesKey(
             name=name,
             time_series_type=SingleTimeSeries,
             features=features,
-            length=record["length"],
+            length=length,
             initial_timestamp=initial_timestamp,
             resolution=_parse_resolution(resolution),
         )
     if time_series_type == "NonSequentialTimeSeries":
+        length = record["length"]
+        if length is None:
+            msg = f"Incomplete NonSequentialTimeSeries metadata for {name}"
+            raise ISNotStored(msg)
         return NonSequentialTimeSeriesKey(
             name=name,
             time_series_type=NonSequentialTimeSeries,
             features=features,
-            length=record["length"],
+            length=length,
         )
     if time_series_type in _FORECAST_TYPES:
         initial_timestamp = _initial_timestamp_from_metadata(record)
@@ -908,7 +922,7 @@ def _key_from_metadata(record: dict[str, Any]) -> TimeSeriesKey:
     raise NotImplementedError(msg)
 
 
-def _initial_timestamp_from_metadata(record: dict[str, Any]) -> datetime | None:
+def _initial_timestamp_from_metadata(record: "TimeSeriesMetadata") -> datetime | None:
     timestamp = record.get("initial_timestamp")
     if timestamp is None:
         return None
@@ -1058,7 +1072,7 @@ def _has_exact_time_series(
     )
 
 
-def _rust_time_series_type(name: str) -> Any:
+def _rust_time_series_type(name: str) -> RustTimeSeriesType:
     """Return the store's time-series-type enum member for an infrasys type name."""
     rust_type = _store_type_filter(name)
     if rust_type is None:
