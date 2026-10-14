@@ -1246,13 +1246,28 @@ class System:
         Source and destination must both be components or both be supplemental attributes.
         Cross-category copies raise ``ISInvalidParameter``.
 
+        Raises
+        ------
+        ISNotStored
+            Raised if either owner is not attached to this system.
+
         Examples
         --------
         >>> gen1 = system.get_component(Generator, "gen1")
         >>> gen2 = system.get_component(Generator, "gen2")
         >>> system.copy_time_series(gen1, gen2)
         """
+        self._raise_if_time_series_owner_not_attached(src)
+        self._raise_if_time_series_owner_not_attached(dst)
         return self._time_series_mgr.copy(dst, src, name_mapping=name_mapping)
+
+    def _raise_if_time_series_owner_not_attached(
+        self, owner: Component | SupplementalAttribute
+    ) -> None:
+        if isinstance(owner, Component):
+            self._component_mgr.raise_if_not_attached(owner)
+        else:
+            self._supplemental_attr_mgr.raise_if_not_attached(owner)
 
     def get_time_series(
         self,
@@ -1726,7 +1741,11 @@ class System:
             auto_flush_threshold=auto_flush_threshold,
             auto_flush_bytes=auto_flush_bytes,
         ) as context:
-            yield TimeSeriesTransaction(self._time_series_mgr, context)
+            yield TimeSeriesTransaction(
+                self._time_series_mgr,
+                context,
+                validate_owner=self._raise_if_time_series_owner_not_attached,
+            )
 
     @contextmanager
     def open_metadata_store(self) -> Generator[Store, None, None]:

@@ -12,7 +12,7 @@ The transaction is a thin facade: batching and rollback live in
 """
 
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Any, Optional, Type
+from typing import TYPE_CHECKING, Any, Callable, Optional, Type
 
 from infrasys.component import Component
 from infrasys.supplemental_attribute import SupplementalAttribute
@@ -44,12 +44,19 @@ class TimeSeriesTransaction:
     ...         txn.add_time_series(ts, gen)
     """
 
-    def __init__(self, manager: "TimeSeriesManager", context: "TimeSeriesStorageContext") -> None:
+    def __init__(
+        self,
+        manager: "TimeSeriesManager",
+        context: "TimeSeriesStorageContext",
+        *,
+        validate_owner: Callable[[Component | SupplementalAttribute], None],
+    ) -> None:
         # Binding once is what lets every method below read exactly like its System
         # counterpart: the batch is expressed here, not repeated as an argument on each
         # call --- which also keeps `context` out of the caller's **features.
         self._mgr = manager.bind_context(context)
         self._context = context
+        self._validate_owner = validate_owner
 
     @property
     def has_staged_data(self) -> bool:
@@ -76,6 +83,9 @@ class TimeSeriesTransaction:
         name_mapping: dict[str, str] | None = None,
     ) -> None:
         """Copy all time series from src to dst. Mirrors ``System.copy_time_series``."""
+        self._context.check_open()
+        self._validate_owner(src)
+        self._validate_owner(dst)
         return self._mgr.copy(dst, src, name_mapping=name_mapping)
 
     def get_time_series(

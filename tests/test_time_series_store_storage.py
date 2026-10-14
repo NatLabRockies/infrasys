@@ -170,6 +170,112 @@ def test_copy_time_series_preserves_metadata_and_shares_array(tmp_path):
     np.testing.assert_array_equal(copied.data, values)
 
 
+@pytest.mark.parametrize("owner_kind", ["component", "attribute"])
+@pytest.mark.parametrize("foreign_role", ["source", "destination"])
+@pytest.mark.parametrize("in_transaction", [False, True])
+def test_copy_time_series_rejects_foreign_owners(
+    tmp_path, owner_kind, foreign_role, in_transaction
+):
+    system, source = make_system(tmp_path)
+    destination = system.copy_component(source, name="destination", attach=True)
+    foreign_system, foreign_source = make_system(tmp_path)
+    foreign_destination = foreign_system.copy_component(
+        foreign_source, name="destination", attach=True
+    )
+    if owner_kind == "attribute":
+        local_component, foreign_component = source, foreign_source
+        source, destination = GeographicInfo.example(), GeographicInfo.example()
+        foreign_source, foreign_destination = GeographicInfo.example(), GeographicInfo.example()
+        for attribute in (source, destination):
+            system.add_supplemental_attribute(local_component, attribute)
+        for attribute in (foreign_source, foreign_destination):
+            foreign_system.add_supplemental_attribute(foreign_component, attribute)
+    assert source.id == foreign_source.id
+    assert destination.id == foreign_destination.id
+    series = SingleTimeSeries.from_array(
+        np.arange(3), "load", datetime(2024, 1, 1), timedelta(hours=1)
+    )
+    system.add_time_series(series, source)
+    copy_source = foreign_source if foreign_role == "source" else source
+    copy_destination = foreign_destination if foreign_role == "destination" else destination
+
+    if in_transaction:
+        with system.time_series_transaction() as transaction:
+            with pytest.raises(ISNotStored, match="not attached"):
+                transaction.copy_time_series(copy_destination, copy_source)
+    else:
+        with pytest.raises(ISNotStored, match="not attached"):
+            system.copy_time_series(copy_destination, copy_source)
+
+    assert not system.has_time_series(destination)
+    assert not foreign_system.has_time_series(foreign_destination)
+    np.testing.assert_array_equal(system.get_time_series(source, name="load").data, np.arange(3))
+
+
+@pytest.mark.parametrize("owner_kind", ["component", "attribute"])
+@pytest.mark.parametrize("detached_role", ["source", "destination"])
+@pytest.mark.parametrize("in_transaction", [False, True])
+@pytest.mark.parametrize("previously_attached", [False, True])
+def test_copy_time_series_rejects_detached_owners(
+    tmp_path, owner_kind, detached_role, in_transaction, previously_attached
+):
+    system, source = make_system(tmp_path)
+    destination = system.copy_component(source, name="destination", attach=True)
+    if owner_kind == "attribute":
+        component = source
+        source, destination = GeographicInfo.example(), GeographicInfo.example()
+        system.add_supplemental_attribute(component, source)
+        system.add_supplemental_attribute(component, destination)
+        detached = GeographicInfo.example()
+        if previously_attached:
+            system.add_supplemental_attribute(component, detached)
+            system.remove_supplemental_attribute(detached)
+    else:
+        detached = system.copy_component(source, name="detached", attach=previously_attached)
+        if previously_attached:
+            system.remove_component(detached, cascade_down=False)
+    series = SingleTimeSeries.from_array(
+        np.arange(3), "load", datetime(2024, 1, 1), timedelta(hours=1)
+    )
+    system.add_time_series(series, source)
+    copy_source = detached if detached_role == "source" else source
+    copy_destination = detached if detached_role == "destination" else destination
+
+    if in_transaction:
+        with system.time_series_transaction() as transaction:
+            with pytest.raises(ISNotStored, match="not attached"):
+                transaction.copy_time_series(copy_destination, copy_source)
+    else:
+        with pytest.raises(ISNotStored, match="not attached"):
+            system.copy_time_series(copy_destination, copy_source)
+
+    assert not system.has_time_series(destination)
+    np.testing.assert_array_equal(system.get_time_series(source, name="load").data, np.arange(3))
+
+
+@pytest.mark.parametrize("in_transaction", [False, True])
+def test_copy_time_series_between_attached_attributes(tmp_path, in_transaction):
+    system, component = make_system(tmp_path)
+    source, destination = GeographicInfo.example(), GeographicInfo.example()
+    system.add_supplemental_attribute(component, source)
+    system.add_supplemental_attribute(component, destination)
+    series = SingleTimeSeries.from_array(
+        np.arange(3), "load", datetime(2024, 1, 1), timedelta(hours=1)
+    )
+
+    if in_transaction:
+        with system.time_series_transaction() as transaction:
+            transaction.add_time_series(series, source)
+            transaction.copy_time_series(destination, source)
+    else:
+        system.add_time_series(series, source)
+        system.copy_time_series(destination, source)
+
+    np.testing.assert_array_equal(
+        system.get_time_series(destination, name="load").data, np.arange(3)
+    )
+
+
 def test_copy_time_series_name_mapping_skips_unmapped_series(tmp_path):
     system, source = make_system(tmp_path)
     destination = system.copy_component(source, name="destination", attach=True)
