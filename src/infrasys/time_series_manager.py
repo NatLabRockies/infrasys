@@ -384,14 +384,14 @@ class TimeSeriesManager:
         src: Component | SupplementalAttribute,
         name_mapping: dict[str, str] | None = None,
     ) -> None:
-        """Copy all time series from src to dst.
+        """Copy source time series to dst without duplicating array data.
 
-        Notes
-        -----
-        name_mapping is currently not implemented.
+        When ``name_mapping`` is provided, only source names present in the mapping are
+        copied, under their mapped names.
         """
         self.raise_if_read_only()
-        raise NotImplementedError
+        with self._ensure_context() as ctx:
+            ctx.copy_time_series(dst, src, name_mapping)
 
     def transform_single_time_series(
         self,
