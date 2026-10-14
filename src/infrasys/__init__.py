@@ -13,6 +13,7 @@ from .location import GeographicInfo, Location
 from .normalization import NormalizationModel
 from .supplemental_attribute import SupplementalAttribute
 from .system import System
+from .system_info import ComponentColumn
 from .time_series_models import (
     Deterministic,
     NonSequentialTimeSeries,
@@ -26,6 +27,7 @@ from .time_series_transaction import TimeSeriesTransaction
 __all__ = (
     "BaseQuantity",
     "Component",
+    "ComponentColumn",
     "Deterministic",
     "DeviceParameter",
     "GeographicInfo",

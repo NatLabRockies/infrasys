@@ -1,8 +1,13 @@
 name: CI
 
 on:
-  push:
   pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches:
+      - main
+      - release/*
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref_name }}
@@ -35,7 +40,6 @@ jobs:
 
       - name: Run pre-commit
         run: uv run pre-commit run --show-diff-on-failure --color=always --all-files --hook-stage push
-
 
   pytest:
     name: Tests ${{ matrix.os }} / py${{ matrix.python }}

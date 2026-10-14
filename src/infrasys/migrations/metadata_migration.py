@@ -25,7 +25,7 @@ def migrate_component_metadata(component_list: list) -> list:
                 nested_metadata = value.get(TYPE_METADATA)
                 if isinstance(nested_metadata, dict) and "fields" in nested_metadata:
                     value[TYPE_METADATA] = nested_metadata["fields"]
-            elif isinstance(value, list):
+            elif isinstance(value, list) and value:
                 if isinstance(value[0], dict):
                     nested_metadata = value[0].get(TYPE_METADATA)
                     if isinstance(nested_metadata, dict) and "fields" in nested_metadata:
