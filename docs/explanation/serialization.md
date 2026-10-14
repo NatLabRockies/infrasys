@@ -12,19 +12,17 @@ those types.
 
 ```json
 {
-  "uuid": "1e5f90ae-a386-4c8a-89ae-0ed123da3e26",
-  "name": null,
+  "id": 1,
+  "name": "",
   "x": 0.0,
   "y": 0.0,
   "crs": null,
   "__metadata__": {
-    "fields": {
-      "module": "infrasys.location",
-      "type": "Location",
-      "serialized_type": "base"
-    }
+    "module": "infrasys.location",
+    "type": "Location",
+    "serialized_type": "base"
   }
-},
+}
 ```
 
 ### Composed components
@@ -32,36 +30,32 @@ There are many cases where one component will contain an instance of another com
 a `Bus` may contain a `Location` or a `Generator` may contain a `Bus`. When serializing each
 component, `infrasys` checks the type of each of that component's fields. If a value is another
 component (which means that it must also be attached to system), `infrasys` replaces that instance
-with its UUID. It does this to avoid duplicating data in the JSON file.
+with its integer `id`. It does this to avoid duplicating data in the JSON file.
 
 Here is an example of a serialized `Bus`. Note the value for the `coordinates` field. It contains the
-type and UUID of the actual `coordinates`. During de-serialization, `infrasys` will detect this
+type and `id` of the actual `coordinates`. During de-serialization, `infrasys` will detect this
 condition and only attempt to de-serialize the bus once all `Location` instances have been
 de-serialized.
 
 ```json
 {
-  "uuid": "e503984a-3285-43b6-84c2-805eb3889210",
+  "id": 2,
   "name": "bus1",
   "voltage": 1.1,
+  "__metadata__": {
+    "module": "tests.models.simple_system",
+    "type": "SimpleBus",
+    "serialized_type": "base"
+  },
   "coordinates": {
     "__metadata__": {
-      "fields": {
-        "module": "infrasys.location",
-        "type": "Location",
-        "serialized_type": "composed_component",
-        "uuid": "1e5f90ae-a386-4c8a-89ae-0ed123da3e26"
-      }
-    }
-  },
-  "__type_metadata__": {
-    "fields": {
-      "module": "tests.models.simple_system",
-      "type": "SimpleBus",
-      "serialized_type": "base"
+      "module": "infrasys.location",
+      "type": "Location",
+      "serialized_type": "composed_component",
+      "id": 1
     }
   }
-},
+}
 ```
 
 #### Denormalized component data
@@ -72,12 +66,12 @@ Here is an example of a bus serialized that way (`bus.model_dump_json(indent=2)`
 
 ```json
 {
-  "uuid": "e503984a-3285-43b6-84c2-805eb3889210",
+  "id": 2,
   "name": "bus1",
   "voltage": 1.1,
   "coordinates": {
-    "uuid": "1e5f90ae-a386-4c8a-89ae-0ed123da3e26",
-    "name": null,
+    "id": 1,
+    "name": "",
     "x": 0.0,
     "y": 0.0,
     "crs": null
@@ -91,32 +85,26 @@ instance. Here is an example of such a component:
 
 ```json
 {
-  "uuid": "711d2724-5814-4e0e-be5f-4b0b825b7f07",
+  "id": 1,
   "name": "test",
+  "__metadata__": {
+    "module": "tests.test_serialization",
+    "type": "ComponentWithPintQuantity",
+    "serialized_type": "base"
+  },
   "distance": {
     "value": 2,
     "units": "meter",
     "__metadata__": {
-      "fields": {
-        "module": "infrasys.quantities",
-        "type": "Distance",
-        "serialized_type": "quantity"
-      }
-    }
-  },
-  "__metadata__": {
-    "fields": {
-      "module": "tests.test_serialization",
-      "type": "ComponentWithPintQuantity",
-      "serialized_type": "base"
+      "module": "infrasys.quantities",
+      "type": "Distance",
+      "serialized_type": "quantity"
     }
   }
 }
 ```
 
 ## Time Series
-If the user stores time series data in Arrow files (default behavior), then `infrasys` will copy
-the Arrow files into the user-specified directory in `system.to_json()`.
-
-If the user instead chose to store time series in memory then `infrasys` will series that data
-into Arrow files in the user-specified directory in `system.to_json()`.
+`infrasys` stores all time series arrays and their metadata in the Rust-backed `infrastore`
+backend (HDF5 arrays plus a SQLite database). When the user calls `system.to_json()`, `infrasys`
+copies those store files into the user-specified directory alongside the JSON file.

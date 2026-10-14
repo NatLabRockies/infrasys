@@ -5,7 +5,7 @@
 If the user wants to create a folder that contains all the information of the
 system `infrasys` provides a simple method `system.save("my_folder")` that
 creates a folder (if it does not exist) and save all the contents of the
-system including the `system.to_json()` and the time series arrow files and
+system including the `system.to_json()` and the time-series store files and
 sqlite.
 
 To archive the system into a zip file, the user can use `system.save("my_folder",

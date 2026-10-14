@@ -1,9 +1,22 @@
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import pytest
 from dateutil.relativedelta import relativedelta
 
-from infrasys.utils.time_utils import from_iso_8601, str_timedelta_to_iso_8601, to_iso_8601
+from infrasys.exceptions import ISInvalidParameter
+from infrasys.utils.time_utils import (
+    advance,
+    as_instant,
+    from_catalog_timestamp,
+    from_iso_8601,
+    is_zoneless,
+    str_timedelta_to_iso_8601,
+    to_iso_8601,
+    tzinfo_from_reference,
+)
+
+DENVER = ZoneInfo("America/Denver")
 
 
 def test_to_iso_8601():
@@ -118,3 +131,73 @@ def test_str_timedelta_to_iso_8601():
 @pytest.mark.parametrize("module", [timedelta, relativedelta], ids=["timedelta", "relativedelta"])
 def test_resolution_to_isoformat(module, input_value, result):
     assert to_iso_8601(module(**input_value)) == result
+
+
+@pytest.mark.parametrize(
+    ("reference", "expected"),
+    [
+        ("utc", timezone.utc),
+        (None, timezone.utc),
+        ("zoneless", None),
+        ("-07:00", timezone(timedelta(hours=-7))),
+        ("+05:30", timezone(timedelta(hours=5, minutes=30))),
+        ("America/Denver", DENVER),
+    ],
+)
+def test_tzinfo_from_reference(reference, expected):
+    assert tzinfo_from_reference(reference) == expected
+
+
+def test_tzinfo_from_reference_names_an_unknown_zone():
+    with pytest.raises(ISInvalidParameter, match="tz database"):
+        tzinfo_from_reference("Mars/Olympus_Mons")
+
+
+@pytest.mark.parametrize(
+    ("text", "reference", "expected"),
+    [
+        ("2024-01-01T00:00:00", "zoneless", datetime(2024, 1, 1)),
+        ("2024-01-01T00:00:00+00:00", "utc", datetime(2024, 1, 1, tzinfo=timezone.utc)),
+        ("2024-01-01T00:00:00+00:00", None, datetime(2024, 1, 1, tzinfo=timezone.utc)),
+        (
+            "2024-01-01T07:00:00+00:00",
+            "-07:00",
+            datetime(2024, 1, 1, tzinfo=timezone(timedelta(hours=-7))),
+        ),
+        ("2024-01-01T07:00:00+00:00", "America/Denver", datetime(2024, 1, 1, tzinfo=DENVER)),
+    ],
+)
+def test_from_catalog_timestamp(text, reference, expected):
+    parsed = from_catalog_timestamp(text, reference)
+    assert parsed == expected
+    assert parsed.utcoffset() == expected.utcoffset()
+
+
+def test_is_zoneless():
+    assert is_zoneless(datetime(2024, 1, 1))
+    assert not is_zoneless(datetime(2024, 1, 1, tzinfo=timezone.utc))
+    assert not is_zoneless(datetime(2024, 1, 1, tzinfo=DENVER))
+
+
+def test_advance_steps_instants_across_a_transition():
+    """Denver skips 02:00 on 2024-03-10, so 24 hours of instants is 25 on the clock."""
+    start = datetime(2024, 3, 9, 12, tzinfo=DENVER)
+    stepped = advance(start, timedelta(days=1))
+    assert stepped == datetime(2024, 3, 10, 13, tzinfo=DENVER)
+    assert stepped.astimezone(timezone.utc) - start.astimezone(timezone.utc) == timedelta(days=1)
+    # Plain addition carries the wall clock across instead, which is the trap: it lands
+    # an hour early, 23 hours of instants after the start.
+    assert start + timedelta(days=1) == datetime(2024, 3, 10, 12, tzinfo=DENVER)
+
+
+def test_advance_leaves_a_wall_clock_alone():
+    assert advance(datetime(2024, 3, 9), timedelta(days=1)) == datetime(2024, 3, 10)
+
+
+def test_as_instant_makes_a_zoned_difference_an_instant_difference():
+    start = datetime(2024, 3, 9, tzinfo=DENVER)
+    later = datetime(2024, 3, 10, 7, tzinfo=DENVER)
+    # Sharing a tzinfo, Python subtracts wall clocks and answers 31 hours.
+    assert later - start == timedelta(hours=31)
+    assert as_instant(later) - as_instant(start) == timedelta(hours=30)
+    assert as_instant(datetime(2024, 3, 9)) == datetime(2024, 3, 9)

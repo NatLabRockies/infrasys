@@ -2,7 +2,6 @@ import os
 import random
 import zipfile
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Type
 
 import numpy as np
@@ -29,17 +28,9 @@ from .models.simple_system import (
     SimpleSystem,
 )
 
-TS_STORAGE_OPTIONS = (
-    TimeSeriesStorageType.ARROW,
-    TimeSeriesStorageType.CHRONIFY,
-    TimeSeriesStorageType.MEMORY,
-)
+TS_STORAGE_OPTIONS = (TimeSeriesStorageType.TIME_SERIES_STORE,)
 
-# chronify not yet implemented for nonsequentialtimeseries
-TS_STORAGE_OPTIONS_NONSEQUENTIAL = (
-    TimeSeriesStorageType.ARROW,
-    TimeSeriesStorageType.MEMORY,
-)
+TS_STORAGE_OPTIONS_NONSEQUENTIAL = TS_STORAGE_OPTIONS
 
 
 class ComponentWithPintQuantity(Component):
@@ -83,7 +74,6 @@ def test_serialization(tmp_path):
             "_component_mgr",
             "_supplemental_attr_mgr",
             "_time_series_mgr",
-            "_con",
         ):
             assert getattr(system2, key) == val
 
@@ -91,9 +81,43 @@ def test_serialization(tmp_path):
     assert len(components2) == num_components
 
     for component in components:
-        component2 = system2.get_component_by_uuid(component.uuid)
+        component2 = system2.get_component_by_id(component.id)
         for key, val in component.__dict__.items():
-            assert getattr(component2, key) == val
+            if isinstance(val, Component):
+                assert getattr(component2, key).id == val.id
+            elif isinstance(val, list) and val and isinstance(val[0], Component):
+                assert [x.id for x in getattr(component2, key)] == [x.id for x in val]
+            else:
+                assert getattr(component2, key) == val
+
+
+def test_component_serialization_uses_integer_ids(tmp_path):
+    system = SimpleSystem(name="test-system", auto_add_composed_components=True)
+    gen = SimpleGenerator.example()
+    system.add_component(gen)
+
+    filename = tmp_path / "system.json"
+    system.to_json(filename, overwrite=True)
+    data = orjson.loads(filename.read_bytes())
+
+    components = data["components"]
+    assert all(isinstance(component["id"], int) for component in components)
+    assert all("uuid" not in component for component in components)
+    assert all("legacy_uuid" not in component for component in components)
+
+    serialized_gen = next(
+        component
+        for component in components
+        if component["__metadata__"]["type"] == SimpleGenerator.__name__
+    )
+    bus_reference = serialized_gen["bus"]["__metadata__"]
+    assert isinstance(bus_reference["id"], int)
+    assert "uuid" not in bus_reference
+
+    system2 = SimpleSystem.from_json(filename)
+    gen2 = system2.get_component_by_id(gen.id)
+    assert gen2.name == gen.name
+    assert gen2.bus.id == gen.bus.id
 
 
 @pytest.mark.parametrize("time_series_storage_type", TS_STORAGE_OPTIONS)
@@ -437,67 +461,88 @@ def test_system_save_load_with_storage_backends(tmp_path, time_series_storage_ty
         assert loaded_ts.resolution == orig_ts.resolution
 
 
-def test_system_save_load_hdf5_backend(tmp_path):
-    """Test save and load methods work correctly with HDF5 storage backend."""
-    system = SimpleSystem(
-        name="test_system_hdf5",
-        description="Test system with HDF5 storage",
-        auto_add_composed_components=True,
-        time_series_storage_type=TimeSeriesStorageType.HDF5,
-    )
+def test_serialized_component_reference_has_no_uuid():
+    """SerializedComponentReference is keyed by integer ID only."""
+    from infrasys.serialization import SerializedComponentReference
 
-    bus1 = SimpleBus(name="bus1", voltage=120.0)
-    gen1 = SimpleGenerator(name="gen1", available=True, active_power=100.0, rating=150.0, bus=bus1)
-    system.add_components(bus1, gen1)
-    length = 24
-    data = list(range(length))
-    start = datetime(year=2024, month=1, day=1)
-    resolution = timedelta(hours=1)
-
-    ts1 = SingleTimeSeries.from_array(data, "active_power", start, resolution)
-    system.add_time_series(ts1, gen1)
-
-    # Save to zip
-    save_dir = tmp_path / "system_hdf5"
-    system.save(save_dir, filename="system.json", zip=True)
-
-    zip_path = f"{save_dir}.zip"
-    assert os.path.exists(zip_path)
-    assert not os.path.exists(save_dir)
-
-    # Load from zip
-    loaded_system = SimpleSystem.load(zip_path)
-    assert loaded_system.name == system.name
-
-    loaded_gen = loaded_system.get_component(SimpleGenerator, gen1.name)
-    loaded_ts = loaded_system.get_time_series(loaded_gen, "active_power")
-    assert len(loaded_ts.data) == length
-    assert list(loaded_ts.data) == data
+    ref = SerializedComponentReference(id=1, module="test", type="TestType")
+    assert ref.id == 1
+    assert not hasattr(ref, "uuid")
+    assert "uuid" not in ref.model_dump()
 
 
-def test_legacy_format():
-    # This file was save from v0.2.1 with test_with_time_series_quantity.
-    # Ensure that we can deserialize it.
-    SimpleSystem.from_json(Path("tests/data/legacy_system.json"))
+def test_get_class_and_name_from_label_with_unknown_string():
+    """Test that get_class_and_name_from_label falls back to string for unknown formats."""
+    from infrasys.models import get_class_and_name_from_label
+
+    class_name, name = get_class_and_name_from_label("Type.my-component")
+    assert class_name == "Type"
+    assert isinstance(name, str)
+    assert name == "my-component"
 
 
-def test_convert_chronify_storage_permanent(tmp_path):
-    gen = SimpleGenerator.example()
-    system = SimpleSystem(
-        auto_add_composed_components=True, time_series_storage_type=TimeSeriesStorageType.ARROW
-    )
-    system.add_components(gen)
-    name = "active_power"
-    length = 10
-    data = list(range(length))
-    start = datetime(year=2020, month=1, day=1)
-    resolution = timedelta(hours=1)
-    ts = SingleTimeSeries.from_array(data, name, start, resolution)
-    system.add_time_series(ts, gen)
-    system.convert_storage(
-        time_series_storage_type=TimeSeriesStorageType.CHRONIFY,
-        time_series_directory=tmp_path,
-        in_place=False,
-        permanent=True,
-    )
-    assert (tmp_path / "time_series_data.db").exists()
+def test_upgrade_legacy_component_ids_migration():
+    """Test that upgrade_legacy_component_ids correctly upgrades a legacy UUID-based JSON."""
+    from infrasys.utils.migrations import upgrade_legacy_component_ids
+
+    # Simulate data after migrate_component_metadata has flattened __metadata__
+    # (modern flat format: serialized_type at top level of metadata)
+    system_data = {
+        "components": [
+            {
+                "uuid": "a1b2c3d4-0000-0000-0000-000000000001",
+                "name": "bus1",
+                "voltage": 1.1,
+                "__metadata__": {
+                    "module": "tests.models.simple_system",
+                    "type": "SimpleBus",
+                    "serialized_type": "base",
+                },
+            },
+            {
+                "uuid": "a1b2c3d4-0000-0000-0000-000000000002",
+                "name": "gen1",
+                "active_power": 1.0,
+                "__metadata__": {
+                    "module": "tests.models.simple_system",
+                    "type": "SimpleGenerator",
+                    "serialized_type": "base",
+                },
+                "bus": {
+                    "__metadata__": {
+                        "module": "tests.models.simple_system",
+                        "type": "SimpleBus",
+                        "serialized_type": "composed_component",
+                        "uuid": "a1b2c3d4-0000-0000-0000-000000000001",
+                    }
+                },
+            },
+        ],
+        "supplemental_attributes": [],
+    }
+
+    upgrade_legacy_component_ids(system_data)
+
+    # All components should have integer IDs
+    components = system_data["components"]
+    assert all(isinstance(c["id"], int) for c in components)
+    assert components[0]["id"] == 1
+    assert components[1]["id"] == 2
+
+    # UUID fields should be dropped entirely
+    assert "uuid" not in components[0]
+    assert "legacy_uuid" not in components[0]
+    assert "uuid" not in components[1]
+    assert "legacy_uuid" not in components[1]
+
+    # Composed component reference should have an integer ID instead of a UUID
+    bus_metadata = components[1]["bus"]["__metadata__"]
+    assert bus_metadata["id"] == 1
+    assert "uuid" not in bus_metadata
+    assert "legacy_uuid" not in bus_metadata
+
+    # The migrated fields must be constructible; the models forbid extra fields, so a
+    # leftover UUID key would raise here.
+    bus = SimpleBus(**{k: v for k, v in components[0].items() if k != "__metadata__"})
+    assert bus.id == 1
+    assert bus.name == "bus1"

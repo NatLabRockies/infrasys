@@ -47,7 +47,7 @@ def render_components_table(
     component_type: Type[T],
     columns: ComponentColumnInput | None,
     *,
-    show_uuid: bool,
+    show_id: bool,
     show_time_series: bool,
     show_supplemental: bool,
     filter_func: Callable[[T], bool] | None,
@@ -72,7 +72,7 @@ def render_components_table(
         table.add_column(column.name, justify="left")
     add_component_metadata_columns(
         table,
-        show_uuid=show_uuid,
+        show_id=show_id,
         show_time_series=show_time_series,
         show_supplemental=show_supplemental,
     )
@@ -86,7 +86,7 @@ def render_components_table(
             system,
             row_data,
             component,
-            show_uuid=show_uuid,
+            show_id=show_id,
             show_time_series=show_time_series,
             show_supplemental=show_supplemental,
         )
@@ -98,12 +98,12 @@ def render_components_table(
 def add_component_metadata_columns(
     table: Table,
     *,
-    show_uuid: bool,
+    show_id: bool,
     show_time_series: bool,
     show_supplemental: bool,
 ) -> None:
-    if show_uuid:
-        table.add_column("UUID", min_width=36, justify="left")
+    if show_id:
+        table.add_column("ID", min_width=8, justify="right")
     if show_time_series:
         table.add_column("Has Time Series", min_width=12, justify="right")
     if show_supplemental:
@@ -115,12 +115,12 @@ def extend_component_metadata_row(
     row_data: list[str],
     component: Component,
     *,
-    show_uuid: bool,
+    show_id: bool,
     show_time_series: bool,
     show_supplemental: bool,
 ) -> None:
-    if show_uuid:
-        row_data.append(str(component.uuid))
+    if show_id:
+        row_data.append(str(component.id))
     if show_time_series:
         row_data.append(str(len(system.list_time_series_metadata(component))))
     if show_supplemental:
@@ -192,7 +192,7 @@ class SystemInfo:
         component_type_count = {
             k.__name__: v for k, v in self.system._components.get_num_components_by_type().items()
         }
-        ts_counts = self.system.time_series.metadata_store.get_time_series_counts()
+        ts_counts = self.system.time_series.get_time_series_counts()
         return (
             component_count,
             ts_counts.time_series_count,

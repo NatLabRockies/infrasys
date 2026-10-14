@@ -1,4 +1,4 @@
-"""Test related to arrow storage module."""
+"""Tests for single time-series models."""
 
 from datetime import datetime, timedelta
 

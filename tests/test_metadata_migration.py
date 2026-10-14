@@ -1,6 +1,3 @@
-import sqlite3
-
-from infrasys import SUPPLEMENTAL_ATTRIBUTE_ASSOCIATIONS_TABLE
 from infrasys.migrations.metadata_migration import (
     component_needs_metadata_migration,
     migrate_component_metadata,
@@ -88,17 +85,11 @@ def test_component_needs_metadata_migration():
     assert component_needs_metadata_migration(flat) is False
 
 
-def test_from_json_db_without_supplemental_attribute_table(tmp_path, simple_system):
-    """Loading a system whose DB predates supplemental attributes should work."""
+def test_from_json_without_supplemental_attributes(tmp_path, simple_system):
+    """Loading a store with no supplemental attributes should work."""
     fpath = tmp_path / "legacy"
     fname = "system.json"
     simple_system.save(fpath, filename=fname)
-
-    db_file = next(fpath.rglob("time_series_metadata.db"))
-    con = sqlite3.connect(db_file)
-    con.execute(f"DROP TABLE {SUPPLEMENTAL_ATTRIBUTE_ASSOCIATIONS_TABLE}")
-    con.commit()
-    con.close()
 
     loaded = SimpleSystem.from_json(fpath / fname)
     assert loaded.get_num_supplemental_attributes() == 0

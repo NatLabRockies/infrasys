@@ -37,7 +37,6 @@ class CustomSystem(System):
 2. Define some component classes.
 
 ```python
-from uuid import UUID
 from infrasys.component import  Component
 from infrasys.location import Location
 

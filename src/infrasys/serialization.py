@@ -1,9 +1,8 @@
 import enum
 import importlib
 from typing import Annotated, Any, Literal, Type, TypeAlias, Union
-from uuid import UUID
 
-from pydantic import Field, TypeAdapter, field_serializer
+from pydantic import AliasChoices, Field, TypeAdapter
 
 from infrasys.models import InfraSysBaseModel
 from infrasys.time_series_models import TimeSeriesData
@@ -35,14 +34,14 @@ class SerializedBaseType(SerializedTypeBase):
 
 
 class SerializedComponentReference(SerializedTypeBase):
-    """Reference information for a component that has been serialized as a UUID within another."""
+    """Reference information for a component serialized inside another component."""
 
     serialized_type: Literal[SerializedType.COMPOSED_COMPONENT] = SerializedType.COMPOSED_COMPONENT
-    uuid: UUID
-
-    @field_serializer("uuid")
-    def _serialize_uuid(self, _) -> str:
-        return str(self.uuid)
+    id: int = Field(
+        ge=1,
+        validation_alias=AliasChoices("id"),
+        description="Integer ID referencing the serialized component",
+    )
 
 
 class SerializedQuantityType(SerializedTypeBase):
