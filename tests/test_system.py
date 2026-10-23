@@ -1,5 +1,6 @@
 import itertools
 from datetime import datetime, timedelta
+from pathlib import Path
 from uuid import uuid4
 
 import numpy as np
@@ -578,6 +579,96 @@ def test_remove_component(inputs):
     for gen in (gen1, gen2):
         with pytest.raises(ISNotStored):
             system.get_component(SimpleGenerator, gen.name)
+
+
+@pytest.mark.parametrize("cascade_down", [True, False])
+@pytest.mark.parametrize("removed_index", [0, 1])
+def test_remove_duplicate_name_component(
+    tmp_path: Path, cascade_down: bool, removed_index: int
+) -> None:
+    system = SimpleSystem(auto_add_composed_components=True)
+    generators = [SimpleGenerator.example(), SimpleGenerator.example()]
+    for generator in generators:
+        assert generator.bus.coordinates is not None
+        system.add_components(generator.bus.coordinates, generator.bus, generator)
+    removed = generators[removed_index]
+    survivor = generators[1 - removed_index]
+    assert removed.bus.coordinates is not None
+    assert survivor.bus.coordinates is not None
+    removed_children = [removed.bus, removed.bus.coordinates]
+    surviving_components = [survivor, survivor.bus, survivor.bus.coordinates]
+
+    system.remove_component(removed, cascade_down=cascade_down)
+
+    assert system.list_components_by_name(SimpleGenerator, removed.name) == [survivor]
+    assert system.get_component(SimpleGenerator, survivor.name) is survivor
+    assert list(system.get_components(SimpleGenerator)) == [survivor]
+    with pytest.raises(ISNotStored):
+        system.get_component_by_uuid(removed.uuid)
+    assert not system.has_component(removed)
+    expected = surviving_components + ([] if cascade_down else removed_children)
+    assert {c.uuid for c in system.iter_all_components()} == {c.uuid for c in expected}
+    for component in expected:
+        assert system.get_component_by_uuid(component.uuid) is component
+    for child in removed_children:
+        if cascade_down:
+            with pytest.raises(ISNotStored):
+                system.get_component_by_uuid(child.uuid)
+        else:
+            parents = [] if child is removed.bus else [removed.bus]
+            assert system.list_parent_components(child) == parents
+
+    filename = tmp_path / "duplicates.json"
+    system.to_json(filename)
+    restored = SimpleSystem.from_json(filename)
+    assert {c.uuid for c in restored.iter_all_components()} == {c.uuid for c in expected}
+    restored_survivor = restored.get_component(SimpleGenerator, survivor.name)
+    assert restored_survivor.uuid == survivor.uuid
+    assert restored_survivor.bus.uuid == survivor.bus.uuid
+    assert restored_survivor.bus.coordinates is not None
+    assert restored_survivor.bus.coordinates.uuid == survivor.bus.coordinates.uuid
+    with pytest.raises(ISNotStored):
+        restored.get_component_by_uuid(removed.uuid)
+
+
+@pytest.mark.parametrize("cascade_down", [True, False])
+def test_remove_duplicate_name_preserves_shared_children(
+    tmp_path: Path, cascade_down: bool
+) -> None:
+    system = SimpleSystem()
+    first = SimpleGenerator.example()
+    second = SimpleGenerator.example()
+    second.bus = first.bus
+    bus = first.bus
+    assert bus.coordinates is not None
+    system.add_components(bus.coordinates, bus, first, second)
+
+    system.remove_component(first, cascade_down=cascade_down)
+
+    assert system.list_components_by_name(SimpleGenerator, second.name) == [second]
+    assert system.list_parent_components(bus) == [second]
+    assert system.list_parent_components(bus.coordinates) == [bus]
+    assert system.get_component_by_uuid(second.uuid) is second
+    assert system.get_component_by_uuid(bus.uuid) is bus
+    assert system.get_component_by_uuid(bus.coordinates.uuid) is bus.coordinates
+    with pytest.raises(ISNotStored):
+        system.get_component_by_uuid(first.uuid)
+
+    filename = tmp_path / "shared.json"
+    system.to_json(filename)
+    restored = SimpleSystem.from_json(filename)
+    restored_second = restored.get_component_by_uuid(second.uuid)
+    assert restored_second.bus is restored.get_component_by_uuid(bus.uuid)
+    assert restored_second.bus.coordinates is restored.get_component_by_uuid(bus.coordinates.uuid)
+    assert len(list(restored.iter_all_components())) == 3
+
+    system.remove_component(second, cascade_down=cascade_down)
+    assert not list(system.get_components(SimpleGenerator))
+    with pytest.raises(ISNotStored):
+        system.get_component_by_uuid(second.uuid)
+    assert system.has_component(bus) is not cascade_down
+    assert system.has_component(bus.coordinates) is not cascade_down
+    assert len(list(system.iter_all_components())) == (0 if cascade_down else 2)
 
 
 def test_system_to_dict():

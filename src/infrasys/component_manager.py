@@ -248,9 +248,9 @@ class ComponentManager:
         for i, comp in enumerate(container):
             if comp.uuid == component.uuid:
                 container.pop(i)
+                self._components_by_uuid.pop(component.uuid)
                 if not self._components[component_type][key]:
                     self._components[component_type].pop(key)
-                    self._components_by_uuid.pop(component.uuid)
                 if not self._components[component_type]:
                     self._components.pop(component_type)
                 logger.debug("Removed component {}", component.label)
