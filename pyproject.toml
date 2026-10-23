@@ -135,3 +135,7 @@ docs = [
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["E402"]
 "**/{tests,docs,tools}/*" = ["E402"]
+
+# Keep the proven conversion/schema algorithms intact during the migration.
+"src/infrasys/units/conversion.py" = ["C901"]
+"src/infrasys/units/mixins.py" = ["C901"]
