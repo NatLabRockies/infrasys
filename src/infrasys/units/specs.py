@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import types
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Union, get_args, get_origin
 
 from pydantic import BaseModel, GetCoreSchemaHandler
@@ -45,11 +45,12 @@ class UnitSpec:
     """
 
     unit: str
-    base: str | None = None
+    base: str | None = field(default=None, kw_only=True)
 
     def convert_structured_value(
         self,
         value: BaseModel,
+        *,
         info: core_schema.ValidationInfo,
     ) -> BaseModel:
         """Convert numeric fields of a structured value to per-unit form."""
@@ -152,7 +153,7 @@ class UnitSpec:
                         raise ValueError(msg)
                     return next_validator(value["value"])
                 parsed = next_validator(value)
-                return None if parsed is None else self.convert_structured_value(parsed, info)
+                return None if parsed is None else self.convert_structured_value(parsed, info=info)
 
             serialized_schema = inner_schema
             if self.base is not None:
@@ -200,7 +201,7 @@ class UnitSpec:
                     info.data.get(self.base) if self.base is not None and info.data else None
                 )
                 value = convert_to_internal(
-                    value, self, base_value=base_value, base_unit=base_unit
+                    value, spec=self, base_value=base_value, base_unit=base_unit
                 )
             return next_validator(value)
 

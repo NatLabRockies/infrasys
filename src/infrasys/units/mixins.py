@@ -50,7 +50,7 @@ class HasUnits:
 
         cls.unit_specs = specs
 
-        return _bind_unit_nodes(schema, cls)
+        return _bind_unit_nodes(schema, model_type=cls)
 
     @property
     def system_base(self) -> float | None:
@@ -85,11 +85,11 @@ class HasUnits:
             base_unit = type(self).unit_specs[spec.base].unit if spec.base is not None else None
             formatted = format_for_display(
                 value,
-                spec,
-                unit_system,
-                base_value,
-                base_unit,
-                self.system_base,
+                spec=spec,
+                unit_system=unit_system,
+                base_value=base_value,
+                base_unit=base_unit,
+                system_base=self.system_base,
             )
             repr_args.append((field_name, formatted))
 
@@ -116,7 +116,7 @@ class HasPerUnit(HasUnits):
 
 
 def _bind_unit_nodes(
-    schema: core_schema.CoreSchema, model_type: type[HasUnits]
+    schema: core_schema.CoreSchema, *, model_type: type[HasUnits]
 ) -> core_schema.CoreSchema:
     """Bind only validation schema edges, never defaults or user metadata."""
     if schema["type"] == "model" and schema["cls"] is not model_type:
@@ -139,7 +139,7 @@ def _bind_unit_nodes(
         return {
             **schema,
             "fields": {
-                name: {**field, "schema": _bind_unit_nodes(field["schema"], model_type)}
+                name: {**field, "schema": _bind_unit_nodes(field["schema"], model_type=model_type)}
                 for name, field in schema["fields"].items()
             },
         }
@@ -152,5 +152,5 @@ def _bind_unit_nodes(
         "default",
         "nullable",
     ):
-        return {**schema, "schema": _bind_unit_nodes(schema["schema"], model_type)}
+        return {**schema, "schema": _bind_unit_nodes(schema["schema"], model_type=model_type)}
     return schema

@@ -82,30 +82,30 @@ def test_optional_scalar_unit_validation_schema_keeps_null_and_envelope() -> Non
 
 def test_convert_to_internal_with_int() -> None:
     spec = UnitSpec(unit="MVA")
-    assert convert_to_internal(50, spec) == 50.0
+    assert convert_to_internal(50, spec=spec) == 50.0
 
 
 def test_convert_to_internal_with_float() -> None:
     spec = UnitSpec(unit="MVA")
-    assert convert_to_internal(50.5, spec) == 50.5
+    assert convert_to_internal(50.5, spec=spec) == 50.5
 
 
 def test_convert_to_internal_with_invalid_type() -> None:
     spec = UnitSpec(unit="MVA")
     with pytest.raises(ValueError, match="Expected"):
-        convert_to_internal("invalid", spec)
+        convert_to_internal("invalid", spec=spec)
 
 
 def test_convert_to_internal_dict_missing_value_key() -> None:
     spec = UnitSpec(unit="MVA")
     with pytest.raises(ValueError, match=r"value.*unit"):
-        convert_to_internal({"unit": "MVA"}, spec)
+        convert_to_internal({"unit": "MVA"}, spec=spec)
 
 
 def test_convert_to_internal_dict_missing_unit_key() -> None:
     spec = UnitSpec(unit="MVA")
     with pytest.raises(ValueError, match=r"value.*unit"):
-        convert_to_internal({"value": 100.0}, spec)
+        convert_to_internal({"value": 100.0}, spec=spec)
 
 
 @pytest.mark.parametrize(
@@ -123,7 +123,10 @@ def test_convert_to_internal_normalizes_compatible_units(
 
     assert (
         convert_to_internal(
-            {"value": value, "unit": input_unit}, spec, base_value=base_value, base_unit=base_unit
+            {"value": value, "unit": input_unit},
+            spec=spec,
+            base_value=base_value,
+            base_unit=base_unit,
         )
         == expected
     )
@@ -159,7 +162,10 @@ def test_convert_to_internal_normalizes_relative_quantities(
 
     assert (
         convert_to_internal(
-            {"value": value, "unit": input_unit}, spec, base_value=base_value, base_unit=base_unit
+            {"value": value, "unit": input_unit},
+            spec=spec,
+            base_value=base_value,
+            base_unit=base_unit,
         )
         == expected
     )
@@ -179,12 +185,15 @@ def test_convert_to_internal_translates_invalid_relative_units() -> None:
 
     with pytest.raises(ValueError, match="Unknown unit"):
         convert_to_internal(
-            value, UnitSpec(unit="InvalidUnit", base="base"), base_value=100.0, base_unit="MW"
+            value, spec=UnitSpec(unit="InvalidUnit", base="base"), base_value=100.0, base_unit="MW"
         )
 
     with pytest.raises(ValueError, match="Unknown unit"):
         convert_to_internal(
-            value, UnitSpec(unit="MW/min", base="base"), base_value=100.0, base_unit="InvalidUnit"
+            value,
+            spec=UnitSpec(unit="MW/min", base="base"),
+            base_value=100.0,
+            base_unit="InvalidUnit",
         )
 
 
@@ -205,13 +214,13 @@ def test_convert_to_internal_rejects_invalid_mapping_values(
     value: dict[str, object], message: str
 ) -> None:
     with pytest.raises(ValueError, match=message):
-        convert_to_internal(value, UnitSpec(unit="MW"))
+        convert_to_internal(value, spec=UnitSpec(unit="MW"))
 
 
 def test_convert_to_internal_accepts_explicit_per_unit_value() -> None:
     spec = UnitSpec(unit="pu", base="base_power")
 
-    assert convert_to_internal({"value": 0.8, "unit": "pu"}, spec) == 0.8
+    assert convert_to_internal({"value": 0.8, "unit": "pu"}, spec=spec) == 0.8
 
 
 def test_convert_to_internal_rejects_unknown_units() -> None:
@@ -219,7 +228,7 @@ def test_convert_to_internal_rejects_unknown_units() -> None:
 
     with pytest.raises(ValueError, match="Unknown unit"):
         convert_to_internal(
-            {"value": 100.0, "unit": "InvalidUnit"}, spec, base_value=100.0, base_unit="MW"
+            {"value": 100.0, "unit": "InvalidUnit"}, spec=spec, base_value=100.0, base_unit="MW"
         )
 
 
@@ -227,17 +236,19 @@ def test_convert_to_internal_rejects_zero_base() -> None:
     spec = UnitSpec(unit="pu", base="base_power")
 
     with pytest.raises(ValueError, match="non-zero"):
-        convert_to_internal({"value": 100.0, "unit": "MW"}, spec, base_value=0.0, base_unit="MW")
+        convert_to_internal(
+            {"value": 100.0, "unit": "MW"}, spec=spec, base_value=0.0, base_unit="MW"
+        )
 
 
 def test_convert_to_internal_converts_absolute_units() -> None:
-    assert convert_to_internal({"value": 5000.0, "unit": "kW"}, UnitSpec(unit="MW")) == 5.0
-    assert convert_to_internal({"value": 13800.0, "unit": "V"}, UnitSpec(unit="kV")) == 13.8
+    assert convert_to_internal({"value": 5000.0, "unit": "kW"}, spec=UnitSpec(unit="MW")) == 5.0
+    assert convert_to_internal({"value": 13800.0, "unit": "V"}, spec=UnitSpec(unit="kV")) == 13.8
 
 
 def test_convert_to_internal_does_not_treat_per_unit_as_a_physical_unit() -> None:
     with pytest.raises(ValueError, match="declared base"):
-        convert_to_internal({"value": 1.0, "unit": "kg"}, UnitSpec(unit="pu"))
+        convert_to_internal({"value": 1.0, "unit": "kg"}, spec=UnitSpec(unit="pu"))
 
 
 def test_convert_to_internal_missing_base_value() -> None:
@@ -245,7 +256,7 @@ def test_convert_to_internal_missing_base_value() -> None:
     value = {"value": 1.0, "unit": "MVA"}
 
     with pytest.raises(ValueError, match=r"Base field 'base_power' is required.*not provided"):
-        convert_to_internal(value, spec, base_unit="MVA")
+        convert_to_internal(value, spec=spec, base_unit="MVA")
 
 
 def test_convert_to_internal_missing_base_unit() -> None:
@@ -255,7 +266,7 @@ def test_convert_to_internal_missing_base_unit() -> None:
     with pytest.raises(
         ValueError, match=r"Base unit for field 'base_power' could not be determined"
     ):
-        convert_to_internal(value, spec, base_value=100.0)
+        convert_to_internal(value, spec=spec, base_value=100.0)
 
 
 def test_convert_to_internal_with_invalid_unit() -> None:
@@ -263,7 +274,7 @@ def test_convert_to_internal_with_invalid_unit() -> None:
     value = {"value": 100.0, "unit": "InvalidUnit"}
 
     with pytest.raises(ValueError, match="Unknown unit"):
-        convert_to_internal(value, spec, base_value=100.0, base_unit="MVA")
+        convert_to_internal(value, spec=spec, base_value=100.0, base_unit="MVA")
 
 
 def test_convert_to_internal_with_dimensionality_error() -> None:
@@ -271,26 +282,29 @@ def test_convert_to_internal_with_dimensionality_error() -> None:
     value = {"value": 100.0, "unit": "m"}
 
     with pytest.raises(ValueError, match="incompatible"):
-        convert_to_internal(value, spec, base_value=100.0, base_unit="MVA")
+        convert_to_internal(value, spec=spec, base_value=100.0, base_unit="MVA")
 
 
 def test_format_for_display_device_base_no_base_value() -> None:
     spec = UnitSpec(unit="pu", base="base_power")
     set_unit_system(UnitSystem.DEVICE_BASE)
 
-    assert format_for_display(0.8, spec, UnitSystem.DEVICE_BASE) == "0.8 pu"
+    assert format_for_display(0.8, spec=spec, unit_system=UnitSystem.DEVICE_BASE) == "0.8 pu"
 
 
 def test_format_for_display_natural_units_no_base() -> None:
     spec = UnitSpec(unit="pu", base="base_power")
 
-    assert format_for_display(0.8, spec, UnitSystem.NATURAL_UNITS, base_unit="MVA") == "0.8 pu"
+    assert (
+        format_for_display(0.8, spec=spec, unit_system=UnitSystem.NATURAL_UNITS, base_unit="MVA")
+        == "0.8 pu"
+    )
 
 
 def test_format_for_display_system_base_no_base_value() -> None:
     spec = UnitSpec(unit="pu", base="base_power")
 
-    assert format_for_display(0.8, spec, UnitSystem.SYSTEM_BASE) == "0.8 pu"
+    assert format_for_display(0.8, spec=spec, unit_system=UnitSystem.SYSTEM_BASE) == "0.8 pu"
 
 
 def test_format_for_display_system_base_no_system_base() -> None:
@@ -299,8 +313,8 @@ def test_format_for_display_system_base_no_system_base() -> None:
     assert (
         format_for_display(
             0.8,
-            spec,
-            UnitSystem.SYSTEM_BASE,
+            spec=spec,
+            unit_system=UnitSystem.SYSTEM_BASE,
             base_value=100.0,
             base_unit="MVA",
         )
