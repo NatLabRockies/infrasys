@@ -10,13 +10,14 @@ import pint
 from infrasys.base_quantity import ureg
 
 if TYPE_CHECKING:
+    from . import UnitSystem
     from .specs import UnitSpec
 
 __all__ = ["convert_to_internal", "format_for_display", "ureg"]
 
 
 def convert_to_internal(
-    value: Any,
+    value: object,
     spec: UnitSpec,
     base_value: float | None = None,
     base_unit: str | None = None,
@@ -52,15 +53,8 @@ def convert_to_internal(
         msg = "Expected a number or a mapping with 'value' and 'unit' keys"
         raise ValueError(msg)
 
-    try:
-        input_value = float(value["value"])
-    except (TypeError, ValueError) as error:
-        msg = "Unit mapping 'value' must be numeric"
-        raise ValueError(msg) from error
-    input_unit = value["unit"]
-    if not isinstance(input_unit, str) or not input_unit:
-        msg = "Unit mapping 'unit' must be a non-empty string"
-        raise ValueError(msg)
+    input_value = _parse_input_magnitude(value["value"])
+    input_unit = _validate_input_unit(value["unit"])
 
     if spec.unit == "pu":
         if input_unit == "pu":
@@ -71,15 +65,7 @@ def convert_to_internal(
 
     target_unit = base_unit if spec.unit == "pu" else spec.unit
     if spec.base is not None:
-        if base_value is None:
-            msg = f"Base field '{spec.base}' is required for unit conversion but was not provided or is None"
-            raise ValueError(msg)
-        if base_unit is None:
-            msg = f"Base unit for field '{spec.base}' could not be determined - check field annotations"
-            raise ValueError(msg)
-        if not math.isfinite(base_value) or base_value == 0:
-            msg = f"Base field '{spec.base}' must be finite and non-zero for per-unit conversion"
-            raise ValueError(msg)
+        _validate_conversion_base(spec, base_value, base_unit)
 
     try:
         normalized = ureg.Quantity(input_value, input_unit).to(target_unit)
@@ -98,7 +84,7 @@ def convert_to_internal(
 def format_for_display(
     value: float,
     spec: UnitSpec,
-    unit_system: Any,
+    unit_system: UnitSystem,
     base_value: float | None = None,
     base_unit: str | None = None,
     system_base: float | None = None,
@@ -149,3 +135,37 @@ def format_for_display(
         return f"{value} pu"
 
     return f"{value} pu"
+
+
+def _validate_conversion_base(
+    spec: UnitSpec, base_value: float | None, base_unit: str | None
+) -> None:
+    """Require a usable, explicitly annotated base for relative conversion."""
+    if base_value is None:
+        msg = f"Base field '{spec.base}' is required for unit conversion but was not provided or is None"
+        raise ValueError(msg)
+    if base_unit is None:
+        msg = (
+            f"Base unit for field '{spec.base}' could not be determined - check field annotations"
+        )
+        raise ValueError(msg)
+    if not math.isfinite(base_value) or base_value == 0:
+        msg = f"Base field '{spec.base}' must be finite and non-zero for per-unit conversion"
+        raise ValueError(msg)
+
+
+def _validate_input_unit(input_unit: object) -> str:
+    """Return a nonempty unit name or reject malformed envelope input."""
+    if not isinstance(input_unit, str) or not input_unit:
+        msg = "Unit mapping 'unit' must be a non-empty string"
+        raise ValueError(msg)
+    return input_unit
+
+
+def _parse_input_magnitude(value: Any) -> float:
+    """Normalize envelope magnitudes using Python's numeric input contract."""
+    try:
+        return float(value)
+    except (TypeError, ValueError) as error:
+        msg = "Unit mapping 'value' must be numeric"
+        raise ValueError(msg) from error

@@ -12,7 +12,7 @@ from infrasys.units import HasUnits, Unit
 from infrasys.units.specs import UnitSpec
 
 
-def test_unitspec_dict_input_no_base():
+def test_unitspec_dict_input_no_base() -> None:
     """Test UnitSpec validation with dict input when base is None."""
 
     class SimpleModel(BaseModel):
@@ -24,7 +24,7 @@ def test_unitspec_dict_input_no_base():
     assert model.power == 100.0
 
 
-def test_unitspec_dict_input_with_conversion():
+def test_unitspec_dict_input_with_conversion() -> None:
     """Test UnitSpec validation with dict input and unit conversion."""
 
     class Generator(HasUnits, Component):
@@ -71,7 +71,7 @@ def test_unit_annotations_are_immutable() -> None:
         spec.base = "other_base"
 
 
-def test_unitspec_invalid_input_type():
+def test_unitspec_invalid_input_type() -> None:
     """Test UnitSpec validation raises ValidationError for invalid input types."""
 
     class TestModel(BaseModel):
@@ -107,7 +107,7 @@ def test_structured_unit_json_schema_describes_serialized_values() -> None:
     assert schema["$defs"]["Limits"]["properties"]["minimum"]["type"] == "number"
 
 
-def test_unitspec_validation_and_serialization_schemas():
+def test_unitspec_validation_and_serialization_schemas() -> None:
     """Advertise scalar or envelope input and scalar output for unit fields."""
 
     class Generator(BaseModel):
@@ -128,7 +128,7 @@ def test_unitspec_validation_and_serialization_schemas():
     assert serialization_schema["properties"]["rating"]["type"] == "number"
 
 
-def test_unitspec_no_base_field():
+def test_unitspec_no_base_field() -> None:
     """Test UnitSpec with no base field (simple unit)."""
 
     class SimpleModel(BaseModel):

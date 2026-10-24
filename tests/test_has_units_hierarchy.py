@@ -27,14 +27,14 @@ class Generator(HasPerUnit, Component):
     voltage: Annotated[float, Unit("pu", base="rated_voltage")]
 
 
-def test_has_units_with_absolute_values():
+def test_has_units_with_absolute_values() -> None:
     """Test HasUnits with only absolute unit fields."""
     sensor = Sensor(name="TempSensor1", temperature=25.0, pressure=101325.0)
     assert sensor.temperature == 25.0
     assert sensor.pressure == 101325.0
 
 
-def test_has_units_repr_formatting():
+def test_has_units_repr_formatting() -> None:
     """Test HasUnits repr includes unit labels."""
     sensor = Sensor(name="TempSensor1", temperature=25.0, pressure=101325.0)
     repr_str = repr(sensor)
@@ -42,7 +42,7 @@ def test_has_units_repr_formatting():
     assert "101325.0 Pa" in repr_str
 
 
-def test_has_per_units_with_pu_input():
+def test_has_per_units_with_pu_input() -> None:
     """Test HasPerUnit with per-unit input values."""
     gen = Generator(
         name="Gen1",
@@ -55,7 +55,7 @@ def test_has_per_units_with_pu_input():
     assert gen.voltage == 1.0
 
 
-def test_has_per_units_with_natural_unit_input():
+def test_has_per_units_with_natural_unit_input() -> None:
     """Test HasPerUnit with natural unit dict input."""
     gen = Generator(
         name="Gen2",
@@ -68,7 +68,7 @@ def test_has_per_units_with_natural_unit_input():
     assert gen.voltage == pytest.approx(1.0, abs=1e-6)
 
 
-def test_has_per_units_repr_device_base():
+def test_has_per_units_repr_device_base() -> None:
     """Test HasPerUnit repr in device base mode."""
     set_unit_system(UnitSystem.DEVICE_BASE)
     gen = Generator(
@@ -83,7 +83,7 @@ def test_has_per_units_repr_device_base():
     assert "1.0 pu" in repr_str
 
 
-def test_has_per_units_repr_natural_units():
+def test_has_per_units_repr_natural_units() -> None:
     """Test HasPerUnit repr in natural units mode."""
     set_unit_system(UnitSystem.NATURAL_UNITS)
     gen = Generator(
@@ -101,14 +101,14 @@ def test_has_per_units_repr_natural_units():
     set_unit_system(UnitSystem.DEVICE_BASE)
 
 
-def test_class_hierarchy_isinstance_sensor():
+def test_class_hierarchy_isinstance_sensor() -> None:
     """Test isinstance checks for HasUnits sensor."""
     sensor = Sensor(name="TempSensor1", temperature=25.0, pressure=101325.0)
     assert isinstance(sensor, HasUnits)
     assert not isinstance(sensor, HasPerUnit)
 
 
-def test_class_hierarchy_isinstance_generator():
+def test_class_hierarchy_isinstance_generator() -> None:
     """Test isinstance checks for HasPerUnit generator."""
     gen = Generator(
         name="Gen1",
@@ -121,13 +121,13 @@ def test_class_hierarchy_isinstance_generator():
     assert isinstance(gen, HasPerUnit)
 
 
-def test_has_units_system_base_is_none():
+def test_has_units_system_base_is_none() -> None:
     """HasUnits models without system-base support return None."""
     sensor = Sensor(name="TempSensor1", temperature=25.0, pressure=101325.0)
     assert sensor.system_base is None
 
 
-def test_has_per_units_system_base_can_be_set():
+def test_has_per_units_system_base_can_be_set() -> None:
     """Set the system base through the public binding method."""
     gen = Generator(
         name="Gen1",
@@ -156,7 +156,7 @@ def test_system_base_binding_is_instance_local_and_excluded_from_serialization()
     assert "system_base" not in Generator.model_json_schema()["properties"]
 
 
-def test_has_per_units_system_base_repr():
+def test_has_per_units_system_base_repr() -> None:
     """Test HasPerUnit repr with system base set."""
     set_unit_system(UnitSystem.SYSTEM_BASE)
     gen = Generator(
@@ -172,7 +172,7 @@ def test_has_per_units_system_base_repr():
     set_unit_system(UnitSystem.DEVICE_BASE)
 
 
-def test_mixed_units_conversion():
+def test_mixed_units_conversion() -> None:
     """Test conversion with mixed natural and pu inputs."""
     gen = Generator(
         name="Gen3",
@@ -185,7 +185,7 @@ def test_mixed_units_conversion():
     assert gen.voltage == 1.05
 
 
-def test_unit_specs_contains_exactly_annotated_fields():
+def test_unit_specs_contains_exactly_annotated_fields() -> None:
     """The class-level registry contains only fields with Unit metadata."""
     assert set(Sensor.unit_specs) == {"temperature", "pressure"}
     assert set(Generator.unit_specs) == {"base_power", "rated_voltage", "rating", "voltage"}
@@ -193,7 +193,7 @@ def test_unit_specs_contains_exactly_annotated_fields():
     assert Generator.unit_specs["base_power"].unit == "MVA"
 
 
-def test_same_named_classes_resolve_their_own_base_units():
+def test_same_named_classes_resolve_their_own_base_units() -> None:
     """Class-name collisions do not affect per-unit conversion."""
 
     def make_generator(base_unit: str) -> type[Component]:
@@ -322,9 +322,29 @@ def test_unit_binding_preserves_multiple_model_validators() -> None:
     assert device.rating == 0.5
 
 
-def test_missing_base_unit_field_raises_at_class_creation():
+def test_missing_base_unit_field_raises_at_class_creation() -> None:
     """Reject a base reference that does not name a unit-annotated field."""
     with pytest.raises(TypeError, match="missing_base"):
 
         class InvalidComponent(HasUnits, Component):
             rating: Annotated[float, Unit("pu", base="missing_base")]
+
+
+@pytest.mark.parametrize("schema_type", ["definitions", "model"])
+@pytest.mark.parametrize("nested", [False, True])
+def test_dictionary_defaults_are_not_traversed_as_core_schemas(
+    schema_type: str, nested: bool
+) -> None:
+    default = {"type": schema_type}
+    default_settings = {"items": [default]} if nested else default
+
+    class Device(HasUnits, BaseModel):
+        base_power: Annotated[float, Unit("MW")] = 100.0
+        rating: Annotated[float, Unit("pu", base="base_power")]
+        settings: dict[str, object] = default_settings
+
+    device = Device.model_validate({"rating": {"value": 50.0, "unit": "MW"}})
+    assert device.rating == 0.5
+    assert device.settings == default_settings
+    Device.model_rebuild(force=True)
+    assert Device.model_validate_json(device.model_dump_json()).settings == default_settings

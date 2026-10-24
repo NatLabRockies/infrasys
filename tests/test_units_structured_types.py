@@ -50,7 +50,7 @@ def test_annotation_before_validator_runs_before_unit_conversion() -> None:
     assert CustomInput.model_validate({"base_power": 100.0, "power": "50"}).power == 0.5
 
 
-def test_structured_type_with_unit_conversion():
+def test_structured_type_with_unit_conversion() -> None:
     class Generator(HasUnits, Component):
         base_power: Annotated[float, Unit("MVA")]
         ramp_limits: Annotated[UpDown, Unit("MW/min", base="base_power")]
@@ -65,7 +65,7 @@ def test_structured_type_with_unit_conversion():
     assert gen.ramp_limits.down == 0.08
 
 
-def test_nested_unit_aware_model_uses_its_unit_specs():
+def test_nested_unit_aware_model_uses_its_unit_specs() -> None:
     class UnitAwareLimits(HasUnits, BaseModel):
         power: Annotated[float, Unit("MW")]
         fraction: Annotated[float, Unit("pu", base="power")]
@@ -84,7 +84,7 @@ def test_nested_unit_aware_model_uses_its_unit_specs():
     assert device.limits.fraction == 0.5
 
 
-def test_structured_type_without_base():
+def test_structured_type_without_base() -> None:
     class Bus(HasUnits, Component):
         voltage_limits: Annotated[MinMax, Unit("kV")]
 
@@ -97,7 +97,7 @@ def test_structured_type_without_base():
     assert bus.voltage_limits.max == 138.0
 
 
-def test_structured_type_optional():
+def test_structured_type_optional() -> None:
     class Generator(HasUnits, Component):
         base_power: Annotated[float, Unit("MVA")]
         limits: Annotated[MinMax | None, Unit("MW", base="base_power")] = None
@@ -117,7 +117,7 @@ def test_structured_type_optional():
     assert gen2.limits.max == 0.8
 
 
-def test_structured_type_serialization():
+def test_structured_type_serialization() -> None:
     class Battery(HasUnits, Component):
         base_power: Annotated[float, Unit("MVA")]
         power_limits: Annotated[MinMax, Unit("MW", base="base_power")]
@@ -243,7 +243,7 @@ def test_structured_unit_serialization_preserves_aliases_and_exclusions() -> Non
     }
 
 
-def test_same_structured_type_different_units():
+def test_same_structured_type_different_units() -> None:
     class Component1(HasUnits, Component):
         base_power: Annotated[float, Unit("MVA")]
         power_limits: Annotated[MinMax, Unit("MW", base="base_power")]
@@ -291,7 +291,7 @@ def test_nested_float_only(raw_mapping: bool) -> None:
     assert device.limits.enabled is True
 
 
-def test_structured_type_with_int_fields():
+def test_structured_type_with_int_fields() -> None:
     class Device(HasUnits, Component):
         base_power: Annotated[float, Unit("MVA")]
         int_limits: Annotated[IntLimits, Unit("MW", base="base_power")]
@@ -306,7 +306,7 @@ def test_structured_type_with_int_fields():
     assert "int_from_float" in str(exc_info.value)
 
 
-def test_structured_type_with_mixed_types():
+def test_structured_type_with_mixed_types() -> None:
     class Device(HasUnits, Component):
         base_power: Annotated[float, Unit("MVA")]
         mixed: Annotated[MixedLimits, Unit("MW", base="base_power")]
@@ -321,7 +321,7 @@ def test_structured_type_with_mixed_types():
     assert "int_from_float" in str(exc_info.value)
 
 
-def test_structured_type_with_zero_values():
+def test_structured_type_with_zero_values() -> None:
     class Device(HasUnits, Component):
         base_power: Annotated[float, Unit("MVA")]
         limits: Annotated[MinMax, Unit("MW", base="base_power")]
@@ -336,7 +336,7 @@ def test_structured_type_with_zero_values():
     assert device.limits.max == 1.0
 
 
-def test_structured_type_with_negative_values():
+def test_structured_type_with_negative_values() -> None:
     class Device(HasUnits, Component):
         base_power: Annotated[float, Unit("MVA")]
         limits: Annotated[MinMax, Unit("MW", base="base_power")]
@@ -367,7 +367,7 @@ def test_structured_serialized_envelope_rejects_invalid_marker() -> None:
             Battery.model_validate({"name": "bad", "base_power": 50.0, "power_limits": envelope})
 
 
-def test_structured_type_json_round_trip():
+def test_structured_type_json_round_trip() -> None:
     class Battery(HasUnits, Component):
         base_power: Annotated[float, Unit("MVA")]
         power_limits: Annotated[MinMax, Unit("MW", base="base_power")]
@@ -387,7 +387,7 @@ def test_structured_type_json_round_trip():
     assert deserialized.base_power == 50.0
 
 
-def test_multiple_structured_type_fields():
+def test_multiple_structured_type_fields() -> None:
     class Device(HasUnits, Component):
         base_power: Annotated[float, Unit("MVA")]
         power_limits: Annotated[MinMax, Unit("MW", base="base_power")]
@@ -406,7 +406,7 @@ def test_multiple_structured_type_fields():
     assert device.ramp_limits.down == 0.08
 
 
-def test_structured_type_different_base_values():
+def test_structured_type_different_base_values() -> None:
     class Device(HasUnits, Component):
         base_power: Annotated[float, Unit("MVA")]
         limits: Annotated[MinMax, Unit("MW", base="base_power")]
@@ -429,7 +429,7 @@ def test_structured_type_different_base_values():
     assert device2.limits.max == 0.8
 
 
-def test_structured_type_optional_fields_inside():
+def test_structured_type_optional_fields_inside() -> None:
     class Device(HasUnits, Component):
         base_power: Annotated[float, Unit("MVA")]
         limits: Annotated[OptionalFields, Unit("MW", base="base_power")]
@@ -453,7 +453,7 @@ def test_structured_type_optional_fields_inside():
     assert device2.limits.optional == 0.25
 
 
-def test_structured_type_reassignment():
+def test_structured_type_reassignment() -> None:
     class Device(HasUnits, Component):
         base_power: Annotated[float, Unit("MVA")]
         limits: Annotated[MinMax, Unit("MW", base="base_power")]
@@ -473,7 +473,7 @@ def test_structured_type_reassignment():
     assert device.limits.max == 0.7
 
 
-def test_structured_type_preserves_instance_type():
+def test_structured_type_preserves_instance_type() -> None:
     class Device(HasUnits, Component):
         base_power: Annotated[float, Unit("MVA")]
         limits: Annotated[MinMax, Unit("MW", base="base_power")]
@@ -486,3 +486,55 @@ def test_structured_type_preserves_instance_type():
 
     assert isinstance(device.limits, MinMax)
     assert type(device.limits) is MinMax
+
+
+@pytest.mark.parametrize("unit_aware", [False, True])
+@pytest.mark.parametrize("serialize_aliases", [False, True])
+def test_structured_conversion_accepts_alias_only_fields(
+    unit_aware: bool, serialize_aliases: bool
+) -> None:
+    class AliasedLimits(BaseModel):
+        model_config = ConfigDict(serialize_by_alias=serialize_aliases)
+        minimum: float = Field(alias="lo")
+
+    class AliasedUnitLimits(HasUnits, BaseModel):
+        model_config = ConfigDict(serialize_by_alias=serialize_aliases)
+        minimum: Annotated[float, Unit("MW")] = Field(alias="lo")
+
+    limits_type = AliasedUnitLimits if unit_aware else AliasedLimits
+
+    class Device(HasUnits, BaseModel):
+        base_power: Annotated[float, Unit("MW")]
+        limits: Annotated[limits_type, Unit("MW", base="base_power")]
+
+    device = Device.model_validate({"base_power": 100.0, "limits": {"lo": 50.0}})
+    assert device.limits.minimum == 0.5
+    dumped = device.model_dump(by_alias=True)
+    assert dumped["limits"] == {"value": {"lo": 0.5}, "unit": "pu"}
+    assert Device.model_validate(dumped).limits.minimum == 0.5
+
+
+@pytest.mark.parametrize("unit_aware", [False, True])
+def test_structured_conversion_preserves_fields_excluded_from_serialization(
+    unit_aware: bool,
+) -> None:
+    class HiddenLimits(BaseModel):
+        minimum: float = Field(exclude=True)
+        maximum: float
+
+    class HiddenUnitLimits(HasUnits, BaseModel):
+        minimum: Annotated[float, Unit("MW")] = Field(exclude=True)
+        maximum: Annotated[float, Unit("MW")]
+
+    limits_type = HiddenUnitLimits if unit_aware else HiddenLimits
+
+    class Device(HasUnits, BaseModel):
+        base_power: Annotated[float, Unit("MW")]
+        limits: Annotated[limits_type, Unit("MW", base="base_power")]
+
+    device = Device.model_validate(
+        {"base_power": 100.0, "limits": {"minimum": 20.0, "maximum": 80.0}}
+    )
+    assert device.limits.minimum == 0.2
+    assert device.limits.maximum == 0.8
+    assert device.model_dump()["limits"] == {"value": {"maximum": 0.8}, "unit": "pu"}
