@@ -50,33 +50,7 @@ class HasUnits:
 
         cls.unit_specs = specs
 
-        def bind_unit_nodes(node: Any) -> Any:
-            if isinstance(node, dict):
-                if node.get("type") == "definitions":
-                    return {**node, "schema": bind_unit_nodes(node["schema"])}
-                # Nested models bind their own units, even when they share field names.
-                if node.get("type") == "model" and node["cls"] is not cls:
-                    return node
-                metadata = node.get("metadata")
-                spec = metadata.get("infrasys.unit_spec") if isinstance(metadata, dict) else None
-                if isinstance(spec, UnitSpec):
-                    if spec.base is None:
-                        return node
-                    return {
-                        **node,
-                        "function": {
-                            **node["function"],
-                            "function": partial(
-                                node["function"]["function"], base_unit=specs[spec.base].unit
-                            ),
-                        },
-                    }
-                return {key: bind_unit_nodes(value) for key, value in node.items()}
-            if isinstance(node, list):
-                return [bind_unit_nodes(value) for value in node]
-            return node
-
-        return bind_unit_nodes(schema)
+        return _bind_unit_nodes(schema, cls)
 
     @property
     def system_base(self) -> float | None:
@@ -97,13 +71,13 @@ class HasUnits:
         repr_args: list[tuple[str | None, Any]] = []
         unit_system = get_unit_system()
 
-        for field_name in type(self).model_fields:
-            if field_name.startswith("_"):
+        for field_name, field_info in type(self).model_fields.items():
+            if field_name.startswith("_") or not field_info.repr:
                 continue
 
             value = getattr(self, field_name)
             spec = type(self).unit_specs.get(field_name)
-            if spec is None or value is None:
+            if spec is None or not isinstance(value, int | float):
                 repr_args.append((field_name, value))
                 continue
 
@@ -139,3 +113,44 @@ class HasPerUnit(HasUnits):
             System base power to bind to this model.
         """
         self.__dict__["system_base"] = base_power
+
+
+def _bind_unit_nodes(
+    schema: core_schema.CoreSchema, model_type: type[HasUnits]
+) -> core_schema.CoreSchema:
+    """Bind only validation schema edges, never defaults or user metadata."""
+    if schema["type"] == "model" and schema["cls"] is not model_type:
+        return schema
+
+    spec = schema.get("metadata", {}).get("infrasys.unit_spec")
+    if schema["type"] == "function-wrap" and isinstance(spec, UnitSpec) and spec.base is not None:
+        function = schema["function"]
+        return {
+            **schema,
+            "function": {
+                **function,
+                "function": partial(
+                    function["function"], base_unit=model_type.unit_specs[spec.base].unit
+                ),
+            },
+        }
+
+    if schema["type"] == "model-fields":
+        return {
+            **schema,
+            "fields": {
+                name: {**field, "schema": _bind_unit_nodes(field["schema"], model_type)}
+                for name, field in schema["fields"].items()
+            },
+        }
+    if schema["type"] in (
+        "definitions",
+        "model",
+        "function-before",
+        "function-after",
+        "function-wrap",
+        "default",
+        "nullable",
+    ):
+        return {**schema, "schema": _bind_unit_nodes(schema["schema"], model_type)}
+    return schema

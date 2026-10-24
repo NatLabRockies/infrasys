@@ -67,7 +67,10 @@ class UnitSpec:
         from .mixins import HasUnits
 
         model_fields = type(value).model_fields
-        structured_values = value.model_dump()
+        # Excluded fields remain validation inputs; nested envelopes prevent reconversion.
+        structured_values = {
+            field_name: getattr(value, field_name) for field_name in model_fields
+        } | value.model_dump(round_trip=True, by_alias=False)
         converted_fields: dict[str, Any] = {}
 
         if isinstance(value, HasUnits):
@@ -85,7 +88,7 @@ class UnitSpec:
                     converted_fields[field_name] = field_value / base_value
                 else:
                     converted_fields[field_name] = field_value
-            return type(value)(**converted_fields)
+            return type(value).model_validate(converted_fields, by_name=True)
 
         for field_name, field_value in structured_values.items():
             field_info = model_fields.get(field_name)
@@ -110,7 +113,7 @@ class UnitSpec:
             else:
                 converted_fields[field_name] = field_value
 
-        return type(value)(**converted_fields)
+        return type(value).model_validate(converted_fields, by_name=True)
 
     def __get_pydantic_core_schema__(
         self,

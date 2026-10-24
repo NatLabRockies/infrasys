@@ -32,6 +32,9 @@ numeric fields and nested per-unit fields are preserved. Structured dumps use
 `{"value": { ... }, "unit": "pu"}` so revalidation does not divide twice.
 This envelope is distinct from `BaseQuantity.to_dict()`'s `{value, units}` format.
 Optional values remain `None`. Scalar dumps remain internal numbers.
+Structured conversion accepts alias-only fields and keeps Pydantic validation
+active when rebuilding converted values. Serialization exclusions do not remove
+required inputs during conversion.
 
 `ureg` is the existing `BaseQuantity` registry. The annotation API stores numbers;
 `BaseQuantity` continues to store Pint quantities and retains its serialization
@@ -41,9 +44,10 @@ contract. Neither API silently replaces the other.
 is process-global, as in the original implementation, and is not task-local.
 `HasPerUnit.bind_system_base(value)` supplies instance-local display state.
 Infrasys `System` does not select or bind a power-system base automatically.
-The initial migration preserves existing formatting, including its limitations
-for compound rates and structured values; changing those semantics is separate
-work.
+Unit display honors `Field(repr=False)`. Structured values retain their native
+model representation in every display mode; only scalar values receive numeric
+unit formatting. The initial migration preserves the source formatting
+limitations for compound rates.
 
 The implementation and regression tests originate in r2x-core `feat/csv-2`
 (PR #167) at `dd44fac8b231ab7bb1b96641b560e9617fca5725`, rather than R2X main.

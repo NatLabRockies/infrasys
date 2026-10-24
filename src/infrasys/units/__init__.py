@@ -5,7 +5,7 @@ natural units and per-unit values, and configurable display formatting.
 
 Notes
 -----
-* Annotate numeric fields with ``Annotated[float, Unit("kV"|"MVA"|"pu", base="base_field")]``
+* Annotate numeric fields with ``Annotated[float, Unit("pu", base="base_field")]``
 * Natural-unit inputs (``{"value": 138, "unit": "kV"}``) are converted to per-unit when ``base`` is set
 * Internal storage is always float (device-base per-unit for relative quantities)
 * Global display mode (device base, system base, or natural units) affects ``__repr__`` formatting only
@@ -81,10 +81,10 @@ def unit_system(mode: UnitSystem) -> Iterator[None]:
 
     Examples
     --------
-    >>> gen = Generator(...)
+    >>> previous = get_unit_system()
     >>> with unit_system(UnitSystem.NATURAL_UNITS):
-    ...     print(gen)  # Displays in natural units
-    >>> print(gen)  # Back to previous mode
+    ...     assert get_unit_system() is UnitSystem.NATURAL_UNITS
+    >>> assert get_unit_system() is previous
     """
     previous = get_unit_system()
     set_unit_system(mode)

@@ -26,7 +26,7 @@ class SimpleComponent(HasPerUnit, Component):
     active_power: Annotated[float, Unit("pu", base="base_power")]
 
 
-def test_create_with_pu_values():
+def test_create_with_pu_values() -> None:
     """Test creating component with plain pu values."""
     gen = Generator(
         name="G1",
@@ -43,7 +43,7 @@ def test_create_with_pu_values():
     assert gen.voltage == 1.05
 
 
-def test_create_with_natural_units():
+def test_create_with_natural_units() -> None:
     """Test creating component with natural unit input (auto-converts to pu)."""
     gen = Generator(
         name="G1",
@@ -58,7 +58,7 @@ def test_create_with_natural_units():
     assert gen.voltage == pytest.approx(1.05, rel=0.01)  # 14.49 kV / 13.8 kV = 1.05 pu
 
 
-def test_create_with_mixed_units():
+def test_create_with_mixed_units() -> None:
     """Test creating component with mixed pu and natural units."""
     gen = Generator(
         name="G1",
@@ -72,8 +72,8 @@ def test_create_with_mixed_units():
     assert gen.voltage == pytest.approx(1.05, rel=0.01)
 
 
-def test_default_base_power():
-    """Test that Unit['pu'] defaults to base_power."""
+def test_declared_base_power() -> None:
+    """Use the base field explicitly declared by the unit annotation."""
     comp = SimpleComponent(
         name="C1",
         base_power=50.0,
@@ -83,7 +83,7 @@ def test_default_base_power():
     assert comp.active_power == 0.5
 
 
-def test_display_device_base():
+def test_display_device_base() -> None:
     """Test display in device base (default)."""
     gen = Generator(
         name="G1",
@@ -100,7 +100,7 @@ def test_display_device_base():
     assert "13.8 kV" in repr_str
 
 
-def test_display_natural_units():
+def test_display_natural_units() -> None:
     """Test display in natural units."""
     gen = Generator(
         name="G1",
@@ -119,7 +119,7 @@ def test_display_natural_units():
     set_unit_system(UnitSystem.DEVICE_BASE)
 
 
-def test_display_system_base():
+def test_display_system_base() -> None:
     """Test display in system base."""
     gen = Generator(
         name="G1",
@@ -139,7 +139,7 @@ def test_display_system_base():
     set_unit_system(UnitSystem.DEVICE_BASE)
 
 
-def test_field_access_returns_float():
+def test_field_access_returns_float() -> None:
     """Test that field access returns plain float for calculations."""
     gen = Generator(
         name="G1",
@@ -156,7 +156,7 @@ def test_field_access_returns_float():
     assert result == 1.6
 
 
-def test_field_assignment():
+def test_field_assignment() -> None:
     """Test that field assignment works."""
     gen = Generator(
         name="G1",
@@ -170,7 +170,7 @@ def test_field_assignment():
     assert gen.rating == 0.9
 
 
-def test_convert_power_to_pu():
+def test_convert_power_to_pu() -> None:
     """Test converting MW to pu."""
     gen = Generator(
         name="G1",
@@ -183,7 +183,7 @@ def test_convert_power_to_pu():
     assert gen.rating == 0.8  # 40 MW / 50 MVA = 0.8 pu
 
 
-def test_convert_voltage_to_pu():
+def test_convert_voltage_to_pu() -> None:
     """Test converting kV to pu."""
     gen = Generator(
         name="G1",
@@ -196,8 +196,8 @@ def test_convert_voltage_to_pu():
     assert gen.voltage == pytest.approx(1.05, rel=0.01)  # 144.9 / 138 = 1.05 pu
 
 
-def test_missing_natural_unit_in_spec():
-    """Test display when natural_unit is not specified."""
+def test_display_uses_declared_base_unit() -> None:
+    """Display relative values using the declared base field unit."""
 
     class ComponentNoNaturalUnit(HasPerUnit, Component):
         name: str
@@ -214,7 +214,7 @@ def test_missing_natural_unit_in_spec():
     set_unit_system(UnitSystem.DEVICE_BASE)
 
 
-def test_component_without_system_base():
+def test_component_without_system_base() -> None:
     """Test component display without system_base set."""
     gen = Generator(
         name="G1",
