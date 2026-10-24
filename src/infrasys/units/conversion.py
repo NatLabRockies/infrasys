@@ -18,6 +18,7 @@ __all__ = ["convert_to_internal", "format_for_display", "ureg"]
 
 def convert_to_internal(
     value: object,
+    *,
     spec: UnitSpec,
     base_value: float | None = None,
     base_unit: str | None = None,
@@ -65,7 +66,7 @@ def convert_to_internal(
 
     target_unit = base_unit if spec.unit == "pu" else spec.unit
     if spec.base is not None:
-        _validate_conversion_base(spec, base_value, base_unit)
+        _validate_conversion_base(spec, base_value=base_value, base_unit=base_unit)
 
     try:
         normalized = ureg.Quantity(input_value, input_unit).to(target_unit)
@@ -83,6 +84,7 @@ def convert_to_internal(
 
 def format_for_display(
     value: float,
+    *,
     spec: UnitSpec,
     unit_system: UnitSystem,
     base_value: float | None = None,
@@ -138,7 +140,7 @@ def format_for_display(
 
 
 def _validate_conversion_base(
-    spec: UnitSpec, base_value: float | None, base_unit: str | None
+    spec: UnitSpec, *, base_value: float | None, base_unit: str | None
 ) -> None:
     """Require a usable, explicitly annotated base for relative conversion."""
     if base_value is None:
