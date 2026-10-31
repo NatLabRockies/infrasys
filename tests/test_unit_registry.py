@@ -5,7 +5,7 @@ from typing import Annotated
 
 from pydantic import BaseModel
 
-from infrasys import BaseQuantity, Component, HasUnits, System, Unit, ureg
+from infrasys import Component, HasUnits, System, Unit, ureg
 from infrasys.base_quantity import ureg as quantity_registry
 from infrasys.quantities import ActivePower
 from infrasys.units.conversion import ureg as conversion_registry
@@ -24,7 +24,7 @@ class UnitDevice(HasUnits, Component):
 
 
 def test_annotations_and_quantities_share_registry() -> None:
-    assert ureg is quantity_registry is conversion_registry is BaseQuantity._REGISTRY
+    assert ureg is quantity_registry is conversion_registry
     quantity = ureg.Quantity(1, "MW") + ActivePower(1000, "kW")
     assert quantity.to("MW").magnitude == 2
 

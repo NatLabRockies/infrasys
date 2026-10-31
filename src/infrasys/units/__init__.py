@@ -17,7 +17,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from enum import StrEnum
 
-from .conversion import convert_to_internal, format_for_display, ureg
+from .conversion import UnitInput, convert_to_internal, format_for_display, ureg
 from .mixins import HasPerUnit, HasUnits
 from .specs import Unit, UnitSpec, unit_spec
 
@@ -106,6 +106,7 @@ __all__ = [
     "Unit",
     "UnitSpec",
     "UnitSystem",
+    "UnitInput",
     "convert_to_internal",
     "format_for_display",
     "get_unit_system",

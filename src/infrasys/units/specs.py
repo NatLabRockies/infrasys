@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any, Union, get_args, get_origin
 from pydantic import BaseModel, GetCoreSchemaHandler
 from pydantic_core import core_schema
 
-from .conversion import convert_to_internal
+from .conversion import UnitInput, convert_to_internal
 
 if TYPE_CHECKING:
     from pydantic import GetJsonSchemaHandler
@@ -194,12 +194,13 @@ class UnitSpec:
             *,
             base_unit: str | None = None,
         ) -> Any:
-            if isinstance(value, dict):
+            if isinstance(value, dict) and {"value", "unit"} <= value.keys():
                 base_value = (
                     info.data.get(self.base) if self.base is not None and info.data else None
                 )
+                unit_input: UnitInput = {"value": value["value"], "unit": value["unit"]}
                 value = convert_to_internal(
-                    value, spec=self, base_value=base_value, base_unit=base_unit
+                    unit_input, spec=self, base_value=base_value, base_unit=base_unit
                 )
             return next_validator(value)
 

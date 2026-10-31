@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, SupportsFloat, TypedDict
 
 import pint
 
@@ -14,8 +14,15 @@ if TYPE_CHECKING:
     from .specs import UnitSpec
 
 
+class UnitInput(TypedDict):
+    """Unit-bearing input mapping accepted by ``convert_to_internal``."""
+
+    value: SupportsFloat | str
+    unit: str
+
+
 def convert_to_internal(
-    value: object,
+    value: int | float | UnitInput,
     *,
     spec: UnitSpec,
     base_value: float | None = None,
@@ -25,7 +32,7 @@ def convert_to_internal(
 
     Parameters
     ----------
-    value : float, int, or dict
+    value : int, float, or UnitInput
         Input value. Dict inputs contain ``value`` and ``unit`` keys.
     spec : UnitSpec
         Unit metadata for the field.
@@ -52,8 +59,8 @@ def convert_to_internal(
         msg = "Expected a number or a mapping with 'value' and 'unit' keys"
         raise ValueError(msg)
 
-    input_value = _parse_input_magnitude(value["value"])
-    input_unit = _validate_input_unit(value["unit"])
+    input_value = parse_input_magnitude(value["value"])
+    input_unit = validate_input_unit(value["unit"])
 
     if spec.unit == "pu":
         if input_unit == "pu":
@@ -64,7 +71,7 @@ def convert_to_internal(
 
     target_unit = base_unit if spec.unit == "pu" else spec.unit
     if spec.base is not None:
-        _validate_conversion_base(spec, base_value=base_value, base_unit=base_unit)
+        validate_conversion_base(spec, base_value=base_value, base_unit=base_unit)
 
     try:
         normalized = ureg.Quantity(input_value, input_unit).to(target_unit)
@@ -137,7 +144,7 @@ def format_for_display(
     return f"{value} pu"
 
 
-def _validate_conversion_base(
+def validate_conversion_base(
     spec: UnitSpec, *, base_value: float | None, base_unit: str | None
 ) -> None:
     """Require a usable, explicitly annotated base for relative conversion."""
@@ -154,7 +161,7 @@ def _validate_conversion_base(
         raise ValueError(msg)
 
 
-def _validate_input_unit(input_unit: object) -> str:
+def validate_input_unit(input_unit: object) -> str:
     """Return a nonempty unit name or reject malformed envelope input."""
     if not isinstance(input_unit, str) or not input_unit:
         msg = "Unit mapping 'unit' must be a non-empty string"
@@ -162,10 +169,12 @@ def _validate_input_unit(input_unit: object) -> str:
     return input_unit
 
 
-def _parse_input_magnitude(value: Any) -> float:
-    """Normalize envelope magnitudes using Python's numeric input contract."""
+def parse_input_magnitude(value: object) -> float:
+    """Normalize supported envelope magnitudes and reject other values."""
+    msg = "Unit mapping 'value' must be numeric"
+    if not isinstance(value, SupportsFloat | str):
+        raise ValueError(msg)
     try:
         return float(value)
     except (TypeError, ValueError) as error:
-        msg = "Unit mapping 'value' must be numeric"
         raise ValueError(msg) from error

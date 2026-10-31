@@ -3,15 +3,57 @@
 from __future__ import annotations
 
 from functools import partial
+from reprlib import recursive_repr
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from pydantic import GetCoreSchemaHandler
+from pydantic import BaseModel, GetCoreSchemaHandler, PrivateAttr
 from pydantic_core import core_schema
 
 from .specs import UnitSpec
 
 if TYPE_CHECKING:
     from pydantic.fields import FieldInfo
+
+
+def bind_unit_nodes(
+    schema: core_schema.CoreSchema, *, model_type: type[HasUnits]
+) -> core_schema.CoreSchema:
+    """Bind only validation schema edges, never defaults or user metadata."""
+    if schema["type"] == "model" and schema["cls"] is not model_type:
+        return schema
+
+    spec = schema.get("metadata", {}).get("infrasys.unit_spec")
+    if schema["type"] == "function-wrap" and isinstance(spec, UnitSpec) and spec.base is not None:
+        function = schema["function"]
+        return {
+            **schema,
+            "function": {
+                **function,
+                "function": partial(
+                    function["function"], base_unit=model_type.unit_specs[spec.base].unit
+                ),
+            },
+        }
+
+    if schema["type"] == "model-fields":
+        return {
+            **schema,
+            "fields": {
+                name: {**field, "schema": bind_unit_nodes(field["schema"], model_type=model_type)}
+                for name, field in schema["fields"].items()
+            },
+        }
+    if schema["type"] in (
+        "definitions",
+        "model",
+        "function-before",
+        "function-after",
+        "function-wrap",
+        "default",
+        "nullable",
+    ):
+        return {**schema, "schema": bind_unit_nodes(schema["schema"], model_type=model_type)}
+    return schema
 
 
 class HasUnits:
@@ -48,26 +90,21 @@ class HasUnits:
 
         cls.unit_specs = specs
 
-        return _bind_unit_nodes(schema, model_type=cls)
+        return bind_unit_nodes(schema, model_type=cls)
 
     @property
     def system_base(self) -> float | None:
         """Return the system base when this model supports it."""
         return None
 
-    def __repr_args__(self) -> list[tuple[str | None, Any]]:
-        """Format model fields using the active unit display mode.
-
-        Returns
-        -------
-        list[tuple[str | None, Any]]
-            Field names and display-formatted values used by ``repr``.
-        """
+    @recursive_repr()
+    def __repr__(self) -> str:
+        """Format model fields using the active unit display mode."""
         from . import get_unit_system
         from .conversion import format_for_display
 
-        repr_args: list[tuple[str | None, Any]] = []
         unit_system = get_unit_system()
+        fields: list[str] = []
 
         for field_name, field_info in type(self).model_fields.items():
             if field_name.startswith("_") or not field_info.repr:
@@ -75,32 +112,33 @@ class HasUnits:
 
             value = getattr(self, field_name)
             spec = type(self).unit_specs.get(field_name)
-            if spec is None or not isinstance(value, int | float):
-                repr_args.append((field_name, value))
-                continue
+            if spec is not None and isinstance(value, int | float):
+                base_value = getattr(self, spec.base) if spec.base is not None else None
+                base_unit = (
+                    type(self).unit_specs[spec.base].unit if spec.base is not None else None
+                )
+                value = format_for_display(
+                    value,
+                    spec=spec,
+                    unit_system=unit_system,
+                    base_value=base_value,
+                    base_unit=base_unit,
+                    system_base=self.system_base,
+                )
+            fields.append(f"{field_name}={value!r}")
 
-            base_value = getattr(self, spec.base) if spec.base is not None else None
-            base_unit = type(self).unit_specs[spec.base].unit if spec.base is not None else None
-            formatted = format_for_display(
-                value,
-                spec=spec,
-                unit_system=unit_system,
-                base_value=base_value,
-                base_unit=base_unit,
-                system_base=self.system_base,
-            )
-            repr_args.append((field_name, formatted))
-
-        return repr_args
+        return f"{type(self).__name__}({', '.join(fields)})"
 
 
-class HasPerUnit(HasUnits):
+class HasPerUnit(HasUnits, BaseModel):
     """Add system-base display state to a unit-aware model."""
+
+    _system_base: float | None = PrivateAttr(default=None)
 
     @property
     def system_base(self) -> float | None:
         """Return the system base power bound to this model."""
-        return self.__dict__.get("system_base")
+        return self._system_base
 
     def bind_system_base(self, base_power: float | None) -> None:
         """Set the system base used for per-unit display.
@@ -110,45 +148,4 @@ class HasPerUnit(HasUnits):
         base_power : float or None
             System base power to bind to this model.
         """
-        self.__dict__["system_base"] = base_power
-
-
-def _bind_unit_nodes(
-    schema: core_schema.CoreSchema, *, model_type: type[HasUnits]
-) -> core_schema.CoreSchema:
-    """Bind only validation schema edges, never defaults or user metadata."""
-    if schema["type"] == "model" and schema["cls"] is not model_type:
-        return schema
-
-    spec = schema.get("metadata", {}).get("infrasys.unit_spec")
-    if schema["type"] == "function-wrap" and isinstance(spec, UnitSpec) and spec.base is not None:
-        function = schema["function"]
-        return {
-            **schema,
-            "function": {
-                **function,
-                "function": partial(
-                    function["function"], base_unit=model_type.unit_specs[spec.base].unit
-                ),
-            },
-        }
-
-    if schema["type"] == "model-fields":
-        return {
-            **schema,
-            "fields": {
-                name: {**field, "schema": _bind_unit_nodes(field["schema"], model_type=model_type)}
-                for name, field in schema["fields"].items()
-            },
-        }
-    if schema["type"] in (
-        "definitions",
-        "model",
-        "function-before",
-        "function-after",
-        "function-wrap",
-        "default",
-        "nullable",
-    ):
-        return {**schema, "schema": _bind_unit_nodes(schema["schema"], model_type=model_type)}
-    return schema
+        self._system_base = base_power

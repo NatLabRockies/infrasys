@@ -2,15 +2,21 @@
 
 from collections.abc import Callable
 from inspect import Parameter, signature
+from typing import get_type_hints
 
 import pytest
 
 from infrasys import units
-from infrasys.units import Unit, UnitSpec, convert_to_internal, format_for_display
+from infrasys.units import Unit, UnitInput, UnitSpec, convert_to_internal, format_for_display
 
 
 def test_conversion_helpers_are_exported_from_units_package() -> None:
-    assert {"convert_to_internal", "format_for_display"} <= set(units.__all__)
+    assert {"UnitInput", "convert_to_internal", "format_for_display"} <= set(units.__all__)
+
+
+def test_convert_to_internal_declares_supported_input_types() -> None:
+    annotations = get_type_hints(convert_to_internal, localns={"UnitSpec": UnitSpec})
+    assert annotations["value"] == int | float | UnitInput
 
 
 @pytest.mark.parametrize(
