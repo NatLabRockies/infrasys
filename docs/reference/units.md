@@ -84,7 +84,9 @@ base relationships as dedicated schema properties.
 
 ## Display context is not serialization context
 
-The supported `unit_system(...)` context controls representation only:
+The `set_unit_system(mode)` function selects and returns the active global display mode.
+Use `unit_system(mode)` for temporary changes that restore the previous mode automatically.
+Both control representation only:
 
 ```python
 with unit_system(UnitSystem.NATURAL_UNITS):
