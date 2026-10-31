@@ -16,8 +16,6 @@ if TYPE_CHECKING:
     from pydantic import GetJsonSchemaHandler
     from pydantic.json_schema import JsonSchemaValue
 
-__all__ = ["Unit", "UnitSpec", "unit_spec"]
-
 
 def unit_value_type(annotation: Any) -> Any:
     """Return the non-None value type of a unit field annotation."""

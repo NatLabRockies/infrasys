@@ -13,8 +13,6 @@ from .specs import UnitSpec
 if TYPE_CHECKING:
     from pydantic.fields import FieldInfo
 
-__all__ = ["HasPerUnit", "HasUnits"]
-
 
 class HasUnits:
     """Add unit metadata and display formatting to a Pydantic model.

@@ -4,7 +4,15 @@ import pytest
 from infrasys import Component
 from pydantic import BaseModel
 
-from infrasys.units import HasPerUnit, HasUnits, Unit, UnitSystem, unit_system
+from infrasys.units import (
+    HasPerUnit,
+    HasUnits,
+    Unit,
+    UnitSystem,
+    get_unit_system,
+    set_unit_system,
+    unit_system,
+)
 
 
 class Demo(HasPerUnit, Component):
@@ -85,6 +93,21 @@ def test_unit_system_context_manager_switch() -> None:
         s = repr(demo)
         assert "system" in s or "pu" in s
     assert "pu" in repr(demo)
+
+
+def test_unit_system_is_a_string_enum() -> None:
+    assert isinstance(UnitSystem.DEVICE_BASE, str)
+    assert str(UnitSystem.DEVICE_BASE) == "DEVICE_BASE"
+
+
+def test_set_unit_system_returns_effective_mode() -> None:
+    previous = get_unit_system()
+    try:
+        selected = set_unit_system(UnitSystem.NATURAL_UNITS)
+        assert selected is UnitSystem.NATURAL_UNITS
+        assert get_unit_system() is selected
+    finally:
+        set_unit_system(previous)
 
 
 @pytest.mark.parametrize("hidden_unit", [False, True])

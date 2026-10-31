@@ -15,14 +15,14 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
-from enum import Enum
+from enum import StrEnum
 
-from .conversion import ureg
+from .conversion import convert_to_internal, format_for_display, ureg
 from .mixins import HasPerUnit, HasUnits
 from .specs import Unit, UnitSpec, unit_spec
 
 
-class UnitSystem(str, Enum):
+class UnitSystem(StrEnum):
     """Display modes for formatted representation.
 
     Attributes
@@ -54,16 +54,22 @@ def get_unit_system() -> UnitSystem:
     return current_unit_system
 
 
-def set_unit_system(unit_system: UnitSystem) -> None:
-    """Set the global display mode.
+def set_unit_system(unit_system: UnitSystem) -> UnitSystem:
+    """Set and return the active global display mode.
 
     Parameters
     ----------
     unit_system : UnitSystem
         Display mode to set
+
+    Returns
+    -------
+    UnitSystem
+        The active display mode after setting it.
     """
     global current_unit_system
     current_unit_system = unit_system
+    return current_unit_system
 
 
 @contextmanager
@@ -100,6 +106,8 @@ __all__ = [
     "Unit",
     "UnitSpec",
     "UnitSystem",
+    "convert_to_internal",
+    "format_for_display",
     "get_unit_system",
     "set_unit_system",
     "unit_spec",

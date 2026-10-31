@@ -5,8 +5,12 @@ from inspect import Parameter, signature
 
 import pytest
 
-from infrasys.units import Unit, UnitSpec
-from infrasys.units.conversion import convert_to_internal, format_for_display
+from infrasys import units
+from infrasys.units import Unit, UnitSpec, convert_to_internal, format_for_display
+
+
+def test_conversion_helpers_are_exported_from_units_package() -> None:
+    assert {"convert_to_internal", "format_for_display"} <= set(units.__all__)
 
 
 @pytest.mark.parametrize(
