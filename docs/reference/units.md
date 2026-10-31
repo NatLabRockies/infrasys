@@ -112,7 +112,8 @@ Low-level conversion keeps the input value positional and requires named
 configuration: `convert_to_internal(value, *, spec, base_value=None, base_unit=None)`.
 `format_for_display(value, *, spec, unit_system, base_value=None, base_unit=None,
 system_base=None)` follows the same convention. Both live in
-`infrasys.units.conversion`. `Unit(unit, *, base=None)` and
+`infrasys.units.conversion`. The exported `UnitInput` type describes mapping
+inputs to `convert_to_internal`. `Unit(unit, *, base=None)` and
 `UnitSpec(unit, *, base=None)` keep the unit name as the primary argument and the
 base reference keyword-only.
 
