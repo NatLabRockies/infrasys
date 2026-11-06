@@ -19,6 +19,7 @@ from uuid import UUID
 import numpy as np
 import pandas as pd
 import pint
+from dateutil.relativedelta import relativedelta
 from numpy.typing import NDArray
 from pydantic import (
     Field,
@@ -35,12 +36,53 @@ from infrasys.exceptions import (
 )
 from infrasys.models import InfraSysBaseModel, InfraSysBaseModelWithIdentifers
 from infrasys.normalization import NormalizationModel
+from infrasys.utils.time_utils import from_iso_8601, to_iso_8601
 
 TIME_COLUMN = "timestamp"
 VALUE_COLUMN = "value"
 
 
 ISArray: TypeAlias = Sequence | NDArray | pint.Quantity
+TimeSeriesResolution: TypeAlias = timedelta | relativedelta
+
+
+def _calendar_month_count(resolution: relativedelta) -> int:
+    """Return the month count for a pure, positive calendar-month resolution."""
+    relative_fields = (
+        resolution.days,
+        resolution.hours,
+        resolution.minutes,
+        resolution.seconds,
+        resolution.microseconds,
+        resolution.leapdays,
+    )
+    absolute_fields = (
+        resolution.year,
+        resolution.month,
+        resolution.day,
+        resolution.hour,
+        resolution.minute,
+        resolution.second,
+        resolution.microsecond,
+    )
+    months = 12 * resolution.years + resolution.months
+    if (
+        months <= 0
+        or any(relative_fields)
+        or resolution.weekday is not None
+        or any(value is not None for value in absolute_fields)
+    ):
+        msg = "Calendar resolutions must be positive whole months or years."
+        raise ValueError(msg)
+    return months
+
+
+def _parse_time_series_resolution(value: Any) -> TimeSeriesResolution:
+    if isinstance(value, str):
+        value = from_iso_8601(value)
+    if isinstance(value, relativedelta):
+        _calendar_month_count(value)
+    return value
 
 
 class TimeSeriesStorageType(StrEnum):
@@ -74,8 +116,17 @@ class SingleTimeSeries(TimeSeriesData):
     """Defines a time array with a single dimension of floats."""
 
     data: NDArray | pint.Quantity
-    resolution: timedelta
+    resolution: TimeSeriesResolution
     initial_timestamp: datetime
+
+    @field_validator("resolution", mode="before")
+    @classmethod
+    def validate_resolution(cls, value: Any) -> TimeSeriesResolution:
+        return _parse_time_series_resolution(value)
+
+    @field_serializer("resolution", when_used="json")
+    def serialize_resolution(self, value: TimeSeriesResolution) -> str:
+        return to_iso_8601(value)
 
     @computed_field  # type: ignore
     @property
@@ -122,7 +173,7 @@ class SingleTimeSeries(TimeSeriesData):
         data: ISArray,
         name: str,
         initial_timestamp: datetime,
-        resolution: timedelta,
+        resolution: TimeSeriesResolution,
         normalization: NormalizationModel = None,
     ) -> "SingleTimeSeries":
         """Method of SingleTimeSeries that creates an instance from a sequence.
@@ -134,7 +185,7 @@ class SingleTimeSeries(TimeSeriesData):
         initial_time
             Start time for the time series (e.g., datetime(2020,1,1))
         resolution
-            Resolution of the time series (e.g., 30min, 1hr)
+            A fixed ``timedelta`` or a calendar-month/year ``relativedelta``.
         name
             Name assigned to the values of the time series (e.g., active_power)
 
@@ -191,14 +242,18 @@ class SingleTimeSeries(TimeSeriesData):
 
         Note
         ----
-        The current implementation only uses the time_index to infer the initial time and resolution.
+        Three or more timestamps that match an anchored calendar-month/year grid infer a
+        ``relativedelta``. With fewer timestamps, the resolution is inferred as a fixed
+        ``timedelta`` because the cadence is ambiguous.
 
         """
         # Infer initial time from the time_index.
-        initial_timestamp = time_index[0]
+        initial_timestamp = pd.Timestamp(time_index[0]).to_pydatetime()
 
-        # This does not cover changes mult-resolution time index.
-        resolution = time_index[1] - time_index[0]
+        # Multiresolution time indexes are not supported.
+        resolution: TimeSeriesResolution | None = _infer_calendar_resolution(time_index)
+        if resolution is None:
+            resolution = pd.Timestamp(time_index[1]).to_pydatetime() - initial_timestamp
 
         return SingleTimeSeries.from_array(
             data,
@@ -210,6 +265,11 @@ class SingleTimeSeries(TimeSeriesData):
 
     def make_timestamps(self) -> NDArray:
         """Return the timestamps as a numpy array."""
+        if isinstance(self.resolution, relativedelta):
+            timestamps = [
+                self.initial_timestamp + index * self.resolution for index in range(len(self.data))
+            ]
+            return pd.DatetimeIndex(timestamps).values
         return pd.date_range(
             start=self.initial_timestamp, periods=len(self.data), freq=self.resolution
         ).values
@@ -227,6 +287,29 @@ class SingleTimeSeries(TimeSeriesData):
 
 class SingleTimeSeriesScalingFactor(SingleTimeSeries):
     """Defines a time array with a single dimension of floats that are 0-1 scaling factors."""
+
+
+def _infer_calendar_resolution(
+    time_index: Sequence[datetime] | NDArray,
+) -> relativedelta | None:
+    """Infer a calendar-month resolution when all timestamps match that anchored grid."""
+    if len(time_index) < 3:
+        return None
+    try:
+        timestamps = pd.DatetimeIndex(time_index).to_pydatetime()
+    except (TypeError, ValueError):
+        return None
+    resolution = relativedelta(timestamps[1], timestamps[0])
+    try:
+        _calendar_month_count(resolution)
+    except ValueError:
+        return None
+    if all(
+        timestamp == timestamps[0] + index * resolution
+        for index, timestamp in enumerate(timestamps)
+    ):
+        return resolution
+    return None
 
 
 class Forecast(TimeSeriesData):
@@ -405,8 +488,17 @@ class SingleTimeSeriesMetadataBase(TimeSeriesMetadata, abc.ABC):
 
     length: int
     initial_timestamp: datetime
-    resolution: timedelta
+    resolution: TimeSeriesResolution
     type: Literal["SingleTimeSeries", "SingleTimeSeriesScalingFactor"]
+
+    @field_validator("resolution", mode="before")
+    @classmethod
+    def validate_resolution(cls, value: Any) -> TimeSeriesResolution:
+        return _parse_time_series_resolution(value)
+
+    @field_serializer("resolution", when_used="json")
+    def serialize_resolution(self, value: TimeSeriesResolution) -> str:
+        return to_iso_8601(value)
 
     @classmethod
     def from_data(cls, time_series: SingleTimeSeries, **features) -> Any:
@@ -448,14 +540,26 @@ class SingleTimeSeriesMetadataBase(TimeSeriesMetadata, abc.ABC):
             if start_time >= self.initial_timestamp + self.length * self.resolution:
                 msg = f"{start_time=} is too large: {self=}"
                 raise ISConflictingArguments(msg)
-            diff = start_time - self.initial_timestamp
-            if (diff % self.resolution).total_seconds() != 0.0:
-                msg = (
-                    f"{start_time=} conflicts with initial_time={self.initial_timestamp} and "
-                    f"resolution={self.resolution}"
-                )
-                raise ISConflictingArguments(msg)
-            index = int(diff / self.resolution)
+            if isinstance(self.resolution, relativedelta):
+                difference = relativedelta(start_time, self.initial_timestamp)
+                months = 12 * difference.years + difference.months
+                step_months = _calendar_month_count(self.resolution)
+                index, remainder = divmod(months, step_months)
+                if remainder or self.initial_timestamp + index * self.resolution != start_time:
+                    msg = (
+                        f"{start_time=} conflicts with initial_time={self.initial_timestamp} and "
+                        f"resolution={self.resolution}"
+                    )
+                    raise ISConflictingArguments(msg)
+            else:
+                diff = start_time - self.initial_timestamp
+                if (diff % self.resolution).total_seconds() != 0.0:
+                    msg = (
+                        f"{start_time=} conflicts with initial_time={self.initial_timestamp} and "
+                        f"resolution={self.resolution}"
+                    )
+                    raise ISConflictingArguments(msg)
+                index = int(diff / self.resolution)
         if length is None:
             length = self.length - index
 
@@ -792,7 +896,16 @@ class SingleTimeSeriesKey(TimeSeriesKey):
 
     length: int
     initial_timestamp: datetime
-    resolution: timedelta
+    resolution: TimeSeriesResolution
+
+    @field_validator("resolution", mode="before")
+    @classmethod
+    def validate_resolution(cls, value: Any) -> TimeSeriesResolution:
+        return _parse_time_series_resolution(value)
+
+    @field_serializer("resolution", when_used="json")
+    def serialize_resolution(self, value: TimeSeriesResolution) -> str:
+        return to_iso_8601(value)
 
 
 class NonSequentialTimeSeriesKey(TimeSeriesKey):

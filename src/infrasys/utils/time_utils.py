@@ -6,10 +6,10 @@ from dateutil.relativedelta import relativedelta
 
 REGEX_DURATIONS = OrderedDict(
     {
-        "milliseconds": r"^P0DT(\d+\.\d+)S$",
-        "seconds": r"^P0DT(\d+)S$",
-        "minutes": r"^P0DT(\d+)M$",
-        "hours": r"^P0DT(\d+)H$",
+        "milliseconds": r"^P(?:0D)?T(\d+\.\d+)S$",
+        "seconds": r"^P(?:0D)?T(\d+)S$",
+        "minutes": r"^P(?:0D)?T(\d+)M$",
+        "hours": r"^P(?:0D)?T(\d+)H$",
         "days": r"^P(\d+)D$",
         "weeks": r"^P(\d+)W$",
         "months": r"^P(\d+)M$",
@@ -143,11 +143,11 @@ def to_iso_8601(duration: timedelta | relativedelta) -> str:
         seconds = duration.seconds
         microseconds = duration.microseconds
 
-    if years and not any([months, days, seconds, microseconds]):
-        return f"P{years}Y"
-
-    if months and not any([days, seconds, microseconds]):
-        return f"P{months}M"
+    if (years or months) and not any([days, seconds, microseconds]):
+        total_months = 12 * years + months
+        if total_months % 12 == 0:
+            return f"P{total_months // 12}Y"
+        return f"P{total_months}M"
 
     if days and not any([seconds, microseconds]):
         if days % 7 == 0:

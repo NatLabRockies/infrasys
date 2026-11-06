@@ -32,6 +32,8 @@ def test_from_iso_8601():
     assert isinstance(result, timedelta)
     assert result.total_seconds() == 0.1
 
+    assert from_iso_8601("PT1H") == timedelta(hours=1)
+
     delta_str = "P0DT35.0024S"
     with pytest.raises(ValueError):
         _ = from_iso_8601(delta_str)
@@ -62,6 +64,9 @@ def test_duration_round_trip():
 
 
 def test_duration_with_relative_delta():
+    delta = relativedelta(years=1, months=1)
+    assert to_iso_8601(delta) == "P13M"
+
     delta = relativedelta(months=1)
     result = to_iso_8601(delta)
     assert isinstance(result, str)

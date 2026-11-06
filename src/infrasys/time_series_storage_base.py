@@ -12,6 +12,9 @@ from infrasys.time_series_models import TimeSeriesData, TimeSeriesMetadata
 class TimeSeriesStorageBase(abc.ABC):
     """Base class for time series storage"""
 
+    def validate_time_series(self, time_series: TimeSeriesData) -> None:
+        """Validate backend compatibility before metadata is committed."""
+
     @abc.abstractmethod
     def add_time_series(
         self,

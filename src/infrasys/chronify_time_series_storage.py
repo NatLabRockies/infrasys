@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 import pint
 from chronify import DatetimeRange, Store, TableSchema
+from dateutil.relativedelta import relativedelta
 from loguru import logger
 from sqlalchemy import Connection
 
@@ -35,6 +36,16 @@ from infrasys.utils.path_utils import delete_if_exists
 
 _SINGLE_TIME_SERIES_BASE_NAME = "single_time_series"
 _TIME_SERIES_FILENAME = "time_series_data.db"
+
+
+def _fixed_resolution(resolution: timedelta | relativedelta) -> timedelta:
+    if isinstance(resolution, relativedelta):
+        msg = (
+            "Chronify storage does not support calendar-month/year resolutions. "
+            "Use Arrow, HDF5, or in-memory storage instead."
+        )
+        raise ISInvalidParameter(msg)
+    return resolution
 
 
 class ChronifyTimeSeriesStorage(TimeSeriesStorageBase):
@@ -162,12 +173,17 @@ class ChronifyTimeSeriesStorage(TimeSeriesStorageBase):
         assert self._store.engine.url.database is not None
         return Path(self._store.engine.url.database).parent
 
+    def validate_time_series(self, time_series: TimeSeriesData) -> None:
+        if isinstance(time_series, SingleTimeSeries):
+            _fixed_resolution(time_series.resolution)
+
     def add_time_series(
         self,
         metadata: TimeSeriesMetadata,
         time_series: TimeSeriesData,
         context: Connection | None = None,
     ) -> None:
+        self.validate_time_series(time_series)
         if not isinstance(time_series, SingleTimeSeries):
             msg = f"Bug: need to implement add_time_series for {type(time_series)}"
             raise NotImplementedError(msg)
@@ -445,9 +461,10 @@ def _make_time_config(time_series) -> Any:
 
 @_make_time_config.register(SingleTimeSeries)
 def _(time_series: SingleTimeSeries) -> DatetimeRange:
+    resolution = _fixed_resolution(time_series.resolution)
     return DatetimeRange(
         start=time_series.initial_timestamp,
-        resolution=time_series.resolution,
+        resolution=resolution,
         length=len(time_series.data),
         time_column="timestamp",
     )
