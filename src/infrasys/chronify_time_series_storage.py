@@ -36,16 +36,10 @@ from infrasys.utils.path_utils import delete_if_exists
 
 _SINGLE_TIME_SERIES_BASE_NAME = "single_time_series"
 _TIME_SERIES_FILENAME = "time_series_data.db"
-
-
-def _fixed_resolution(resolution: timedelta | relativedelta) -> timedelta:
-    if isinstance(resolution, relativedelta):
-        msg = (
-            "Chronify storage does not support calendar-month/year resolutions. "
-            "Use Arrow, HDF5, or in-memory storage instead."
-        )
-        raise ISInvalidParameter(msg)
-    return resolution
+_CALENDAR_RESOLUTION_ERROR = (
+    "Chronify storage does not support calendar-month/year resolutions. "
+    "Use Arrow, HDF5, or in-memory storage instead."
+)
 
 
 class ChronifyTimeSeriesStorage(TimeSeriesStorageBase):
@@ -174,8 +168,10 @@ class ChronifyTimeSeriesStorage(TimeSeriesStorageBase):
         return Path(self._store.engine.url.database).parent
 
     def validate_time_series(self, time_series: TimeSeriesData) -> None:
-        if isinstance(time_series, SingleTimeSeries):
-            _fixed_resolution(time_series.resolution)
+        if isinstance(time_series, SingleTimeSeries) and isinstance(
+            time_series.resolution, relativedelta
+        ):
+            raise ISInvalidParameter(_CALENDAR_RESOLUTION_ERROR)
 
     def add_time_series(
         self,
@@ -461,10 +457,11 @@ def _make_time_config(time_series) -> Any:
 
 @_make_time_config.register(SingleTimeSeries)
 def _(time_series: SingleTimeSeries) -> DatetimeRange:
-    resolution = _fixed_resolution(time_series.resolution)
+    if isinstance(time_series.resolution, relativedelta):
+        raise ISInvalidParameter(_CALENDAR_RESOLUTION_ERROR)
     return DatetimeRange(
         start=time_series.initial_timestamp,
-        resolution=resolution,
+        resolution=time_series.resolution,
         length=len(time_series.data),
         time_column="timestamp",
     )

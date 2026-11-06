@@ -125,8 +125,9 @@ and one hour is `P0DT1H`. Arrow, HDF5, and in-memory storage support calendar re
 Chronify storage only supports fixed `timedelta` resolutions and rejects calendar resolutions.
 
 `from_time_array` can infer a calendar resolution when at least three timestamps match an anchored
-calendar grid. With only two timestamps, the interval is ambiguous, so pass the calendar resolution
-to `from_array` explicitly.
+calendar grid. `infer_calendar_resolution(time_index)` exposes the same inference independently and
+returns `None` when no calendar grid matches. With only two timestamps, the interval is ambiguous,
+so pass the calendar resolution to `from_array` explicitly.
 
 ## Behaviors
 

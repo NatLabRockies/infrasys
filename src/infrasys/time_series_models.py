@@ -46,45 +46,6 @@ ISArray: TypeAlias = Sequence | NDArray | pint.Quantity
 TimeSeriesResolution: TypeAlias = timedelta | relativedelta
 
 
-def _calendar_month_count(resolution: relativedelta) -> int:
-    """Return the month count for a pure, positive calendar-month resolution."""
-    relative_fields = (
-        resolution.days,
-        resolution.hours,
-        resolution.minutes,
-        resolution.seconds,
-        resolution.microseconds,
-        resolution.leapdays,
-    )
-    absolute_fields = (
-        resolution.year,
-        resolution.month,
-        resolution.day,
-        resolution.hour,
-        resolution.minute,
-        resolution.second,
-        resolution.microsecond,
-    )
-    months = 12 * resolution.years + resolution.months
-    if (
-        months <= 0
-        or any(relative_fields)
-        or resolution.weekday is not None
-        or any(value is not None for value in absolute_fields)
-    ):
-        msg = "Calendar resolutions must be positive whole months or years."
-        raise ValueError(msg)
-    return months
-
-
-def _parse_time_series_resolution(value: Any) -> TimeSeriesResolution:
-    if isinstance(value, str):
-        value = from_iso_8601(value)
-    if isinstance(value, relativedelta):
-        _calendar_month_count(value)
-    return value
-
-
 class TimeSeriesStorageType(StrEnum):
     """Defines the possible storage types for time series."""
 
@@ -122,7 +83,19 @@ class SingleTimeSeries(TimeSeriesData):
     @field_validator("resolution", mode="before")
     @classmethod
     def validate_resolution(cls, value: Any) -> TimeSeriesResolution:
-        return _parse_time_series_resolution(value)
+        if isinstance(value, str):
+            value = from_iso_8601(value)
+        if isinstance(value, relativedelta):
+            anchor = datetime(2000, 1, 31)
+            month_resolution = relativedelta(years=value.years, months=value.months)
+            if (
+                not (value.years or value.months)
+                or anchor + value <= anchor
+                or value != month_resolution
+            ):
+                msg = "Calendar resolutions must be positive whole months or years."
+                raise ValueError(msg)
+        return value
 
     @field_serializer("resolution", when_used="json")
     def serialize_resolution(self, value: TimeSeriesResolution) -> str:
@@ -218,7 +191,7 @@ class SingleTimeSeries(TimeSeriesData):
         cls,
         data: ISArray,
         name: str,
-        time_index: Sequence[datetime],
+        time_index: Sequence[datetime] | NDArray,
         normalization: NormalizationModel = None,
     ) -> "SingleTimeSeries":
         """Create SingleTimeSeries using time_index provided.
@@ -251,7 +224,7 @@ class SingleTimeSeries(TimeSeriesData):
         initial_timestamp = pd.Timestamp(time_index[0]).to_pydatetime()
 
         # Multiresolution time indexes are not supported.
-        resolution: TimeSeriesResolution | None = _infer_calendar_resolution(time_index)
+        resolution: TimeSeriesResolution | None = infer_calendar_resolution(time_index)
         if resolution is None:
             resolution = pd.Timestamp(time_index[1]).to_pydatetime() - initial_timestamp
 
@@ -289,20 +262,43 @@ class SingleTimeSeriesScalingFactor(SingleTimeSeries):
     """Defines a time array with a single dimension of floats that are 0-1 scaling factors."""
 
 
-def _infer_calendar_resolution(
+def infer_calendar_resolution(
     time_index: Sequence[datetime] | NDArray,
+    /,
 ) -> relativedelta | None:
-    """Infer a calendar-month resolution when all timestamps match that anchored grid."""
+    """Infer a calendar interval from at least three anchored timestamps.
+
+    Parameters
+    ----------
+    time_index
+        A sequence or one-dimensional array of timestamps.
+
+    Returns
+    -------
+    relativedelta | None
+        The whole-month or whole-year interval when all timestamps follow the same
+        calendar grid, or ``None`` otherwise.
+
+    Examples
+    --------
+    >>> from datetime import datetime
+    >>> infer_calendar_resolution(
+    ...     [datetime(2024, 1, 31), datetime(2024, 2, 29), datetime(2024, 3, 31)]
+    ... )
+    relativedelta(months=+1)
+    """
     if len(time_index) < 3:
         return None
     try:
-        timestamps = pd.DatetimeIndex(time_index).to_pydatetime()
+        timestamps = [pd.Timestamp(timestamp).to_pydatetime() for timestamp in time_index]
     except (TypeError, ValueError):
         return None
+    if timestamps[1] <= timestamps[0]:
+        return None
+
     resolution = relativedelta(timestamps[1], timestamps[0])
-    try:
-        _calendar_month_count(resolution)
-    except ValueError:
+    month_resolution = relativedelta(years=resolution.years, months=resolution.months)
+    if not (resolution.years or resolution.months) or resolution != month_resolution:
         return None
     if all(
         timestamp == timestamps[0] + index * resolution
@@ -494,7 +490,7 @@ class SingleTimeSeriesMetadataBase(TimeSeriesMetadata, abc.ABC):
     @field_validator("resolution", mode="before")
     @classmethod
     def validate_resolution(cls, value: Any) -> TimeSeriesResolution:
-        return _parse_time_series_resolution(value)
+        return from_iso_8601(value) if isinstance(value, str) else value
 
     @field_serializer("resolution", when_used="json")
     def serialize_resolution(self, value: TimeSeriesResolution) -> str:
@@ -542,9 +538,13 @@ class SingleTimeSeriesMetadataBase(TimeSeriesMetadata, abc.ABC):
                 raise ISConflictingArguments(msg)
             if isinstance(self.resolution, relativedelta):
                 difference = relativedelta(start_time, self.initial_timestamp)
-                months = 12 * difference.years + difference.months
-                step_months = _calendar_month_count(self.resolution)
-                index, remainder = divmod(months, step_months)
+                interval = relativedelta(
+                    self.initial_timestamp + self.resolution,
+                    self.initial_timestamp,
+                )
+                elapsed_months = 12 * difference.years + difference.months
+                step_months = 12 * interval.years + interval.months
+                index, remainder = divmod(elapsed_months, step_months)
                 if remainder or self.initial_timestamp + index * self.resolution != start_time:
                     msg = (
                         f"{start_time=} conflicts with initial_time={self.initial_timestamp} and "
@@ -901,7 +901,7 @@ class SingleTimeSeriesKey(TimeSeriesKey):
     @field_validator("resolution", mode="before")
     @classmethod
     def validate_resolution(cls, value: Any) -> TimeSeriesResolution:
-        return _parse_time_series_resolution(value)
+        return from_iso_8601(value) if isinstance(value, str) else value
 
     @field_serializer("resolution", when_used="json")
     def serialize_resolution(self, value: TimeSeriesResolution) -> str:

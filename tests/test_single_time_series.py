@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 from dateutil.relativedelta import relativedelta
 
+from infrasys import infer_calendar_resolution
 from infrasys.normalization import NormalizationMax
 from infrasys.quantities import ActivePower
 from infrasys.time_series_models import SingleTimeSeries
@@ -74,6 +75,15 @@ def test_from_time_array_constructor():
 def test_from_time_array_infers_calendar_month_resolution():
     initial_timestamp = datetime(2024, 1, 31)
     time_index = [initial_timestamp + relativedelta(months=index) for index in range(12)]
+    assert infer_calendar_resolution(time_index) == relativedelta(months=1)
+    assert infer_calendar_resolution(time_index[:2]) is None
+    assert (
+        infer_calendar_resolution(
+            [datetime(2024, 1, 31), datetime(2024, 2, 29), datetime(2024, 3, 30)]
+        )
+        is None
+    )
+
     time_series = SingleTimeSeries.from_time_array(
         data=range(12),
         name="monthly_demand",
