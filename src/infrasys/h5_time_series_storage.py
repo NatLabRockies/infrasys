@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Generator, Literal, Optional
 
 import h5py
+from dateutil.relativedelta import relativedelta
 from loguru import logger
 
 from infrasys.exceptions import ISNotStored
@@ -25,6 +26,7 @@ from infrasys.time_series_models import (
 from infrasys.time_series_storage_base import TimeSeriesStorageBase
 from infrasys.utils.h5_utils import copy_h5_group, extract_h5_dataset_to_bytes, open_h5_file
 from infrasys.utils.sqlite import create_in_memory_db
+from infrasys.utils.time_utils import to_iso_8601
 
 from .time_series_metadata_store import TimeSeriesMetadataStore
 
@@ -258,7 +260,11 @@ class HDF5TimeSeriesStorage(TimeSeriesStorageBase):
 
             group.attrs["type"] = metadata.type
             group.attrs["initial_timestamp"] = metadata.initial_timestamp.isoformat()
-            group.attrs["resolution"] = metadata.resolution.total_seconds()
+            group.attrs["resolution"] = (
+                to_iso_8601(metadata.resolution)
+                if isinstance(metadata.resolution, relativedelta)
+                else metadata.resolution.total_seconds()
+            )
 
             # NOTE: This was added for compatibility with
             # InfrastructureSystems. In reality, this should not affect any

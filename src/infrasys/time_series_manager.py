@@ -216,6 +216,7 @@ class TimeSeriesManager:
             raise ValueError(msg)
         metadata_type = ts_type.get_time_series_metadata_type()
         metadata = metadata_type.from_data(time_series, **features)
+        self._storage.validate_time_series(time_series)
 
         data_is_stored = self._metadata_store.has_time_series(time_series.uuid)
         # Call this first because it could raise an exception.

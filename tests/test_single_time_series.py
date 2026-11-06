@@ -4,7 +4,9 @@ from datetime import datetime, timedelta
 
 import numpy as np
 import pytest
+from dateutil.relativedelta import relativedelta
 
+from infrasys import infer_calendar_resolution
 from infrasys.normalization import NormalizationMax
 from infrasys.quantities import ActivePower
 from infrasys.time_series_models import SingleTimeSeries
@@ -70,6 +72,39 @@ def test_from_time_array_constructor():
     assert ts.data[-1] == length - 1
 
 
+def test_from_time_array_infers_calendar_month_resolution():
+    initial_timestamp = datetime(2024, 1, 31)
+    time_index = [initial_timestamp + relativedelta(months=index) for index in range(12)]
+    assert infer_calendar_resolution(time_index) == relativedelta(months=1)
+    assert infer_calendar_resolution(time_index[:2]) is None
+    assert (
+        infer_calendar_resolution(
+            [datetime(2024, 1, 31), datetime(2024, 2, 29), datetime(2024, 3, 30)]
+        )
+        is None
+    )
+
+    time_series = SingleTimeSeries.from_time_array(
+        data=range(12),
+        name="monthly_demand",
+        time_index=time_index,
+    )
+
+    assert time_series.resolution == relativedelta(months=1)
+    assert np.array_equal(
+        time_series.make_timestamps(),
+        np.array(time_index, dtype="datetime64[ns]"),
+    )
+
+    numpy_time_series = SingleTimeSeries.from_time_array(
+        data=range(12),
+        name="monthly_demand",
+        time_index=np.array(time_index, dtype="datetime64[ns]"),
+    )
+    assert numpy_time_series.resolution == relativedelta(months=1)
+    assert np.array_equal(numpy_time_series.make_timestamps(), time_series.make_timestamps())
+
+
 def test_with_quantity():
     """Test SingleTimeSeries with a Pint quantity."""
     length = 10
@@ -85,6 +120,51 @@ def test_with_quantity():
     assert ts.initial_timestamp == initial_time
     assert isinstance(ts.data, ActivePower)
     assert ts.data[-1].magnitude == length - 1
+
+
+def test_calendar_month_resolution_generates_anchored_timestamps():
+    initial_timestamp = datetime(2024, 1, 31)
+    resolution = relativedelta(months=1)
+    time_series = SingleTimeSeries.from_array(
+        data=range(12),
+        name="monthly_demand",
+        initial_timestamp=initial_timestamp,
+        resolution=resolution,
+    )
+
+    expected_timestamps = np.array(
+        [
+            datetime(2024, 1, 31),
+            datetime(2024, 2, 29),
+            datetime(2024, 3, 31),
+            datetime(2024, 4, 30),
+            datetime(2024, 5, 31),
+            datetime(2024, 6, 30),
+            datetime(2024, 7, 31),
+            datetime(2024, 8, 31),
+            datetime(2024, 9, 30),
+            datetime(2024, 10, 31),
+            datetime(2024, 11, 30),
+            datetime(2024, 12, 31),
+        ],
+        dtype="datetime64[ns]",
+    )
+    assert time_series.resolution == resolution
+    assert np.array_equal(time_series.make_timestamps(), expected_timestamps)
+
+
+@pytest.mark.parametrize(
+    "resolution",
+    [relativedelta(days=1), relativedelta(months=0), relativedelta(months=-1)],
+)
+def test_calendar_resolution_requires_positive_whole_months_or_years(resolution):
+    with pytest.raises(ValueError, match="positive whole months or years"):
+        SingleTimeSeries.from_array(
+            data=[1.0, 2.0],
+            name="monthly_demand",
+            initial_timestamp=datetime(2024, 1, 1),
+            resolution=resolution,
+        )
 
 
 def test_normalization():

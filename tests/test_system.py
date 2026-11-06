@@ -4,13 +4,15 @@ from uuid import uuid4
 
 import numpy as np
 import pytest
+from dateutil.relativedelta import relativedelta
 
-from infrasys import TIME_SERIES_ASSOCIATIONS_TABLE, Component, Location, SingleTimeSeries
+from infrasys import TIME_SERIES_ASSOCIATIONS_TABLE, Component, Location, SingleTimeSeries, System
 from infrasys.arrow_storage import ArrowTimeSeriesStorage
 from infrasys.chronify_time_series_storage import ChronifyTimeSeriesStorage
 from infrasys.exceptions import (
     ISAlreadyAttached,
     ISConflictingArguments,
+    ISInvalidParameter,
     ISNotStored,
     ISOperationNotAllowed,
 )
@@ -509,6 +511,91 @@ def test_time_series_slices(storage_type):
             start_time=second_timestamp,
             length=len(data),
         )
+
+
+@pytest.mark.parametrize(
+    "storage_type",
+    [
+        TimeSeriesStorageType.ARROW,
+        TimeSeriesStorageType.HDF5,
+        TimeSeriesStorageType.MEMORY,
+    ],
+)
+def test_calendar_month_time_series_round_trip_and_slice(storage_type, tmp_path):
+    system = SimpleSystem(
+        auto_add_composed_components=True,
+        time_series_storage_type=storage_type,
+    )
+    gen = SimpleGenerator.example()
+    system.add_components(gen)
+
+    initial_timestamp = datetime(2024, 1, 31)
+    resolution = relativedelta(months=1)
+    values = list(range(12))
+    time_series = SingleTimeSeries.from_array(
+        values,
+        "monthly_demand",
+        initial_timestamp,
+        resolution,
+    )
+    system.add_time_series(time_series, gen)
+
+    loaded_system: System = system
+    if storage_type != TimeSeriesStorageType.MEMORY:
+        filename = tmp_path / "monthly-system.json"
+        system.to_json(filename)
+        loaded_system = SimpleSystem.from_json(filename)
+        gen = loaded_system.get_component(SimpleGenerator, gen.name)
+
+    loaded = loaded_system.get_time_series(gen, name="monthly_demand")
+    assert isinstance(loaded, SingleTimeSeries)
+    assert loaded.resolution == resolution
+    assert np.array_equal(loaded.make_timestamps(), time_series.make_timestamps())
+    assert loaded.data.tolist() == values
+
+    february_slice = loaded_system.get_time_series(
+        gen,
+        name="monthly_demand",
+        start_time=datetime(2024, 2, 29),
+        length=2,
+    )
+    assert isinstance(february_slice, SingleTimeSeries)
+    assert february_slice.initial_timestamp == datetime(2024, 2, 29)
+    assert february_slice.resolution == resolution
+    assert february_slice.data.tolist() == [1, 2]
+
+    with pytest.raises(ISConflictingArguments, match="conflicts with initial_time"):
+        loaded_system.get_time_series(
+            gen,
+            name="monthly_demand",
+            start_time=datetime(2024, 2, 28),
+        )
+    with pytest.raises(ISConflictingArguments, match="is too large"):
+        loaded_system.get_time_series(
+            gen,
+            name="monthly_demand",
+            start_time=datetime(2025, 1, 31),
+        )
+
+
+def test_chronify_rejects_calendar_month_time_series_without_metadata():
+    system = SimpleSystem(
+        auto_add_composed_components=True,
+        time_series_storage_type=TimeSeriesStorageType.CHRONIFY,
+    )
+    gen = SimpleGenerator.example()
+    system.add_components(gen)
+    time_series = SingleTimeSeries.from_array(
+        [1.0, 2.0],
+        "monthly_demand",
+        datetime(2024, 1, 1),
+        relativedelta(months=1),
+    )
+
+    with pytest.raises(ISInvalidParameter, match="Chronify.*calendar-month"):
+        system.add_time_series(time_series, gen)
+
+    assert not system.list_time_series_metadata(gen, name="monthly_demand")
 
 
 def test_copy_component(simple_system_with_time_series: SimpleSystem):
