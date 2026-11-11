@@ -3,10 +3,24 @@ on:
   push:
     branches:
       - main
+      - v1.x.x
+  workflow_dispatch:
+    inputs:
+      target_branch:
+        description: Branch to release
+        required: true
+        type: choice
+        options:
+          - v1.x.x
+          - main
+      release_version:
+        description: Stable version without the leading v (for example, 1.2.2)
+        required: true
+        type: string
 
 concurrency:
-  group: release-please
-  cancel-in-progress: true
+  group: release-please-${{ inputs.target_branch || github.ref_name }}
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -23,14 +37,48 @@ jobs:
       release_tag: ${{ steps.release.outputs.tag_name }}
     runs-on: ubuntu-latest
     steps:
+      - name: Prepare requested release
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET_BRANCH: ${{ inputs.target_branch }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: |
+          if [[ ! "$RELEASE_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "::error::Use a stable version such as 1.2.2, without a leading v."
+            exit 1
+          fi
+          if [[ "$TARGET_BRANCH" == "v1.x.x" && "$RELEASE_VERSION" != 1.* ]]; then
+            echo "::error::The v1.x.x branch requires a 1.x release version."
+            exit 1
+          fi
+          if [[ "$TARGET_BRANCH" == "main" && ! "$RELEASE_VERSION" =~ ^([2-9]|[1-9][0-9]+)\. ]]; then
+            echo "::error::The main branch requires a 2.x or later release version."
+            exit 1
+          fi
+
+          # Expand inputs in npm's child shell so npm does not print the token.
+          # shellcheck disable=SC2016
+          npx --yes --package=release-please@17.3.0 --call '
+            release-please release-pr \
+              --token "$GITHUB_TOKEN" \
+              --repo-url "$GITHUB_REPOSITORY" \
+              --target-branch "$TARGET_BRANCH" \
+              --config-file .release-please-config.json \
+              --manifest-file .release-please-manifest.json \
+              --release-as "$RELEASE_VERSION"
+          '
+
       - name: Run release-please
+        if: github.event_name == 'push'
         id: release
         uses: googleapis/release-please-action@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           config-file: .release-please-config.json
           manifest-file: .release-please-manifest.json
-          target-branch: main
+          target-branch: ${{ github.ref_name }}
+          skip-github-pull-request: ${{ github.ref_name == 'v1.x.x' }}
 
   build:
     name: Build
