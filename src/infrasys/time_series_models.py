@@ -40,10 +40,48 @@ from infrasys.utils.time_utils import from_iso_8601, to_iso_8601
 
 TIME_COLUMN = "timestamp"
 VALUE_COLUMN = "value"
+MONTHS_PER_YEAR = 12
 
 
 ISArray: TypeAlias = Sequence | NDArray | pint.Quantity
 TimeSeriesResolution: TypeAlias = timedelta | relativedelta
+
+
+def validate_time_series_resolution(value: Any) -> Any:
+    """Parse and validate a single-series resolution value.
+
+    Strings are parsed as ISO 8601 durations. Relative calendar resolutions
+    must represent a positive number of whole months without fixed or absolute
+    fields. Years are included in the total month count. Other values are
+    returned for Pydantic to validate against the field type.
+
+    Parameters
+    ----------
+    value : Any
+        Candidate resolution value.
+
+    Returns
+    -------
+    Any
+        Parsed duration or unchanged value for subsequent Pydantic validation.
+
+    Raises
+    ------
+    ValueError
+        If an ISO duration is malformed or a relative calendar resolution is
+        unsupported.
+    """
+    if isinstance(value, str):
+        value = from_iso_8601(value)
+    if isinstance(value, relativedelta):
+        calendar_resolution = relativedelta(years=value.years, months=value.months)
+        # Infrastore represents calendar resolutions as a count of months.
+        total_months = MONTHS_PER_YEAR * value.years + value.months
+        if total_months <= 0 or value != calendar_resolution:
+            msg = "Calendar resolutions must be positive whole months or years only."
+            raise ValueError(msg)
+        return relativedelta(months=total_months)
+    return value
 
 
 class TimeSeriesStorageType(StrEnum):
@@ -83,19 +121,7 @@ class SingleTimeSeries(TimeSeriesData):
     @field_validator("resolution", mode="before")
     @classmethod
     def validate_resolution(cls, value: Any) -> TimeSeriesResolution:
-        if isinstance(value, str):
-            value = from_iso_8601(value)
-        if isinstance(value, relativedelta):
-            anchor = datetime(2000, 1, 31)
-            month_resolution = relativedelta(years=value.years, months=value.months)
-            if (
-                not (value.years or value.months)
-                or anchor + value <= anchor
-                or value != month_resolution
-            ):
-                msg = "Calendar resolutions must be positive whole months or years."
-                raise ValueError(msg)
-        return value
+        return validate_time_series_resolution(value)
 
     @field_serializer("resolution", when_used="json")
     def serialize_resolution(self, value: TimeSeriesResolution) -> str:
@@ -158,7 +184,8 @@ class SingleTimeSeries(TimeSeriesData):
         initial_time
             Start time for the time series (e.g., datetime(2020,1,1))
         resolution
-            A fixed ``timedelta`` or a calendar-month/year ``relativedelta``.
+            A fixed ``timedelta`` or a positive ``relativedelta`` containing
+            only whole calendar months and years.
         name
             Name assigned to the values of the time series (e.g., active_power)
 
@@ -297,15 +324,16 @@ def infer_calendar_resolution(
         return None
 
     resolution = relativedelta(timestamps[1], timestamps[0])
-    month_resolution = relativedelta(years=resolution.years, months=resolution.months)
-    if not (resolution.years or resolution.months) or resolution != month_resolution:
+    calendar_resolution = relativedelta(years=resolution.years, months=resolution.months)
+    if not (resolution.years or resolution.months) or resolution != calendar_resolution:
         return None
-    if all(
+    if not all(
         timestamp == timestamps[0] + index * resolution
         for index, timestamp in enumerate(timestamps)
     ):
-        return resolution
-    return None
+        return None
+    validate_time_series_resolution(resolution)
+    return resolution
 
 
 class Forecast(TimeSeriesData):
@@ -490,7 +518,7 @@ class SingleTimeSeriesMetadataBase(TimeSeriesMetadata, abc.ABC):
     @field_validator("resolution", mode="before")
     @classmethod
     def validate_resolution(cls, value: Any) -> TimeSeriesResolution:
-        return from_iso_8601(value) if isinstance(value, str) else value
+        return validate_time_series_resolution(value)
 
     @field_serializer("resolution", when_used="json")
     def serialize_resolution(self, value: TimeSeriesResolution) -> str:
@@ -527,9 +555,8 @@ class SingleTimeSeriesMetadataBase(TimeSeriesMetadata, abc.ABC):
         if start_time is None and length is None:
             return (0, self.length)
 
-        if start_time is None:
-            index = 0
-        else:
+        index = 0
+        if start_time is not None:
             if start_time < self.initial_timestamp:
                 msg = "{start_time=} is less than {self.initial_time=}"
                 raise ISConflictingArguments(msg)
@@ -542,8 +569,8 @@ class SingleTimeSeriesMetadataBase(TimeSeriesMetadata, abc.ABC):
                     self.initial_timestamp + self.resolution,
                     self.initial_timestamp,
                 )
-                elapsed_months = 12 * difference.years + difference.months
-                step_months = 12 * interval.years + interval.months
+                elapsed_months = MONTHS_PER_YEAR * difference.years + difference.months
+                step_months = MONTHS_PER_YEAR * interval.years + interval.months
                 index, remainder = divmod(elapsed_months, step_months)
                 if remainder or self.initial_timestamp + index * self.resolution != start_time:
                     msg = (
@@ -567,11 +594,59 @@ class SingleTimeSeriesMetadataBase(TimeSeriesMetadata, abc.ABC):
             msg = f"{start_time=} {length=} conflicts with {self=}"
             raise ISConflictingArguments(msg)
 
+        validate_calendar_slice(self, start_time=start_time, index=index, length=length)
         return (index, length)
 
     @staticmethod
     def get_time_series_data_type() -> Type:
         return SingleTimeSeries
+
+
+def validate_calendar_slice(
+    metadata: SingleTimeSeriesMetadataBase,
+    /,
+    *,
+    start_time: datetime | None,
+    index: int,
+    length: int,
+) -> None:
+    """Reject a calendar slice if re-anchoring would change its timestamps.
+
+    The caller must first validate the slice index and length against the
+    original series and ensure that ``start_time`` lies on its grid. Fixed
+    resolutions and slices starting at the original anchor need no check.
+
+    Parameters
+    ----------
+    metadata : SingleTimeSeriesMetadataBase
+        Metadata containing the original timestamp and resolution.
+    start_time : datetime | None
+        Requested slice start, or ``None`` for the original start.
+    index : int
+        Zero-based index of the first requested timestamp.
+    length : int
+        Number of requested timestamps.
+
+    Raises
+    ------
+    ISConflictingArguments
+        If the slice cannot represent the original timestamps when re-anchored.
+    """
+    resolution = metadata.resolution
+    if start_time is None or not isinstance(resolution, relativedelta):
+        return
+
+    initial_timestamp = metadata.initial_timestamp
+    if start_time.day == initial_timestamp.day and start_time.tzinfo == initial_timestamp.tzinfo:
+        return
+
+    for offset in range(1, length):
+        if start_time + offset * resolution != initial_timestamp + (index + offset) * resolution:
+            msg = (
+                f"Calendar slice at {start_time} cannot preserve the original timestamps. "
+                "Read the full series and slice its data and timestamps instead."
+            )
+            raise ISConflictingArguments(msg)
 
 
 class SingleTimeSeriesMetadata(SingleTimeSeriesMetadataBase):
@@ -901,7 +976,7 @@ class SingleTimeSeriesKey(TimeSeriesKey):
     @field_validator("resolution", mode="before")
     @classmethod
     def validate_resolution(cls, value: Any) -> TimeSeriesResolution:
-        return from_iso_8601(value) if isinstance(value, str) else value
+        return validate_time_series_resolution(value)
 
     @field_serializer("resolution", when_used="json")
     def serialize_resolution(self, value: TimeSeriesResolution) -> str:

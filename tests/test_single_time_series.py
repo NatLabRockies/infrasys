@@ -1,15 +1,22 @@
 """Test related to arrow storage module."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pytest
 from dateutil.relativedelta import relativedelta
 
 from infrasys import infer_calendar_resolution
+from infrasys.exceptions import ISConflictingArguments
 from infrasys.normalization import NormalizationMax
 from infrasys.quantities import ActivePower
-from infrasys.time_series_models import SingleTimeSeries
+from infrasys.time_series_models import (
+    SingleTimeSeries,
+    SingleTimeSeriesKey,
+    SingleTimeSeriesMetadata,
+)
 
 
 def test_single_time_series_attributes():
@@ -70,6 +77,21 @@ def test_from_time_array_constructor():
     assert ts.initial_timestamp == initial_time
     assert isinstance(ts.data, np.ndarray)
     assert ts.data[-1] == length - 1
+
+
+def test_from_time_array_infers_thirteen_month_resolution():
+    time_index = [datetime(2023, 1, 31), datetime(2024, 2, 29), datetime(2025, 3, 31)]
+    assert infer_calendar_resolution(time_index) == relativedelta(months=13)
+
+    time_series = SingleTimeSeries.from_time_array([1, 2, 3], "demand", time_index)
+    assert time_series.resolution == relativedelta(months=13)
+    assert time_series.model_dump(mode="json", include={"resolution"}) == {"resolution": "P13M"}
+    assert np.array_equal(
+        time_series.make_timestamps(), np.array(time_index, dtype="datetime64[ns]")
+    )
+
+    irregular_index = [*time_index[:2], datetime(2025, 3, 30)]
+    assert infer_calendar_resolution(irregular_index) is None
 
 
 def test_from_time_array_infers_calendar_month_resolution():
@@ -154,8 +176,42 @@ def test_calendar_month_resolution_generates_anchored_timestamps():
 
 
 @pytest.mark.parametrize(
+    "resolution, expected",
+    [
+        (relativedelta(months=3), relativedelta(months=3)),
+        (relativedelta(years=2), relativedelta(years=2)),
+        (relativedelta(months=13), relativedelta(months=13)),
+        (relativedelta(years=1, months=1), relativedelta(months=13)),
+        (relativedelta(years=1, months=-1), relativedelta(months=11)),
+        ("P13M", relativedelta(months=13)),
+        ("P1Y1M", relativedelta(months=13)),
+        ("P3M", relativedelta(months=3)),
+        ("P2Y", relativedelta(years=2)),
+        ("P12M", relativedelta(years=1)),
+        (timedelta(days=1, hours=2), timedelta(days=1, hours=2)),
+    ],
+)
+def test_calendar_month_counts_and_fixed_resolutions_are_supported(resolution, expected):
+    time_series = SingleTimeSeries.from_array(
+        data=[1, 2],
+        name="demand",
+        initial_timestamp=datetime(2024, 1, 1),
+        resolution=resolution,
+    )
+    assert time_series.resolution == expected
+
+
+@pytest.mark.parametrize(
     "resolution",
-    [relativedelta(days=1), relativedelta(months=0), relativedelta(months=-1)],
+    [
+        relativedelta(days=1),
+        relativedelta(months=0),
+        relativedelta(months=-1),
+        relativedelta(years=-1, months=1),
+        relativedelta(months=1, days=1),
+        relativedelta(years=1, day=1),
+        "P1M1D",
+    ],
 )
 def test_calendar_resolution_requires_positive_whole_months_or_years(resolution):
     with pytest.raises(ValueError, match="positive whole months or years"):
@@ -165,6 +221,60 @@ def test_calendar_resolution_requires_positive_whole_months_or_years(resolution)
             initial_timestamp=datetime(2024, 1, 1),
             resolution=resolution,
         )
+
+
+def test_calendar_month_count_normalizes_opposite_signed_year_and_month_fields():
+    time_series = SingleTimeSeries.from_array(
+        [1, 2], "demand", datetime(2024, 1, 1), relativedelta(years=1, months=-1)
+    )
+
+    assert time_series.resolution == relativedelta(months=11)
+    assert time_series.model_dump(mode="json", include={"resolution"}) == {"resolution": "P11M"}
+
+
+@pytest.mark.parametrize("resolution", [relativedelta(years=1, months=1), "P1Y1M", "P13M"])
+def test_metadata_and_keys_round_trip_calendar_month_counts(resolution):
+    shared_fields = {
+        "name": "monthly_demand",
+        "initial_timestamp": datetime(2024, 1, 31),
+        "resolution": resolution,
+    }
+    metadata = SingleTimeSeriesMetadata(**shared_fields, time_series_uuid=uuid4(), length=2)
+    key = SingleTimeSeriesKey(**shared_fields, time_series_type=SingleTimeSeries, length=2)
+
+    assert metadata.resolution == relativedelta(months=13)
+    assert key.resolution == relativedelta(months=13)
+    assert metadata.model_dump(mode="json", include={"resolution"}) == {"resolution": "P13M"}
+    assert key.model_dump(mode="json", include={"resolution"}) == {"resolution": "P13M"}
+    restored = SingleTimeSeriesMetadata.model_validate_json(metadata.model_dump_json())
+    assert restored.resolution == relativedelta(months=13)
+
+
+def test_calendar_slice_rejects_timezone_reanchoring_that_changes_instants():
+    metadata = SingleTimeSeriesMetadata(
+        name="demand",
+        time_series_uuid=uuid4(),
+        initial_timestamp=datetime(2024, 1, 15, tzinfo=ZoneInfo("America/New_York")),
+        resolution=relativedelta(months=1),
+        length=3,
+    )
+
+    with pytest.raises(ISConflictingArguments, match="cannot preserve.*timestamps"):
+        metadata.get_range(start_time=datetime(2024, 2, 15, 5, tzinfo=timezone.utc), length=2)
+
+
+@pytest.mark.parametrize("resolution", [relativedelta(months=1, days=1), "P1M1D"])
+def test_metadata_and_keys_reject_mixed_calendar_and_fixed_units(resolution):
+    shared_fields = {
+        "name": "monthly_demand",
+        "initial_timestamp": datetime(2024, 1, 31),
+        "resolution": resolution,
+    }
+
+    with pytest.raises(ValueError, match="positive whole months or years"):
+        SingleTimeSeriesMetadata(**shared_fields, time_series_uuid=uuid4(), length=2)
+    with pytest.raises(ValueError, match="positive whole months or years"):
+        SingleTimeSeriesKey(**shared_fields, time_series_type=SingleTimeSeries, length=2)
 
 
 def test_normalization():

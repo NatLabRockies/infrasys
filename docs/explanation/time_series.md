@@ -115,14 +115,22 @@ In this example, `ts_deterministic` creates a forecast for `active_power` by ext
 ## Resolution
 
 `SingleTimeSeries.resolution` accepts `datetime.timedelta` for fixed intervals and
-`dateutil.relativedelta.relativedelta` for positive whole calendar months or years. For example,
-use `relativedelta(months=1)` for a monthly series. Calendar timestamps are calculated from the
-initial timestamp, so a series starting on January 31 follows January 31, February 28 or 29,
-March 31, and so on. The monthly cadence remains `P1M`, not a fixed 30-day interval.
+`dateutil.relativedelta.relativedelta` for positive whole calendar months. A year counts as twelve
+months, so `relativedelta(months=13)` and `relativedelta(years=1, months=1)` both represent thirteen
+months. Calendar resolutions cannot include days, time units, or absolute fields. Use
+`timedelta(days=1)` for a fixed daily interval.
 
-The resolution is serialized using ISO 8601 durations. For example, one calendar month is `P1M`
-and one hour is `P0DT1H`. Arrow, HDF5, and in-memory storage support calendar resolutions.
-Chronify storage only supports fixed `timedelta` resolutions and rejects calendar resolutions.
+Calendar timestamps are calculated from the initial timestamp. A monthly series starting on January
+31 follows January 31, February 28 or 29, March 31, and so on. The monthly cadence remains `P1M`,
+not a fixed 30-day interval.
+
+The resolution is serialized using ISO 8601 durations. For example, one calendar month is `P1M`,
+thirteen months is `P13M`, and one hour is `P0DT1H`. Arrow, HDF5, and in-memory storage support
+calendar resolutions. Chronify storage only supports fixed `timedelta` resolutions and rejects
+calendar resolutions.
+
+A calendar slice is rejected if its first timestamp cannot anchor the requested timestamps without
+changing them. In that case, read the full series and slice its data and timestamps instead.
 
 `from_time_array` can infer a calendar resolution when at least three timestamps match an anchored
 calendar grid. `infer_calendar_resolution(time_index)` exposes the same inference independently and

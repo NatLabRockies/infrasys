@@ -553,16 +553,17 @@ def test_calendar_month_time_series_round_trip_and_slice(storage_type, tmp_path)
     assert np.array_equal(loaded.make_timestamps(), time_series.make_timestamps())
     assert loaded.data.tolist() == values
 
-    february_slice = loaded_system.get_time_series(
+    march_slice = loaded_system.get_time_series(
         gen,
         name="monthly_demand",
-        start_time=datetime(2024, 2, 29),
+        start_time=datetime(2024, 3, 31),
         length=2,
     )
-    assert isinstance(february_slice, SingleTimeSeries)
-    assert february_slice.initial_timestamp == datetime(2024, 2, 29)
-    assert february_slice.resolution == resolution
-    assert february_slice.data.tolist() == [1, 2]
+    assert isinstance(march_slice, SingleTimeSeries)
+    assert march_slice.initial_timestamp == datetime(2024, 3, 31)
+    assert march_slice.resolution == resolution
+    assert march_slice.data.tolist() == [2, 3]
+    assert np.array_equal(march_slice.make_timestamps(), time_series.make_timestamps()[2:4])
 
     with pytest.raises(ISConflictingArguments, match="conflicts with initial_time"):
         loaded_system.get_time_series(
@@ -576,6 +577,92 @@ def test_calendar_month_time_series_round_trip_and_slice(storage_type, tmp_path)
             name="monthly_demand",
             start_time=datetime(2025, 1, 31),
         )
+
+
+@pytest.mark.parametrize(
+    "storage_type",
+    [TimeSeriesStorageType.ARROW, TimeSeriesStorageType.HDF5, TimeSeriesStorageType.MEMORY],
+)
+def test_thirteen_month_time_series_round_trip(storage_type, tmp_path):
+    system = SimpleSystem(
+        auto_add_composed_components=True,
+        time_series_storage_type=storage_type,
+    )
+    gen = SimpleGenerator.example()
+    system.add_components(gen)
+    time_series = SingleTimeSeries.from_array(
+        [1, 2, 3], "demand", datetime(2023, 1, 31), relativedelta(months=13)
+    )
+    system.add_time_series(time_series, gen)
+
+    loaded_system: System = system
+    if storage_type != TimeSeriesStorageType.MEMORY:
+        filename = tmp_path / "thirteen-month-system.json"
+        system.to_json(filename)
+        loaded_system = SimpleSystem.from_json(filename)
+        gen = loaded_system.get_component(SimpleGenerator, gen.name)
+
+    loaded = loaded_system.get_time_series(gen, name="demand")
+    assert isinstance(loaded, SingleTimeSeries)
+    assert loaded.resolution == relativedelta(months=13)
+    assert loaded.data.tolist() == [1, 2, 3]
+    assert np.array_equal(
+        loaded.make_timestamps(),
+        np.array(
+            [datetime(2023, 1, 31), datetime(2024, 2, 29), datetime(2025, 3, 31)],
+            dtype="datetime64[ns]",
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    "storage_type",
+    [TimeSeriesStorageType.ARROW, TimeSeriesStorageType.HDF5, TimeSeriesStorageType.MEMORY],
+)
+@pytest.mark.parametrize(
+    "initial_timestamp, resolution, start_time, length",
+    [
+        (datetime(2024, 1, 31), relativedelta(months=1), datetime(2024, 2, 29), 2),
+        (datetime(2023, 1, 31), relativedelta(months=13), datetime(2024, 2, 29), 2),
+        (datetime(2024, 2, 29), relativedelta(years=1), datetime(2025, 2, 28), 4),
+    ],
+)
+def test_calendar_slice_rejects_reanchoring_that_changes_timestamps(
+    storage_type, initial_timestamp, resolution, start_time, length
+):
+    system = SimpleSystem(
+        auto_add_composed_components=True,
+        time_series_storage_type=storage_type,
+    )
+    gen = SimpleGenerator.example()
+    system.add_components(gen)
+    time_series = SingleTimeSeries.from_array(range(5), "demand", initial_timestamp, resolution)
+    system.add_time_series(time_series, gen)
+
+    with pytest.raises(ISConflictingArguments, match="cannot preserve.*timestamps"):
+        system.get_time_series(gen, name="demand", start_time=start_time, length=length)
+
+
+@pytest.mark.parametrize(
+    "storage_type",
+    [TimeSeriesStorageType.ARROW, TimeSeriesStorageType.HDF5, TimeSeriesStorageType.MEMORY],
+)
+def test_calendar_slice_allows_clamped_anchor_when_requested_grid_is_unchanged(storage_type):
+    system = SimpleSystem(
+        auto_add_composed_components=True,
+        time_series_storage_type=storage_type,
+    )
+    gen = SimpleGenerator.example()
+    system.add_components(gen)
+    time_series = SingleTimeSeries.from_array(
+        range(5), "demand", datetime(2024, 2, 29), relativedelta(years=1)
+    )
+    system.add_time_series(time_series, gen)
+
+    sliced = system.get_time_series(gen, name="demand", start_time=datetime(2025, 2, 28), length=3)
+    assert isinstance(sliced, SingleTimeSeries)
+    assert sliced.data.tolist() == [1, 2, 3]
+    assert np.array_equal(sliced.make_timestamps(), time_series.make_timestamps()[1:4])
 
 
 def test_chronify_rejects_calendar_month_time_series_without_metadata():
