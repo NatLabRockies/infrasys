@@ -448,9 +448,13 @@ def validate_time_series_resolution(
     TypeError
         If the value is not a supported duration type.
     ValueError
-        If a calendar duration is non-positive or contains other fields.
+        If a fixed duration is non-positive, or a calendar duration is
+        non-positive or contains other fields.
     """
     if isinstance(value, timedelta):
+        if value <= timedelta(0):
+            msg = "Fixed resolutions must be positive."
+            raise ValueError(msg)
         return value
     if not isinstance(value, relativedelta):
         msg = "Resolution must be a timedelta or relativedelta."

@@ -457,12 +457,6 @@ def _make_time_config(time_series) -> Any:
 
 @_make_time_config.register(SingleTimeSeries)
 def _(time_series: SingleTimeSeries) -> DatetimeRange:
-    if isinstance(time_series.resolution, relativedelta):
-        msg = (
-            "Chronify storage does not support calendar-month/year resolutions. "
-            "Use Arrow, HDF5, or in-memory storage instead."
-        )
-        raise ISInvalidParameter(msg)
     return DatetimeRange(
         start=time_series.initial_timestamp,
         resolution=time_series.resolution,

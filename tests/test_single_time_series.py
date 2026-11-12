@@ -314,6 +314,20 @@ def test_calendar_resolution_requires_positive_whole_months_or_years(resolution)
         )
 
 
+@pytest.mark.parametrize(
+    "resolution",
+    [timedelta(0), timedelta(seconds=-1), "P0D", "PT0S"],
+)
+def test_fixed_resolution_requires_positive_duration(resolution):
+    with pytest.raises(ValueError, match="positive"):
+        SingleTimeSeries.from_array(
+            data=[1.0, 2.0],
+            name="demand",
+            initial_timestamp=datetime(2024, 1, 1),
+            resolution=resolution,
+        )
+
+
 def test_calendar_resolution_is_validated_on_assignment():
     time_series = SingleTimeSeries.from_array(
         [1, 2], "demand", datetime(2024, 1, 1), relativedelta(months=1)
