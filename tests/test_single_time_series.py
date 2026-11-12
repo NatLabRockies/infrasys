@@ -5,10 +5,10 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 import numpy as np
+import pandas as pd
 import pytest
 from dateutil.relativedelta import relativedelta
 
-from infrasys import infer_calendar_resolution
 from infrasys.exceptions import ISConflictingArguments
 from infrasys.normalization import NormalizationMax
 from infrasys.quantities import ActivePower
@@ -17,6 +17,7 @@ from infrasys.time_series_models import (
     SingleTimeSeriesKey,
     SingleTimeSeriesMetadata,
 )
+from infrasys.utils.time_utils import infer_time_series_resolution
 
 
 def test_single_time_series_attributes():
@@ -79,9 +80,100 @@ def test_from_time_array_constructor():
     assert ts.data[-1] == length - 1
 
 
+def test_from_time_array_rejects_irregular_timestamps():
+    timestamps = [datetime(2024, 1, 1), datetime(2024, 1, 2), datetime(2024, 1, 4)]
+
+    with pytest.raises(ValueError, match="NonSequentialTimeSeries"):
+        SingleTimeSeries.from_time_array([1, 2, 3], "demand", timestamps)
+
+
+@pytest.mark.parametrize("unit", ["D", "s", "ms", "us", "ns"])
+def test_from_time_array_infers_fixed_numpy_resolution(unit):
+    timestamps = np.array(["2024-01-01", "2024-01-02", "2024-01-03"], dtype=f"datetime64[{unit}]")
+
+    time_series = SingleTimeSeries.from_time_array([1, 2, 3], "demand", timestamps)
+    assert time_series.initial_timestamp == datetime(2024, 1, 1)
+    assert time_series.resolution == timedelta(days=1)
+    assert np.array_equal(time_series.make_timestamps(), timestamps)
+
+
+def test_from_time_array_rejects_irregular_numpy_timestamps():
+    timestamps = np.array(["2024-01-01", "2024-01-02", "2024-01-04"], dtype="datetime64[ns]")
+
+    with pytest.raises(ValueError, match="NonSequentialTimeSeries"):
+        SingleTimeSeries.from_time_array([1, 2, 3], "demand", timestamps)
+
+
+def test_from_time_array_rejects_irregular_submicrosecond_timestamps():
+    timestamps = np.array(
+        [
+            "2024-01-01T00:00:00.000000000",
+            "2024-01-01T01:00:00.000000000",
+            "2024-01-01T02:00:00.000000001",
+        ],
+        dtype="datetime64[ns]",
+    )
+
+    with pytest.raises(ValueError):
+        SingleTimeSeries.from_time_array([1, 2, 3], "demand", timestamps)
+
+
+def test_from_time_array_preserves_timezone_aware_pandas_timestamps():
+    timestamps = list(
+        pd.date_range("2024-03-10 01:00", periods=3, freq="h", tz="America/New_York")
+    )
+
+    time_series = SingleTimeSeries.from_time_array([1, 2, 3], "demand", timestamps)
+    assert time_series.resolution == timedelta(hours=1)
+    assert np.array_equal(
+        time_series.make_timestamps(),
+        np.array(
+            ["2024-03-10T06:00", "2024-03-10T07:00", "2024-03-10T08:00"],
+            dtype="datetime64[ns]",
+        ),
+    )
+
+
+def test_from_time_array_rejects_pandas_timestamps_finer_than_microseconds():
+    timestamps = list(
+        pd.date_range("2024-01-01", periods=3, freq="h") + pd.Timedelta(1, unit="ns")
+    )
+
+    with pytest.raises(ValueError, match="microsecond"):
+        SingleTimeSeries.from_time_array([1, 2, 3], "demand", timestamps)
+
+
+def test_from_time_array_infers_fixed_interval_across_daylight_saving():
+    zone = ZoneInfo("America/New_York")
+    timestamps = [
+        datetime(2024, 3, 10, 1, tzinfo=zone),
+        datetime(2024, 3, 10, 3, tzinfo=zone),
+        datetime(2024, 3, 10, 4, tzinfo=zone),
+    ]
+
+    time_series = SingleTimeSeries.from_time_array([1, 2, 3], "demand", timestamps)
+    assert time_series.resolution == timedelta(hours=1)
+    assert np.array_equal(
+        time_series.make_timestamps(),
+        np.array(
+            ["2024-03-10T06:00", "2024-03-10T07:00", "2024-03-10T08:00"], dtype="datetime64[ns]"
+        ),
+    )
+
+
+def test_from_time_array_infers_fixed_grid_after_calendar_candidate_does_not_match():
+    timestamps = [datetime(2024, 7, 1) + index * timedelta(days=31) for index in range(4)]
+
+    time_series = SingleTimeSeries.from_time_array([1, 2, 3, 4], "demand", timestamps)
+    assert time_series.resolution == timedelta(days=31)
+    assert np.array_equal(
+        time_series.make_timestamps(), np.array(timestamps, dtype="datetime64[ns]")
+    )
+
+
 def test_from_time_array_infers_thirteen_month_resolution():
     time_index = [datetime(2023, 1, 31), datetime(2024, 2, 29), datetime(2025, 3, 31)]
-    assert infer_calendar_resolution(time_index) == relativedelta(months=13)
+    assert infer_time_series_resolution(time_index) == relativedelta(months=13)
 
     time_series = SingleTimeSeries.from_time_array([1, 2, 3], "demand", time_index)
     assert time_series.resolution == relativedelta(months=13)
@@ -91,20 +183,19 @@ def test_from_time_array_infers_thirteen_month_resolution():
     )
 
     irregular_index = [*time_index[:2], datetime(2025, 3, 30)]
-    assert infer_calendar_resolution(irregular_index) is None
+    with pytest.raises(ValueError, match="NonSequentialTimeSeries"):
+        infer_time_series_resolution(irregular_index)
 
 
 def test_from_time_array_infers_calendar_month_resolution():
     initial_timestamp = datetime(2024, 1, 31)
     time_index = [initial_timestamp + relativedelta(months=index) for index in range(12)]
-    assert infer_calendar_resolution(time_index) == relativedelta(months=1)
-    assert infer_calendar_resolution(time_index[:2]) is None
-    assert (
-        infer_calendar_resolution(
+    assert infer_time_series_resolution(time_index) == relativedelta(months=1)
+    assert infer_time_series_resolution(time_index[:2]) == timedelta(days=29)
+    with pytest.raises(ValueError, match="NonSequentialTimeSeries"):
+        infer_time_series_resolution(
             [datetime(2024, 1, 31), datetime(2024, 2, 29), datetime(2024, 3, 30)]
         )
-        is None
-    )
 
     time_series = SingleTimeSeries.from_time_array(
         data=range(12),
@@ -221,6 +312,16 @@ def test_calendar_resolution_requires_positive_whole_months_or_years(resolution)
             initial_timestamp=datetime(2024, 1, 1),
             resolution=resolution,
         )
+
+
+def test_calendar_resolution_is_validated_on_assignment():
+    time_series = SingleTimeSeries.from_array(
+        [1, 2], "demand", datetime(2024, 1, 1), relativedelta(months=1)
+    )
+
+    with pytest.raises(ValueError, match="positive whole months or years"):
+        time_series.resolution = relativedelta(months=1, days=1)
+    assert time_series.resolution == relativedelta(months=1)
 
 
 def test_calendar_month_count_normalizes_opposite_signed_year_and_month_fields():

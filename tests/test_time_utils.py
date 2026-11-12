@@ -1,9 +1,38 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
 
+import numpy as np
 import pytest
 from dateutil.relativedelta import relativedelta
 
-from infrasys.utils.time_utils import from_iso_8601, str_timedelta_to_iso_8601, to_iso_8601
+from infrasys.utils.time_utils import (
+    from_iso_8601,
+    infer_time_series_resolution,
+    str_timedelta_to_iso_8601,
+    to_iso_8601,
+)
+
+
+@pytest.mark.parametrize(
+    "timestamps",
+    [
+        [],
+        [datetime(2024, 1, 1)],
+        [datetime(2024, 1, 1), datetime(2024, 1, 1)],
+        [datetime(2024, 1, 2), datetime(2024, 1, 1)],
+        np.array(["2024-01-01", "2024-01-02", "NaT"], dtype="datetime64[ns]"),
+    ],
+)
+def test_infer_resolution_rejects_invalid_time_grids(timestamps):
+    with pytest.raises(ValueError):
+        infer_time_series_resolution(timestamps)
+
+
+def test_infer_resolution_rejects_submicrosecond_anchor():
+    start = np.datetime64("2024-01-01T00:00:00.000000001", "ns")
+    timestamps = start + np.arange(3) * np.timedelta64(1, "s")
+
+    with pytest.raises(ValueError, match="microsecond"):
+        infer_time_series_resolution(timestamps)
 
 
 def test_to_iso_8601():

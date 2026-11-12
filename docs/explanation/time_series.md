@@ -132,10 +132,10 @@ calendar resolutions.
 A calendar slice is rejected if its first timestamp cannot anchor the requested timestamps without
 changing them. In that case, read the full series and slice its data and timestamps instead.
 
-`from_time_array` can infer a calendar resolution when at least three timestamps match an anchored
-calendar grid. `infer_calendar_resolution(time_index)` exposes the same inference independently and
-returns `None` when no calendar grid matches. With only two timestamps, the interval is ambiguous,
-so pass the calendar resolution to `from_array` explicitly.
+`from_time_array` infers a calendar resolution when at least three timestamps match an anchored
+calendar grid. Otherwise, it infers a fixed resolution when all timestamps share the same interval.
+Irregular timestamps are rejected. Use `NonSequentialTimeSeries` for those instead. With only two
+timestamps, the interval is ambiguous, so pass the calendar resolution to `from_array` explicitly.
 
 ## Behaviors
 

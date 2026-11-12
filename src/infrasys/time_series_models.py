@@ -22,6 +22,8 @@ import pint
 from dateutil.relativedelta import relativedelta
 from numpy.typing import NDArray
 from pydantic import (
+    AfterValidator,
+    BeforeValidator,
     Field,
     WithJsonSchema,
     computed_field,
@@ -36,52 +38,26 @@ from infrasys.exceptions import (
 )
 from infrasys.models import InfraSysBaseModel, InfraSysBaseModelWithIdentifers
 from infrasys.normalization import NormalizationModel
-from infrasys.utils.time_utils import from_iso_8601, to_iso_8601
+from infrasys.utils.time_utils import (
+    as_datetime,
+    calendar_resolution_index,
+    calendar_slice_preserves_grid,
+    infer_time_series_resolution,
+    parse_time_series_resolution,
+    to_iso_8601,
+    validate_time_series_resolution,
+)
 
 TIME_COLUMN = "timestamp"
 VALUE_COLUMN = "value"
-MONTHS_PER_YEAR = 12
 
 
 ISArray: TypeAlias = Sequence | NDArray | pint.Quantity
-TimeSeriesResolution: TypeAlias = timedelta | relativedelta
-
-
-def validate_time_series_resolution(value: Any) -> Any:
-    """Parse and validate a single-series resolution value.
-
-    Strings are parsed as ISO 8601 durations. Relative calendar resolutions
-    must represent a positive number of whole months without fixed or absolute
-    fields. Years are included in the total month count. Other values are
-    returned for Pydantic to validate against the field type.
-
-    Parameters
-    ----------
-    value : Any
-        Candidate resolution value.
-
-    Returns
-    -------
-    Any
-        Parsed duration or unchanged value for subsequent Pydantic validation.
-
-    Raises
-    ------
-    ValueError
-        If an ISO duration is malformed or a relative calendar resolution is
-        unsupported.
-    """
-    if isinstance(value, str):
-        value = from_iso_8601(value)
-    if isinstance(value, relativedelta):
-        calendar_resolution = relativedelta(years=value.years, months=value.months)
-        # Infrastore represents calendar resolutions as a count of months.
-        total_months = MONTHS_PER_YEAR * value.years + value.months
-        if total_months <= 0 or value != calendar_resolution:
-            msg = "Calendar resolutions must be positive whole months or years only."
-            raise ValueError(msg)
-        return relativedelta(months=total_months)
-    return value
+TimeSeriesResolution: TypeAlias = Annotated[
+    timedelta | relativedelta,
+    BeforeValidator(parse_time_series_resolution),
+    AfterValidator(validate_time_series_resolution),
+]
 
 
 class TimeSeriesStorageType(StrEnum):
@@ -117,11 +93,6 @@ class SingleTimeSeries(TimeSeriesData):
     data: NDArray | pint.Quantity
     resolution: TimeSeriesResolution
     initial_timestamp: datetime
-
-    @field_validator("resolution", mode="before")
-    @classmethod
-    def validate_resolution(cls, value: Any) -> TimeSeriesResolution:
-        return validate_time_series_resolution(value)
 
     @field_serializer("resolution", when_used="json")
     def serialize_resolution(self, value: TimeSeriesResolution) -> str:
@@ -230,11 +201,18 @@ class SingleTimeSeries(TimeSeriesData):
         name
             Name assigned to the values of the time series (e.g., active_power)
         time_index
-            Sequence that contains the index of the time series
+            Sequence of Python or NumPy timestamps. NumPy timestamps must be
+            representable at microsecond precision.
 
         Returns
         -------
         SingleTimeSeries
+
+        Raises
+        ------
+        ValueError
+            If the timestamps are not a regular grid. Use ``NonSequentialTimeSeries``
+            for irregular timestamps.
 
         See Also
         --------
@@ -243,17 +221,12 @@ class SingleTimeSeries(TimeSeriesData):
         Note
         ----
         Three or more timestamps that match an anchored calendar-month/year grid infer a
-        ``relativedelta``. With fewer timestamps, the resolution is inferred as a fixed
-        ``timedelta`` because the cadence is ambiguous.
+        ``relativedelta``. With two timestamps, the resolution is inferred as a fixed
+        ``timedelta`` because the cadence is ambiguous. Irregular timestamps are rejected.
 
         """
-        # Infer initial time from the time_index.
-        initial_timestamp = pd.Timestamp(time_index[0]).to_pydatetime()
-
-        # Multiresolution time indexes are not supported.
-        resolution: TimeSeriesResolution | None = infer_calendar_resolution(time_index)
-        if resolution is None:
-            resolution = pd.Timestamp(time_index[1]).to_pydatetime() - initial_timestamp
+        resolution = infer_time_series_resolution(time_index)
+        initial_timestamp = as_datetime(time_index[0])
 
         return SingleTimeSeries.from_array(
             data,
@@ -287,53 +260,6 @@ class SingleTimeSeries(TimeSeriesData):
 
 class SingleTimeSeriesScalingFactor(SingleTimeSeries):
     """Defines a time array with a single dimension of floats that are 0-1 scaling factors."""
-
-
-def infer_calendar_resolution(
-    time_index: Sequence[datetime] | NDArray,
-    /,
-) -> relativedelta | None:
-    """Infer a calendar interval from at least three anchored timestamps.
-
-    Parameters
-    ----------
-    time_index
-        A sequence or one-dimensional array of timestamps.
-
-    Returns
-    -------
-    relativedelta | None
-        The whole-month or whole-year interval when all timestamps follow the same
-        calendar grid, or ``None`` otherwise.
-
-    Examples
-    --------
-    >>> from datetime import datetime
-    >>> infer_calendar_resolution(
-    ...     [datetime(2024, 1, 31), datetime(2024, 2, 29), datetime(2024, 3, 31)]
-    ... )
-    relativedelta(months=+1)
-    """
-    if len(time_index) < 3:
-        return None
-    try:
-        timestamps = [pd.Timestamp(timestamp).to_pydatetime() for timestamp in time_index]
-    except (TypeError, ValueError):
-        return None
-    if timestamps[1] <= timestamps[0]:
-        return None
-
-    resolution = relativedelta(timestamps[1], timestamps[0])
-    calendar_resolution = relativedelta(years=resolution.years, months=resolution.months)
-    if not (resolution.years or resolution.months) or resolution != calendar_resolution:
-        return None
-    if not all(
-        timestamp == timestamps[0] + index * resolution
-        for index, timestamp in enumerate(timestamps)
-    ):
-        return None
-    validate_time_series_resolution(resolution)
-    return resolution
 
 
 class Forecast(TimeSeriesData):
@@ -515,11 +441,6 @@ class SingleTimeSeriesMetadataBase(TimeSeriesMetadata, abc.ABC):
     resolution: TimeSeriesResolution
     type: Literal["SingleTimeSeries", "SingleTimeSeriesScalingFactor"]
 
-    @field_validator("resolution", mode="before")
-    @classmethod
-    def validate_resolution(cls, value: Any) -> TimeSeriesResolution:
-        return validate_time_series_resolution(value)
-
     @field_serializer("resolution", when_used="json")
     def serialize_resolution(self, value: TimeSeriesResolution) -> str:
         return to_iso_8601(value)
@@ -564,20 +485,9 @@ class SingleTimeSeriesMetadataBase(TimeSeriesMetadata, abc.ABC):
                 msg = f"{start_time=} is too large: {self=}"
                 raise ISConflictingArguments(msg)
             if isinstance(self.resolution, relativedelta):
-                difference = relativedelta(start_time, self.initial_timestamp)
-                interval = relativedelta(
-                    self.initial_timestamp + self.resolution,
-                    self.initial_timestamp,
+                index = calendar_resolution_index(
+                    self.initial_timestamp, self.resolution, start_time=start_time
                 )
-                elapsed_months = MONTHS_PER_YEAR * difference.years + difference.months
-                step_months = MONTHS_PER_YEAR * interval.years + interval.months
-                index, remainder = divmod(elapsed_months, step_months)
-                if remainder or self.initial_timestamp + index * self.resolution != start_time:
-                    msg = (
-                        f"{start_time=} conflicts with initial_time={self.initial_timestamp} and "
-                        f"resolution={self.resolution}"
-                    )
-                    raise ISConflictingArguments(msg)
             else:
                 diff = start_time - self.initial_timestamp
                 if (diff % self.resolution).total_seconds() != 0.0:
@@ -594,59 +504,27 @@ class SingleTimeSeriesMetadataBase(TimeSeriesMetadata, abc.ABC):
             msg = f"{start_time=} {length=} conflicts with {self=}"
             raise ISConflictingArguments(msg)
 
-        validate_calendar_slice(self, start_time=start_time, index=index, length=length)
-        return (index, length)
-
-    @staticmethod
-    def get_time_series_data_type() -> Type:
-        return SingleTimeSeries
-
-
-def validate_calendar_slice(
-    metadata: SingleTimeSeriesMetadataBase,
-    /,
-    *,
-    start_time: datetime | None,
-    index: int,
-    length: int,
-) -> None:
-    """Reject a calendar slice if re-anchoring would change its timestamps.
-
-    The caller must first validate the slice index and length against the
-    original series and ensure that ``start_time`` lies on its grid. Fixed
-    resolutions and slices starting at the original anchor need no check.
-
-    Parameters
-    ----------
-    metadata : SingleTimeSeriesMetadataBase
-        Metadata containing the original timestamp and resolution.
-    start_time : datetime | None
-        Requested slice start, or ``None`` for the original start.
-    index : int
-        Zero-based index of the first requested timestamp.
-    length : int
-        Number of requested timestamps.
-
-    Raises
-    ------
-    ISConflictingArguments
-        If the slice cannot represent the original timestamps when re-anchored.
-    """
-    resolution = metadata.resolution
-    if start_time is None or not isinstance(resolution, relativedelta):
-        return
-
-    initial_timestamp = metadata.initial_timestamp
-    if start_time.day == initial_timestamp.day and start_time.tzinfo == initial_timestamp.tzinfo:
-        return
-
-    for offset in range(1, length):
-        if start_time + offset * resolution != initial_timestamp + (index + offset) * resolution:
+        if (
+            start_time is not None
+            and isinstance(self.resolution, relativedelta)
+            and not calendar_slice_preserves_grid(
+                self.initial_timestamp,
+                self.resolution,
+                start_time=start_time,
+                index=index,
+                length=length,
+            )
+        ):
             msg = (
                 f"Calendar slice at {start_time} cannot preserve the original timestamps. "
                 "Read the full series and slice its data and timestamps instead."
             )
             raise ISConflictingArguments(msg)
+        return (index, length)
+
+    @staticmethod
+    def get_time_series_data_type() -> Type:
+        return SingleTimeSeries
 
 
 class SingleTimeSeriesMetadata(SingleTimeSeriesMetadataBase):
@@ -972,11 +850,6 @@ class SingleTimeSeriesKey(TimeSeriesKey):
     length: int
     initial_timestamp: datetime
     resolution: TimeSeriesResolution
-
-    @field_validator("resolution", mode="before")
-    @classmethod
-    def validate_resolution(cls, value: Any) -> TimeSeriesResolution:
-        return validate_time_series_resolution(value)
 
     @field_serializer("resolution", when_used="json")
     def serialize_resolution(self, value: TimeSeriesResolution) -> str:
