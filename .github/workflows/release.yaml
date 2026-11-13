@@ -37,10 +37,9 @@ jobs:
       release_tag: ${{ steps.release.outputs.tag_name }}
     runs-on: ubuntu-latest
     steps:
-      - name: Prepare requested release
+      - name: Validate requested release
         if: github.event_name == 'workflow_dispatch'
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TARGET_BRANCH: ${{ inputs.target_branch }}
           RELEASE_VERSION: ${{ inputs.release_version }}
         run: |
@@ -56,29 +55,74 @@ jobs:
             echo "::error::The main branch requires a 2.x or later release version."
             exit 1
           fi
+          if [[ "$TARGET_BRANCH" != "v1.x.x" && "$TARGET_BRANCH" != "main" ]]; then
+            echo "::error::Select main or v1.x.x."
+            exit 1
+          fi
 
-          # Expand inputs in npm's child shell so npm does not print the token.
-          # shellcheck disable=SC2016
-          npx --yes --package=release-please@17.3.0 --call '
-            release-please release-pr \
-              --token "$GITHUB_TOKEN" \
-              --repo-url "$GITHUB_REPOSITORY" \
-              --target-branch "$TARGET_BRANCH" \
-              --config-file .release-please-config.json \
-              --manifest-file .release-please-manifest.json \
-              --release-as "$RELEASE_VERSION"
-          '
+      - name: Checkout requested branch
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.target_branch }}
+
+      - name: Record requested version
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TARGET_BRANCH: ${{ inputs.target_branch }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit --allow-empty -m "chore: request release $RELEASE_VERSION" -m "Release-As: $RELEASE_VERSION"
+          git push origin "HEAD:refs/heads/$TARGET_BRANCH"
+
+      - name: Find an open maintenance release PR
+        if: github.event_name == 'push' && github.ref_name == 'v1.x.x'
+        id: pending
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          exists="$(gh pr list --repo "$GITHUB_REPOSITORY" --base "$GITHUB_REF_NAME" --state open --label 'autorelease: pending' --json number --jq 'length > 0')"
+          echo "exists=$exists" >> "$GITHUB_OUTPUT"
+
+      - name: Check merged release PR freshness
+        if: github.event_name == 'push'
+        id: freshness
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          releases="$(gh api --paginate --slurp --method GET "repos/$GITHUB_REPOSITORY/pulls" \
+            -f state=closed -f "base=$GITHUB_REF_NAME" -F per_page=100 -f sort=updated -f direction=desc |
+            jq -c '[.[][] | select(.merged_at != null and any(.labels[]; .name == "autorelease: pending")) | {number, head_sha: .head.sha, merge_sha: .merge_commit_sha}]')"
+          count="$(jq -r 'length' <<< "$releases")"
+          for ((i = 0; i < count; i++)); do
+            pr="$(jq -c ".[${i}]" <<< "$releases")"
+            number="$(jq -er '.number' <<< "$pr")"
+            head_sha="$(jq -er '.head_sha' <<< "$pr")"
+            merge_sha="$(jq -er '.merge_sha' <<< "$pr")"
+            # Release Please generates one commit based on the target branch tip.
+            # Its parent must match the target branch tip at merge time.
+            head_base="$(gh api "repos/$GITHUB_REPOSITORY/git/commits/$head_sha" | jq -er 'if (.parents | length) == 1 then .parents[0].sha else error("unsupported release PR history") end')"
+            merge_base="$(gh api "repos/$GITHUB_REPOSITORY/git/commits/$merge_sha" | jq -er '.parents[0].sha')"
+            if [[ "$head_base" != "$merge_base" ]]; then
+              echo "::error::Release PR #$number was stale when merged. No release was created."
+              exit 1
+            fi
+          done
+          echo "allow_release=$(jq -r 'length > 0' <<< "$releases")" >> "$GITHUB_OUTPUT"
 
       - name: Run release-please
-        if: github.event_name == 'push'
         id: release
         uses: googleapis/release-please-action@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           config-file: .release-please-config.json
           manifest-file: .release-please-manifest.json
-          target-branch: ${{ github.ref_name }}
-          skip-github-pull-request: ${{ github.ref_name == 'v1.x.x' }}
+          target-branch: ${{ inputs.target_branch || github.ref_name }}
+          skip-github-release: ${{ github.event_name == 'workflow_dispatch' || steps.freshness.outputs.allow_release != 'true' }}
+          skip-github-pull-request: ${{ github.event_name == 'push' && github.ref_name == 'v1.x.x' && steps.pending.outputs.exists != 'true' }}
 
   build:
     name: Build
