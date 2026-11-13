@@ -1,0 +1,987 @@
+<!doctype html>
+<html class="no-js" lang="en" data-content_root="../">
+  <head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="index" title="Index" href="../genindex.html"><link rel="search" title="Search" href="../search.html"><link rel="next" title="Location" href="location.html"><link rel="prev" title="Time Series" href="time_series.html">
+
+    <!-- Generated with Sphinx 8.2.3 and Furo 2025.09.25 -->
+        <title>Design: Bulk Time Series Adds and Reads - Infrastructure Systems Documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=d111a655" />
+    <link rel="stylesheet" type="text/css" href="../_static/styles/furo.css?v=580074bf" />
+    <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../_static/autodoc_pydantic.css" />
+    <link rel="stylesheet" type="text/css" href="../_static/styles/furo-extensions.css?v=8dab3a3b" />
+    
+    
+
+
+<style>
+  body {
+    --color-code-background: #f2f2f2;
+  --color-code-foreground: #1e1e1e;
+  
+  }
+  @media not print {
+    body[data-theme="dark"] {
+      --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  
+    }
+    @media (prefers-color-scheme: dark) {
+      body:not([data-theme="light"]) {
+        --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  
+      }
+    }
+  }
+</style></head>
+  <body>
+    
+    <script>
+      document.body.dataset.theme = localStorage.getItem("theme") || "auto";
+    </script>
+    
+
+<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+  <symbol id="svg-toc" viewBox="0 0 24 24">
+    <title>Contents</title>
+    <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+      <path d="M408 442h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8zm-8 204c0 4.4 3.6 8 8 8h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56zm504-486H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm0 632H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zM115.4 518.9L271.7 642c5.8 4.6 14.4.5 14.4-6.9V388.9c0-7.4-8.5-11.5-14.4-6.9L115.4 505.1a8.74 8.74 0 0 0 0 13.8z"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-menu" viewBox="0 0 24 24">
+    <title>Menu</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-menu">
+      <line x1="3" y1="12" x2="21" y2="12"></line>
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-arrow-right" viewBox="0 0 24 24">
+    <title>Expand</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-chevron-right">
+      <polyline points="9 18 15 12 9 6"></polyline>
+    </svg>
+  </symbol>
+  <symbol id="svg-sun" viewBox="0 0 24 24">
+    <title>Light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="feather-sun">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon" viewBox="0 0 24 24">
+    <title>Dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-moon">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z" />
+    </svg>
+  </symbol>
+  <symbol id="svg-sun-with-moon" viewBox="0 0 24 24">
+    <title>Auto light/dark, in light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path style="opacity: 50%" d="M 5.411 14.504 C 5.471 14.504 5.532 14.504 5.591 14.504 C 3.639 16.319 4.383 19.569 6.931 20.352 C 7.693 20.586 8.512 20.551 9.25 20.252 C 8.023 23.207 4.056 23.725 2.11 21.184 C 0.166 18.642 1.702 14.949 4.874 14.536 C 5.051 14.512 5.231 14.5 5.411 14.5 L 5.411 14.504 Z"/>
+      <line x1="14.5" y1="3.25" x2="14.5" y2="1.25"/>
+      <line x1="14.5" y1="15.85" x2="14.5" y2="17.85"/>
+      <line x1="10.044" y1="5.094" x2="8.63" y2="3.68"/>
+      <line x1="19" y1="14.05" x2="20.414" y2="15.464"/>
+      <line x1="8.2" y1="9.55" x2="6.2" y2="9.55"/>
+      <line x1="20.8" y1="9.55" x2="22.8" y2="9.55"/>
+      <line x1="10.044" y1="14.006" x2="8.63" y2="15.42"/>
+      <line x1="19" y1="5.05" x2="20.414" y2="3.636"/>
+      <circle cx="14.5" cy="9.55" r="3.6"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon-with-sun" viewBox="0 0 24 24">
+    <title>Auto light/dark, in dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path d="M 8.282 7.007 C 8.385 7.007 8.494 7.007 8.595 7.007 C 5.18 10.184 6.481 15.869 10.942 17.24 C 12.275 17.648 13.706 17.589 15 17.066 C 12.851 22.236 5.91 23.143 2.505 18.696 C -0.897 14.249 1.791 7.786 7.342 7.063 C 7.652 7.021 7.965 7 8.282 7 L 8.282 7.007 Z"/>
+      <line style="opacity: 50%" x1="18" y1="3.705" x2="18" y2="2.5"/>
+      <line style="opacity: 50%" x1="18" y1="11.295" x2="18" y2="12.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="4.816" x2="14.464" y2="3.964"/>
+      <line style="opacity: 50%" x1="20.711" y1="10.212" x2="21.563" y2="11.063"/>
+      <line style="opacity: 50%" x1="14.205" y1="7.5" x2="13.001" y2="7.5"/>
+      <line style="opacity: 50%" x1="21.795" y1="7.5" x2="23" y2="7.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="10.184" x2="14.464" y2="11.036"/>
+      <line style="opacity: 50%" x1="20.711" y1="4.789" x2="21.563" y2="3.937"/>
+      <circle style="opacity: 50%" cx="18" cy="7.5" r="2.169"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-pencil" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-pencil-code">
+      <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
+      <path d="M13.5 6.5l4 4" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+  <symbol id="svg-eye" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-eye-code">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
+      <path
+        d="M11.11 17.958c-3.209 -.307 -5.91 -2.293 -8.11 -5.958c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6c-.21 .352 -.427 .688 -.647 1.008" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+</svg>
+
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation" aria-label="Toggle site navigation sidebar">
+<input type="checkbox" class="sidebar-toggle" name="__toc" id="__toc" aria-label="Toggle table of contents sidebar">
+<label class="overlay sidebar-overlay" for="__navigation"></label>
+<label class="overlay toc-overlay" for="__toc"></label>
+
+<a class="skip-to-content muted-link" href="#furo-main-content">Skip to content</a>
+
+
+
+<div class="page">
+  <header class="mobile-header">
+    <div class="header-left">
+      <label class="nav-overlay-icon" for="__navigation">
+        <span class="icon"><svg><use href="#svg-menu"></use></svg></span>
+      </label>
+    </div>
+    <div class="header-center">
+      <a href="../index.html"><div class="brand">Infrastructure Systems Documentation</div></a>
+    </div>
+    <div class="header-right">
+      <div class="theme-toggle-container theme-toggle-header">
+        <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
+          <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+          <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+          <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+          <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+        </button>
+      </div>
+      <label class="toc-overlay-icon toc-header-icon" for="__toc">
+        <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
+      </label>
+    </div>
+  </header>
+  <aside class="sidebar-drawer">
+    <div class="sidebar-container">
+      
+      <div class="sidebar-sticky"><a class="sidebar-brand" href="../index.html">
+  
+  <span class="sidebar-brand-text">Infrastructure Systems Documentation</span>
+  
+</a><form class="sidebar-search-container" method="get" action="../search.html" role="search">
+  <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
+  <input type="hidden" name="check_keywords" value="yes">
+  <input type="hidden" name="area" value="default">
+</form>
+<div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
+  <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1 has-children"><a class="reference internal" href="../how_tos/index.html">How Tos</a><input aria-label="Toggle navigation of How Tos" class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../how_tos/storage_backends.html">How to Configure Time Series Storage</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../how_tos/list_time_series.html">How to list existing time series data</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../how_tos/read_time_series_by_timestamp.html">How to read time series data by timestamp</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../how_tos/save_system.html">How to save the system</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../tutorials/index.html">Tutorials</a><input aria-label="Toggle navigation of Tutorials" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../tutorials/custom_system.html">Custom System</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../tutorials/benchmark.html">How to Benchmark Different Python Implementations with <code class="docutils literal notranslate"><span class="pre">pytest-benchmark</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="../tutorials/benchmark.html#id1">How to Benchmark Different Python Implementations with <code class="docutils literal notranslate"><span class="pre">pytest-benchmark</span></code>.</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../reference/index.html">Reference</a><input aria-label="Toggle navigation of Reference" class="toctree-checkbox" id="toctree-checkbox-3" name="toctree-checkbox-3" role="switch" type="checkbox"/><label for="toctree-checkbox-3"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../reference/api/index.html">API</a><input aria-label="Toggle navigation of API" class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" role="switch" type="checkbox"/><label for="toctree-checkbox-4"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../reference/api/system.html">System</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/api/components.html">Components</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/api/time_series.html">Time Series</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/api/location.html">Location</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/api/quantities.html">Quantities</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/api/function_data.html">Function data</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../reference/system_json.html">Viewing System Data in JSON Format</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../reference/benchmarks.html">Running benchmarks</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../reference/benchmarks.html#how-to-benchmark-different-python-implementations-with-pytest-benchmark">How to Benchmark Different Python Implementations with <code class="docutils literal notranslate"><span class="pre">pytest-benchmark</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l1 current has-children"><a class="reference internal" href="index.html">Explanation</a><input aria-label="Toggle navigation of Explanation" checked="" class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" role="switch" type="checkbox"/><label for="toctree-checkbox-5"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="system.html">System</a></li>
+<li class="toctree-l2"><a class="reference internal" href="components.html">Components</a></li>
+<li class="toctree-l2"><a class="reference internal" href="time_series.html">Time Series</a></li>
+<li class="toctree-l2 current current-page"><a class="current reference internal" href="#">Design: Bulk Time Series Adds and Reads</a></li>
+<li class="toctree-l2"><a class="reference internal" href="location.html">Location</a></li>
+<li class="toctree-l2"><a class="reference internal" href="serialization.html">Serialization</a></li>
+</ul>
+</li>
+</ul>
+
+</div>
+</div>
+
+      </div>
+      
+    </div>
+  </aside>
+  <div class="main">
+    <div class="content">
+      <div class="article-container">
+        <a href="#" class="back-to-top muted-link">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+          </svg>
+          <span>Back to top</span>
+        </a>
+        <div class="content-icon-container">
+          <div class="view-this-page">
+  <a class="muted-link" href="../_sources/explanation/time_series_bulk_io.md.txt" title="View this page">
+    <svg><use href="#svg-eye"></use></svg>
+    <span class="visually-hidden">View this page</span>
+  </a>
+</div>
+<div class="theme-toggle-container theme-toggle-content">
+            <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
+              <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+              <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+              <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+              <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+            </button>
+          </div>
+          <label class="toc-overlay-icon toc-content-icon" for="__toc">
+            <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
+          </label>
+        </div>
+        <article role="main" id="furo-main-content">
+          <section id="design-bulk-time-series-adds-and-reads">
+<h1>Design: Bulk Time Series Adds and Reads<a class="headerlink" href="#design-bulk-time-series-adds-and-reads" title="Link to this heading">¶</a></h1>
+<p>This page explains how infrasys moves many time series in and out of the store efficiently:
+how additions are batched into one catalog transaction, and how reads are grouped so the
+store decompresses each dataset once. It describes the design behind
+<a class="reference internal" href="../reference/api/system.html#infrasys.system.System.add_time_series" title="infrasys.system.System.add_time_series"><code class="xref py py-meth docutils literal notranslate"><span class="pre">infrasys.system.System.add_time_series()</span></code></a>,
+<a class="reference internal" href="../reference/api/system.html#infrasys.system.System.list_time_series" title="infrasys.system.System.list_time_series"><code class="xref py py-meth docutils literal notranslate"><span class="pre">infrasys.system.System.list_time_series()</span></code></a>, and
+<a class="reference internal" href="../reference/api/system.html#infrasys.system.System.time_series_transaction" title="infrasys.system.System.time_series_transaction"><code class="xref py py-meth docutils literal notranslate"><span class="pre">infrasys.system.System.time_series_transaction()</span></code></a>.</p>
+<section id="the-layers-and-what-each-one-owns">
+<h2>The layers and what each one owns<a class="headerlink" href="#the-layers-and-what-each-one-owns" title="Link to this heading">¶</a></h2>
+<p>Four layers cooperate, and each owns exactly one kind of state:</p>
+<ul class="simple">
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">System</span></code> / <code class="docutils literal notranslate"><span class="pre">TimeSeriesManager</span></code></strong> own no time series state at all. They validate inputs,
+translate infrasys types to storage-level names, and ensure every operation runs inside a
+context (creating a transient one when the manager is not bound to a batch).</p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">TimeSeriesTransaction</span></code></strong> is the user-facing facade for one batch: the object yielded by
+<code class="docutils literal notranslate"><span class="pre">time_series_transaction</span></code>, exposing the same methods as <code class="docutils literal notranslate"><span class="pre">System</span></code>. It binds the manager to its
+context once, at construction, and holds no state of its own.</p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">TimeSeriesStorageContext</span></code></strong> owns <em>one batch of work</em>: the additions staged but not yet
+written, and the record of what the batch has already written so a failure can undo exactly
+its own writes. It is also the <em>receiver</em> for every operation — <code class="docutils literal notranslate"><span class="pre">context.add_time_series(...)</span></code>
+rather than a storage call taking the context as an argument.</p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">TimeSeriesStoreStorage</span></code></strong> owns the in-memory index of <em>committed</em> associations
+(owner → association → <code class="docutils literal notranslate"><span class="pre">_StoredSeries</span></code> descriptor). It holds no batch state and no reference
+to any context; ownership points one way, from the context to the storage it writes through.</p></li>
+</ul>
+<p>Hanging the operations off the context is what keeps the batching plumbing out of the
+<code class="docutils literal notranslate"><span class="pre">**features</span></code> namespace that belongs to the caller: a time series feature named <code class="docutils literal notranslate"><span class="pre">context</span></code> is just
+a feature. The storage-side implementations are private and take their context positionally, for
+the same reason. It also makes a context reaching the wrong storage unrepresentable instead of
+merely checked — the one remaining pairing, <code class="docutils literal notranslate"><span class="pre">TimeSeriesManager.bind_context</span></code>, validates it.</p>
+<ul class="simple">
+<li><p><strong>The <code class="docutils literal notranslate"><span class="pre">infrastore</span></code> Rust store</strong> is the single source of truth for array data and association
+metadata. It owns identity: arrays are content-addressed, and each association is identified
+by a store key. infrasys assigns no ids of its own.</p></li>
+</ul>
+<p>This split is deliberate. Earlier designs cached mutable state in the storage layer; now the
+only cached values are derived data with a clear invalidation story (the committed index, which
+is rebuilt from the store on deserialization, and the store key memoized on each descriptor).</p>
+</section>
+<section id="bulk-adds">
+<h2>Bulk adds<a class="headerlink" href="#bulk-adds" title="Link to this heading">¶</a></h2>
+<p>Every write operation runs inside a context. A caller who opens
+<a class="reference internal" href="../reference/api/system.html#infrasys.system.System.time_series_transaction" title="infrasys.system.System.time_series_transaction"><code class="xref py py-meth docutils literal notranslate"><span class="pre">time_series_transaction()</span></code></a> gets a transaction object and
+calls the time series methods on it, batching them; a <code class="docutils literal notranslate"><span class="pre">System</span></code> method called on its own gets
+a transient context that commits at the end of that single call, so the one-call behavior is
+unchanged.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">with</span> <span class="n">system</span><span class="o">.</span><span class="n">time_series_transaction</span><span class="p">()</span> <span class="k">as</span> <span class="n">txn</span><span class="p">:</span>
+    <span class="k">for</span> <span class="n">gen</span><span class="p">,</span> <span class="n">ts</span> <span class="ow">in</span> <span class="n">profiles</span><span class="p">:</span>
+        <span class="n">txn</span><span class="o">.</span><span class="n">add_time_series</span><span class="p">(</span><span class="n">ts</span><span class="p">,</span> <span class="n">gen</span><span class="p">)</span>
+<span class="c1"># exiting the block commits: one bulk write, one catalog transaction</span>
+</pre></div>
+</div>
+<p>A <code class="docutils literal notranslate"><span class="pre">txn.add_time_series</span></code> call does no I/O. It validates every owner (so a duplicate on the last
+owner cannot leave the earlier ones half-added), then stages one <code class="docutils literal notranslate"><span class="pre">_PendingAdd</span></code> per owner on the
+transaction’s context. Staged additions are visible only through the transaction that staged
+them: metadata queries resolve the committed index <em>overlaid with</em> the calling context’s staged
+entries, in one place (<code class="docutils literal notranslate"><span class="pre">_visible_assocs</span></code>). A concurrent batch, or a <code class="docutils literal notranslate"><span class="pre">System</span></code> call inside the
+block, sees only committed state.</p>
+<p>The staged batch reaches the store when the context <strong>flushes</strong>, which happens at the first of:</p>
+<ul class="simple">
+<li><p>the block exits cleanly (commit),</p></li>
+<li><p>an operation needs the arrays physically present — a read, a reader build, a removal, or
+counts inside the block forces an early flush,</p></li>
+<li><p>the buffer reaches its <strong>auto-flush limits</strong>: 10,000 staged additions or 256 MiB of staged
+array data, whichever comes first (both configurable on
+<a class="reference internal" href="../reference/api/system.html#infrasys.system.System.time_series_transaction" title="infrasys.system.System.time_series_transaction"><code class="xref py py-meth docutils literal notranslate"><span class="pre">time_series_transaction()</span></code></a>).</p></li>
+</ul>
+<p>The auto-flush limits are what let a block add hundreds of thousands of series without
+holding them all in memory. The two limits serve different masters. The byte limit bounds
+memory, which a count cannot do when individual arrays are long. The count limit protects
+the stored layout: each flush becomes one HDF5 dataset whose <em>chunk width equals the batch
+width</em>, so 10,000 f64 series produce 80 KiB chunks — near the store’s 1 MiB chunk cap and
+within ~2% of unlimited-batch write throughput — while flushing every 1,000 would freeze
+8 KiB chunks into the file for every future reader. Splitting a block into several flushes
+loses nothing else: array dedup is store-wide by content hash, and each flush is a nested
+savepoint inside the block’s transaction, so there is still exactly one SQLite commit.</p>
+<p>A flush hands the whole batch to <code class="docutils literal notranslate"><span class="pre">Store.add_time_series_bulk</span></code>, which writes the arrays and
+records every association in a single catalog transaction. The Rust store applies the batch
+atomically: if any item is rejected, nothing is written. Only after the store accepts the batch
+does the storage layer update its committed index, using the keys the store returned (memoized
+so later reads never scan for them).</p>
+<p>A block opened with <code class="docutils literal notranslate"><span class="pre">time_series_transaction</span></code> runs inside an <strong><code class="docutils literal notranslate"><span class="pre">infrastore</span></code> transaction</strong>, and
+that is what makes a failure recoverable. If the block raises, buffered additions are dropped
+(they never reached the store) and the transaction is rolled back, undoing everything the block
+did write — <strong>including removals</strong>, which are irreversible outside a transaction because the
+store frees an array once its last association goes. Inside one the free is deferred to the
+commit, so the bytes are still there when the catalog rewinds. The in-memory index is rebuilt
+from the store afterwards, since entries recorded as work was flushed now describe a catalog
+state that no longer exists.</p>
+<p>An early flush therefore costs nothing in recoverability: it lands inside the open transaction
+and rolls back with the rest. This is why a read or a counts call inside a block is harmless.</p>
+<p>Two constraints come with the mechanism:</p>
+<ul class="simple">
+<li><p><strong>Blocks nest LIFO.</strong> SQLite savepoints are a stack, so an inner block must finish before the
+one enclosing it. <code class="docutils literal notranslate"><span class="pre">with</span></code> statements produce that shape anyway; two <em>interleaved</em> batches that
+each commit or discard on their own schedule are not supported. That is the price of exact
+rollback, and a client-side undo log — which is what this replaced — cannot restore a
+removal at any price.</p></li>
+<li><p><strong>Serialization must happen outside a block.</strong> Copying the artifact closes and reopens it,
+which would discard the transaction, so <code class="docutils literal notranslate"><span class="pre">to_json</span></code> inside an open block raises rather than
+writing a copy of state that might still roll back.</p></li>
+</ul>
+</section>
+<section id="bulk-reads">
+<h2>Bulk reads<a class="headerlink" href="#bulk-reads" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">list_time_series</span></code> returns every matching array for an owner through one bulk store call
+rather than one call per series:</p>
+<ol class="arabic simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">list_metadata</span></code> filters the owner’s visible associations (committed ⊕ staged) by name,
+type, and features. This touches only lightweight descriptors — never array data.</p></li>
+<li><p>The context is flushed, so staged arrays are readable.</p></li>
+<li><p>Each descriptor is <em>planned</em>: the store key is resolved, and a <code class="docutils literal notranslate"><span class="pre">start_time</span></code>/<code class="docutils literal notranslate"><span class="pre">length</span></code>
+request is translated into a time range. The bounds are spelled the way the series is
+— naive against a wall-clock series, aware against one that names instants — because
+the store refuses to coerce across that line. See
+<a class="reference internal" href="time_series.html#time-series-time-zones"><span class="std std-ref">Time zones</span></a>.</p></li>
+<li><p>Plans are grouped by time range, because <code class="docutils literal notranslate"><span class="pre">Store.bulk_read</span></code> applies one range to every key
+it is given. Unsliced reads all share a range of <code class="docutils literal notranslate"><span class="pre">None</span></code>, so the common case — read every
+matching series whole — goes to the store as a single call, and the store decompresses
+each backing dataset once instead of once per series.</p></li>
+<li><p>Results are converted back to infrasys types (<code class="docutils literal notranslate"><span class="pre">SingleTimeSeries</span></code>, <code class="docutils literal notranslate"><span class="pre">Deterministic</span></code>, …) in
+the caller’s original order, reattaching units where the series was stored from a <code class="docutils literal notranslate"><span class="pre">pint</span></code>
+quantity.</p></li>
+</ol>
+<p>Single-series reads (<code class="docutils literal notranslate"><span class="pre">get_time_series</span></code>) follow the same plan/convert path with one key. For
+the transpose access pattern — every component’s value at one timestamp, stepped through
+time — infrasys provides the cross-sectional readers described
+<a class="reference internal" href="#bulk-readers-design">below</a>, which read per timestamp instead of per series.</p>
+</section>
+<section id="the-write-and-read-paths-in-one-picture">
+<h2>The write and read paths in one picture<a class="headerlink" href="#the-write-and-read-paths-in-one-picture" title="Link to this heading">¶</a></h2>
+<pre  class="mermaid">
+        flowchart TB
+    subgraph UserCode[&quot;User code&quot;]
+        ADD[&quot;txn.add_time_series(ts, gen)&quot;]
+        LIST[&quot;txn.list_time_series(gen)&quot;]
+    end
+
+    subgraph Context[&quot;TimeSeriesStorageContext — owns the batch&quot;]
+        STAGED[&quot;Staged additions&lt;br/&gt;(_PendingAdd per owner)&quot;]
+        FLUSH[&quot;flush()&lt;br/&gt;commit, or first read/reader/serialize&quot;]
+    end
+
+    subgraph Storage[&quot;TimeSeriesStoreStorage — owns the committed index&quot;]
+        VISIBLE[&quot;_visible_assocs&lt;br/&gt;committed index ⊕ this context's staged&quot;]
+        INDEX[&quot;Committed index&lt;br/&gt;owner → association → _StoredSeries&quot;]
+        PLAN[&quot;Plan reads: resolve keys,&lt;br/&gt;group by time range&quot;]
+    end
+
+    subgraph Rust[&quot;infrastore (Rust) — source of truth&quot;]
+        BULKADD[&quot;add_time_series_bulk&lt;br/&gt;one atomic catalog transaction&quot;]
+        BULKREAD[&quot;bulk_read&lt;br/&gt;decompress each dataset once&quot;]
+    end
+
+    ADD --&gt;|&quot;stage, no I/O&quot;| STAGED
+    STAGED --&gt; FLUSH
+    FLUSH --&gt;|&quot;whole batch&quot;| BULKADD
+    BULKADD --&gt;|&quot;store keys, input order&quot;| INDEX
+
+    LIST --&gt; VISIBLE
+    VISIBLE --&gt; INDEX
+    VISIBLE -.-&gt;|&quot;overlay&quot;| STAGED
+    VISIBLE --&gt; PLAN
+    PLAN --&gt;|&quot;one call per distinct range&quot;| BULKREAD
+    BULKREAD --&gt;|&quot;arrays, original order&quot;| LIST
+
+    classDef user fill:#dbeafe,stroke:#2563eb,color:#1e3a5f
+    classDef ctx fill:#ede9fe,stroke:#7c3aed,color:#3b1d69
+    classDef storage fill:#dcfce7,stroke:#16a34a,color:#14432a
+    classDef rust fill:#ffedd5,stroke:#ea580c,color:#7c2d12
+
+    class ADD,LIST user
+    class STAGED,FLUSH ctx
+    class VISIBLE,INDEX,PLAN storage
+    class BULKADD,BULKREAD rust
+    </pre><p>Blue is user code, purple is the context (batch state), green is the storage layer (committed
+index), and orange is the Rust store (source of truth). The dashed edge is the one place where
+staged and committed state meet: a query resolves the committed index overlaid with the calling
+context’s staged additions, so a batch is visible to itself and to nothing else.</p>
+</section>
+<section id="bulk-reads-by-timestamp-the-cross-sectional-readers">
+<span id="bulk-readers-design"></span><h2>Bulk reads by timestamp: the cross-sectional readers<a class="headerlink" href="#bulk-reads-by-timestamp-the-cross-sectional-readers" title="Link to this heading">¶</a></h2>
+<p>The paths above are series-oriented: they hand back one owner’s whole array. A stepping
+simulation needs the transpose — every component’s value at one timestamp, then the next —
+and cannot afford to hold every array in memory to get it.
+<a class="reference internal" href="../reference/api/system.html#infrasys.system.System.build_time_series_reader" title="infrasys.system.System.build_time_series_reader"><code class="xref py py-meth docutils literal notranslate"><span class="pre">build_time_series_reader()</span></code></a> and
+<a class="reference internal" href="../reference/api/system.html#infrasys.system.System.build_forecast_reader" title="infrasys.system.System.build_forecast_reader"><code class="xref py py-meth docutils literal notranslate"><span class="pre">build_forecast_reader()</span></code></a> exist for exactly that access
+pattern; usage is covered in the
+<a class="reference internal" href="../how_tos/read_time_series_by_timestamp.html#read-time-series-by-timestamp"><span class="std std-ref">how-to</span></a>, and this section explains the design.</p>
+<p>Building a reader splits the cost so that everything expensive happens once, up front:</p>
+<ol class="arabic simple">
+<li><p>The calling transaction’s context is flushed — a reader is built from the store’s
+catalog, so staged additions would otherwise be invisible to it.</p></li>
+<li><p>The Rust store snapshots the associations matching the filter (name, glob, owner type,
+features, one resolution per reader) and validates them together: static readers require
+one shared grid (initial timestamp, resolution, length), forecast readers one shared
+window timeline. A filter spanning two grids, or matching nothing, is rejected at build
+time rather than surfacing mid-loop.</p></li>
+<li><p>The storage layer fetches the snapshot’s keys once and derives the Python-side lookup
+state: the component id tuple aligned to each columnar group, per-component units pulled
+from the committed index, and — for forecasts — the slot map.</p></li>
+<li><p>The result is an immutable snapshot object. Adding or removing time series afterwards does
+not change what a live reader covers; build a new one.</p></li>
+</ol>
+<p>Each step is then deliberately thin. <code class="docutils literal notranslate"><span class="pre">read(timestamp)</span></code> makes one store call that positions the
+reader at that timestamp, then zips the store’s columnar arrays against the prebuilt id
+tuples. No metadata is consulted, no keys are resolved, and no per-value Python objects are
+created — units are exposed once on the reader rather than attached to every value, and
+<code class="docutils literal notranslate"><span class="pre">read_columns</span></code> skips even the per-step dict for loops where that shows up.</p>
+<p>Forecast readers add one more collapse: components whose forecasts share a backing array —
+after <a class="reference internal" href="../reference/api/system.html#infrasys.system.System.transform_single_time_series" title="infrasys.system.System.transform_single_time_series"><code class="xref py py-meth docutils literal notranslate"><span class="pre">transform_single_time_series()</span></code></a>, or wherever a fleet
+was given one profile — map to a single <em>slot</em>. The store performs one physical read per
+slot rather than one per component, and every component in a slot receives the same array
+object rather than a copy (which is why the windows must be treated as read-only).</p>
+<pre  class="mermaid">
+        flowchart TB
+    subgraph UserCode[&quot;User code&quot;]
+        BUILD[&quot;system.build_time_series_reader(resolution, name=...)&quot;]
+        STEP[&quot;reader.read(timestamp) — once per step&quot;]
+    end
+
+    subgraph Storage[&quot;TimeSeriesStoreStorage&quot;]
+        FLUSHR[&quot;Flush caller's context&lt;br/&gt;(staged series must be in the catalog)&quot;]
+        DERIVE[&quot;Derive lookup state once:&lt;br/&gt;component id tuples, units, slots&quot;]
+    end
+
+    subgraph Reader[&quot;Reader — immutable snapshot&quot;]
+        SNAP[&quot;Rust reader + id tuples&lt;br/&gt;+ units + slot map&quot;]
+        ZIP[&quot;Zip columnar arrays&lt;br/&gt;against prebuilt id tuples&quot;]
+    end
+
+    subgraph Rust[&quot;infrastore (Rust)&quot;]
+        CATALOG[&quot;Snapshot matching associations,&lt;br/&gt;validate one shared grid/timeline&quot;]
+        READ[&quot;static_read / forecast_read:&lt;br/&gt;one physical read per group/slot&quot;]
+    end
+
+    BUILD --&gt; FLUSHR
+    FLUSHR --&gt; CATALOG
+    CATALOG --&gt; DERIVE
+    DERIVE --&gt; SNAP
+
+    STEP --&gt; READ
+    READ --&gt;|&quot;columnar values&quot;| ZIP
+    ZIP --&gt;|&quot;{component id: value}&quot;| STEP
+
+    classDef user fill:#dbeafe,stroke:#2563eb,color:#1e3a5f
+    classDef storage fill:#dcfce7,stroke:#16a34a,color:#14432a
+    classDef reader fill:#ccfbf1,stroke:#0d9488,color:#134e4a
+    classDef rust fill:#ffedd5,stroke:#ea580c,color:#7c2d12
+
+    class BUILD,STEP user
+    class FLUSHR,DERIVE storage
+    class SNAP,ZIP reader
+    class CATALOG,READ rust
+    </pre><p>The colors follow the first diagram — blue for user code, green for the storage layer,
+orange for the Rust store — with teal for the reader snapshot, the one new piece of state
+this path introduces. The top half runs once at build time; the bottom half is the per-step
+loop, which touches only the teal and orange boxes.</p>
+</section>
+<section id="why-this-shape">
+<h2>Why this shape<a class="headerlink" href="#why-this-shape" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><strong>One catalog transaction per block.</strong> Adding thousands of profiles pays one SQLite
+transaction instead of thousands, which is where the bulk write speedup comes from.</p></li>
+<li><p><strong>No hidden batch state.</strong> Because the storage layer never holds staged data, there is
+nothing to invalidate when a batch is discarded, and two batches cannot observe each other’s
+uncommitted work.</p></li>
+<li><p><strong>Metadata never reads arrays.</strong> Listing, existence checks, and counts run entirely against
+the descriptor index; array I/O happens only in the planned bulk reads.</p></li>
+<li><p><strong>Failure surfaces cleanly.</strong> A rejected bulk write leaves the store and the index untouched;
+a raised block rolls its transaction back, undoing its adds <em>and</em> its removals exactly.</p></li>
+<li><p><strong>Stepping loops pay at build time, not per step.</strong> A reader validates its filter, resolves
+its keys, and derives its lookup state once; each timestamp then costs one store call per
+columnar group or slot, with no metadata work in the loop.</p></li>
+</ul>
+</section>
+</section>
+
+        </article>
+      </div>
+      <footer>
+        
+        <div class="related-pages">
+          <a class="next-page" href="location.html">
+              <div class="page-info">
+                <div class="context">
+                  <span>Next</span>
+                </div>
+                <div class="title">Location</div>
+              </div>
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+            </a>
+          <a class="prev-page" href="time_series.html">
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+              <div class="page-info">
+                <div class="context">
+                  <span>Previous</span>
+                </div>
+                
+                <div class="title">Time Series</div>
+                
+              </div>
+            </a>
+        </div>
+        <div class="bottom-of-page">
+          <div class="left-details">
+            <div class="copyright">
+                Copyright &#169; 2024, NREL
+            </div>
+            Made with <a href="https://www.sphinx-doc.org/">Sphinx</a> and <a class="muted-link" href="https://pradyunsg.me">@pradyunsg</a>'s
+            
+            <a href="https://github.com/pradyunsg/furo">Furo</a>
+            
+          </div>
+          <div class="right-details">
+            
+          </div>
+        </div>
+        
+      </footer>
+    </div>
+    <aside class="toc-drawer">
+      
+      
+      <div class="toc-sticky toc-scroll">
+        <div class="toc-title-container">
+          <span class="toc-title">
+            On this page
+          </span>
+        </div>
+        <div class="toc-tree-container">
+          <div class="toc-tree">
+            <ul>
+<li><a class="reference internal" href="#">Design: Bulk Time Series Adds and Reads</a><ul>
+<li><a class="reference internal" href="#the-layers-and-what-each-one-owns">The layers and what each one owns</a></li>
+<li><a class="reference internal" href="#bulk-adds">Bulk adds</a></li>
+<li><a class="reference internal" href="#bulk-reads">Bulk reads</a></li>
+<li><a class="reference internal" href="#the-write-and-read-paths-in-one-picture">The write and read paths in one picture</a></li>
+<li><a class="reference internal" href="#bulk-reads-by-timestamp-the-cross-sectional-readers">Bulk reads by timestamp: the cross-sectional readers</a></li>
+<li><a class="reference internal" href="#why-this-shape">Why this shape</a></li>
+</ul>
+</li>
+</ul>
+
+          </div>
+        </div>
+      </div>
+      
+      
+    </aside>
+  </div>
+</div><script src="../_static/documentation_options.js?v=38b66d78"></script>
+    <script src="../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/scripts/furo.js?v=46bd48cc"></script>
+    <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../_static/copybutton.js?v=3a0c56fd"></script>
+    <script type="module">import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.12.1/dist/mermaid.esm.min.mjs";
+
+
+
+const initStyles = () => {
+    const defaultStyle = document.createElement('style');
+    defaultStyle.textContent = "pre.mermaid {\n    /* Same as .mermaid-container > pre */\n    display: block;\n    width: 100%;\n}\n\npre.mermaid > svg {\n    /* Same as .mermaid-container > pre > svg */\n    height: 500px;\n    width: 100%;\n    max-width: 100% !important;\n}";
+    document.head.appendChild(defaultStyle);
+
+    const fullscreenStyle = document.createElement('style');
+    fullscreenStyle.textContent = ".mermaid-container {\n    position: relative;\n    display: flex;\n    flex-direction: row;\n    width: 100%;\n}\n\n.mermaid-container > pre {\n    display: block;\n    width: 100%;\n}\n\n.mermaid-container > pre > svg {\n    height: 500px;\n    width: 100%;\n    max-width: 100% !important;\n}\n\n.mermaid-fullscreen-btn {\n    position: absolute;\n    width: 28px;\n    height: 28px;\n    background: rgba(255, 255, 255, 0.95);\n    border: 1px solid rgba(0, 0, 0, 0.3);\n    border-radius: 4px;\n    cursor: pointer;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n    transition: all 0.2s;\n    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);\n    font-size: 14px;\n    line-height: 1;\n    padding: 0;\n    color: #333;\n}\n\n.mermaid-fullscreen-btn:hover {\n    opacity: 100% !important;\n    background: rgba(255, 255, 255, 1);\n    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);\n    transform: scale(1.1);\n}\n\n.mermaid-fullscreen-btn.dark-theme {\n    background: rgba(50, 50, 50, 0.95);\n    border: 1px solid rgba(255, 255, 255, 0.3);\n    color: #e0e0e0;\n}\n\n.mermaid-fullscreen-btn.dark-theme:hover {\n    background: rgba(60, 60, 60, 1);\n    box-shadow: 0 3px 10px rgba(255, 255, 255, 0.2);\n}\n\n.mermaid-fullscreen-modal {\n    display: none;\n    position: fixed !important;\n    top: 0 !important;\n    left: 0 !important;\n    width: 95vw;\n    height: 100vh;\n    background: rgba(255, 255, 255, 0.98);\n    z-index: 9999;\n    padding: 20px;\n    overflow: auto;\n}\n\n.mermaid-fullscreen-modal.dark-theme {\n    background: rgba(0, 0, 0, 0.98);\n}\n\n.mermaid-fullscreen-modal.active {\n    display: flex;\n    align-items: center;\n    justify-content: center;\n}\n\n.mermaid-container-fullscreen {\n    position: relative;\n    width: 95vw;\n    height: 90vh;\n    max-width: 95vw;\n    max-height: 90vh;\n    background: white;\n    border-radius: 8px;\n    padding: 20px;\n    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);\n    overflow: auto;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n}\n\n.mermaid-container-fullscreen.dark-theme {\n    background: #1a1a1a;\n    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);\n}\n\n.mermaid-container-fullscreen pre.mermaid {\n    width: 100%;\n    height: 100%;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n}\n\n.mermaid-container-fullscreen .mermaid svg {\n    height: 100% !important;\n    width: 100% !important;\n    cursor: grab;\n}\n\n.mermaid-fullscreen-close {\n    position: fixed !important;\n    top: 20px !important;\n    right: 20px !important;\n    width: 40px;\n    height: 40px;\n    background: rgba(255, 255, 255, 0.95);\n    border: 1px solid rgba(0, 0, 0, 0.2);\n    border-radius: 50%;\n    cursor: pointer;\n    z-index: 10000;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);\n    transition: all 0.2s;\n    font-size: 24px;\n    line-height: 1;\n    color: #333;\n}\n\n.mermaid-fullscreen-close:hover {\n    background: white;\n    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);\n    transform: scale(1.1);\n}\n\n.mermaid-fullscreen-close.dark-theme {\n    background: rgba(50, 50, 50, 0.95);\n    border: 1px solid rgba(255, 255, 255, 0.2);\n    color: #e0e0e0;\n}\n\n.mermaid-fullscreen-close.dark-theme:hover {\n    background: rgba(60, 60, 60, 1);\n    box-shadow: 0 6px 16px rgba(255, 255, 255, 0.2);\n}\n\n.mermaid-fullscreen-modal .mermaid-fullscreen-btn {\n    display: none !important;\n}";
+    document.head.appendChild(fullscreenStyle);
+}
+
+// Detect if page has dark background
+const isDarkTheme = () => {
+    // We use a set of heuristics:
+    // 1. Check for common dark mode classes or attributes
+    // 2. Check computed background color brightness
+    if (document.documentElement.classList.contains('dark') ||
+        document.documentElement.getAttribute('data-theme') === 'dark' ||
+        document.body.classList.contains('dark') ||
+        document.body.getAttribute('data-theme') === 'dark') {
+        // console.log("Dark theme detected via class/attribute");
+        return true;
+    }
+    if (document.documentElement.classList.contains('light') ||
+        document.documentElement.getAttribute('data-theme') === 'light' ||
+        document.body.classList.contains('light') ||
+        document.body.getAttribute('data-theme') === 'light') {
+        // console.log("Light theme detected via class/attribute");
+        return false;
+    }
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        // console.log("Dark theme detected via prefers-color-scheme");
+        return true;
+    }
+    const bgColor = window.getComputedStyle(document.body).backgroundColor;
+    const match = bgColor.match(/rgb\((\d+),\s*(\d+),\s*(\d+)/);
+    if (match) {
+        const r = parseInt(match[1]);
+        const g = parseInt(match[2]);
+        const b = parseInt(match[3]);
+        const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+        // console.log("Background color brightness:", brightness);
+        return brightness < 128;
+    }
+    // console.log("No dark or light theme detected, defaulting to light theme");
+    return false;
+};
+
+let darkTheme = isDarkTheme();
+let modal = null;
+let modalContent = null;
+let previousScrollOffset = [window.scrollX, window.scrollY];
+let _lazyObserver = null;
+let _renderQueue = Promise.resolve();
+let closeModal = () => {};
+
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && modal?.classList.contains('active')) {
+        closeModal();
+    }
+});
+
+// Apply d3 zoom to each SVG. Idempotent: an SVG already wrapped is skipped,
+// so this is safe to call both for the initial batch and for diagrams that
+// render lazily once they become visible.
+const addZoomToSvgs = (svgs) => {
+    svgs.each(function() {
+        if (this.getAttribute('data-zoom-applied') === 'true') return;
+        var svg = d3.select(this);
+        svg.html("<g class='wrapper'>" + svg.html() + "</g>");
+        var inner = svg.select("g");
+        var zoom = d3.zoom().on("zoom", function(event) {
+            inner.attr("transform", event.transform);
+        });
+        svg.call(zoom);
+        this.setAttribute('data-zoom-applied', 'true');
+    });
+};
+
+const runMermaid = async (rerun) => {
+    console.log("Running mermaid diagrams, rerun =", rerun);
+    // clear all existing mermaid charts
+    let all_mermaids = document.querySelectorAll(".mermaid");
+
+    if (rerun) {
+        // Disconnect any previous lazy rendering observer
+        if (_lazyObserver) {
+            _lazyObserver.disconnect();
+            _lazyObserver = null;
+        }
+
+        all_mermaids.forEach((el) => {
+            el.removeAttribute('data-mermaid-deferred');
+            el.removeAttribute('data-mermaid-render-failed');
+            if(!el.hasAttribute("data-original-code")) {
+                // store original code
+                // console.log(`Storing original code for first run: `, el.innerHTML);
+                el.setAttribute('data-original-code', el.innerHTML);
+            }
+            if(el.getAttribute("data-processed") === "true") {
+                // remove and restore original
+                el.removeAttribute("data-processed");
+                // console.log(`Restoring original code for re-run: `, el.getAttribute('data-original-code'));
+                el.innerHTML = el.getAttribute('data-original-code');
+            } else {
+                // store original code
+                // console.log(`Storing original code for re-run: `, el.innerHTML);
+                el.setAttribute('data-original-code', el.innerHTML);
+            }
+        });
+
+        // Separate visible and hidden elements. Mermaid's layout engine measures
+        // text dimensions via the DOM, which fails for elements hidden by a parent
+        // (e.g., Reveal.js non-active slides, sphinx-design unopened tabs),
+        // producing broken SVGs. Render visible elements now, defer hidden ones.
+        const visible = [];
+        const hidden = [];
+        all_mermaids.forEach((el) => {
+            // offsetParent is null for display:none ancestors.
+            // getClientRects().length > 0 catches position:fixed elements
+            // (which also have null offsetParent but are still visible).
+            if (el.offsetParent !== null || el.getClientRects().length > 0) {
+                visible.push(el);
+            } else {
+                hidden.push(el);
+                el.setAttribute('data-mermaid-deferred', 'true');
+            }
+        });
+
+        if (visible.length > 0) {
+            try {
+                await mermaid.run({ nodes: visible });
+            } catch (e) {
+                console.error("Mermaid rendering failed:", e);
+            }
+        }
+
+        // Lazily render hidden elements when they become visible.
+        // Uses a promise chain (_renderQueue) to serialize rendering,
+        // since IntersectionObserver may report multiple entries at once
+        // and mermaid.run() is not safe to call concurrently.
+        if (hidden.length > 0) {
+            if (typeof IntersectionObserver === 'undefined') {
+                console.warn("IntersectionObserver not available; hidden mermaid diagrams will not render.");
+            } else {
+                _renderQueue = Promise.resolve();
+                _lazyObserver = new IntersectionObserver((entries) => {
+                    for (const entry of entries) {
+                        if (entry.isIntersecting && entry.target.getAttribute("data-processed") !== "true") {
+                            _lazyObserver.unobserve(entry.target);
+                            const el = entry.target;
+                            _renderQueue = _renderQueue.then(async () => {
+                                try {
+                                    await mermaid.run({ nodes: [el] });
+                                    el.removeAttribute('data-mermaid-deferred');
+                                    // Apply zoom to the now-rendered diagram, matching
+                                    // the decoration visible diagrams receive.
+                                    if (false) {
+                                        addZoomToSvgs(d3.selectAll("").select(function() {
+                                            return this.querySelector("svg");
+                                        }));
+                                    }
+                                } catch (e) {
+                                    console.error("Mermaid deferred rendering failed:", e);
+                                    el.removeAttribute('data-mermaid-deferred');
+                                    el.setAttribute('data-mermaid-render-failed', 'true');
+                                }
+                            });
+                        }
+                    }
+                });
+                hidden.forEach((el) => _lazyObserver.observe(el));
+            }
+        }
+    }
+
+    all_mermaids = document.querySelectorAll(".mermaid");
+    // Exclude deferred (hidden) and render-failed elements from completion checks
+    const mermaids_active = document.querySelectorAll(".mermaid:not([data-mermaid-deferred]):not([data-mermaid-render-failed])");
+    const mermaids_processed = document.querySelectorAll(".mermaid:not([data-mermaid-deferred]):not([data-mermaid-render-failed])[data-processed='true']");
+
+    if (false) {
+        const mermaids_to_add_zoom = 0 === -1 ? mermaids_active.length : 0;
+        if(mermaids_to_add_zoom > 0) {
+            var svgs = d3.selectAll("").select(function() {
+                return this.querySelector("svg");
+            });
+            // Wait until every active (visible) diagram has rendered. Deferred
+            // diagrams are excluded, so a fixed d3_node_count that counts a
+            // hidden diagram no longer loops forever waiting for its SVG.
+            if(mermaids_active.length !== mermaids_processed.length) {
+                setTimeout(() => runMermaid(false), 200);
+                return;
+            }
+            addZoomToSvgs(svgs);
+        }
+    } else if(mermaids_active.length !== mermaids_processed.length) {
+        // Wait for mermaid to process all diagrams
+        setTimeout(() => runMermaid(false), 200);
+        return;
+    }
+
+    // Stop here if not adding fullscreen capability
+    if (!true) return;
+
+    if (modal !== null ) {
+        // Destroy existing modal
+        modal.remove();
+        modal = null;
+        modalContent = null;
+    }
+
+    modal = document.createElement('div');
+    modal.className = 'mermaid-fullscreen-modal' + (darkTheme ? ' dark-theme' : '');
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-label', 'Fullscreen diagram viewer');
+    modal.innerHTML = `
+        <button class="mermaid-fullscreen-close${darkTheme ? ' dark-theme' : ''}" aria-label="Close fullscreen">✕</button>
+        <div class="mermaid-container-fullscreen${darkTheme ? ' dark-theme' : ''}"></div>
+    `;
+    document.body.appendChild(modal);
+
+    modalContent = modal.querySelector('.mermaid-container-fullscreen');
+    const closeBtn = modal.querySelector('.mermaid-fullscreen-close');
+
+    closeModal = () => {
+        modal.classList.remove('active');
+        modalContent.innerHTML = '';
+        document.body.style.overflow = ''
+        window.scrollTo({left: previousScrollOffset[0], top: previousScrollOffset[1], behavior: 'instant'});
+    };
+
+    closeBtn.addEventListener('click', closeModal);
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) closeModal();
+    });
+    document.querySelectorAll('.mermaid').forEach((mermaidDiv) => {
+        if (mermaidDiv.parentNode.classList.contains('mermaid-container') ||
+            mermaidDiv.closest('.mermaid-fullscreen-modal')) {
+            // Already processed, adjust button class if needed
+            const existingBtn = mermaidDiv.parentNode.querySelector('.mermaid-fullscreen-btn');
+            if (existingBtn) {
+                existingBtn.className = 'mermaid-fullscreen-btn' + (darkTheme ? ' dark-theme' : '');
+            }
+            return;
+        }
+
+        const container = document.createElement('div');
+        container.className = 'mermaid-container';
+        mermaidDiv.parentNode.insertBefore(container, mermaidDiv);
+        container.appendChild(mermaidDiv);
+
+        const fullscreenBtn = document.createElement('button');
+        fullscreenBtn.className = 'mermaid-fullscreen-btn' + (darkTheme ? ' dark-theme' : '');
+        fullscreenBtn.setAttribute('aria-label', 'View diagram in fullscreen');
+        fullscreenBtn.textContent = "\u26f6";
+        fullscreenBtn.style.opacity = "50%";
+
+        // Calculate dynamic position based on diagram's margin and padding
+        const diagramStyle = window.getComputedStyle(mermaidDiv);
+        const marginTop = parseFloat(diagramStyle.marginTop) || 0;
+        const marginRight = parseFloat(diagramStyle.marginRight) || 0;
+        const paddingTop = parseFloat(diagramStyle.paddingTop) || 0;
+        const paddingRight = parseFloat(diagramStyle.paddingRight) || 0;
+        fullscreenBtn.style.top = `${marginTop + paddingTop + 4}px`;
+        fullscreenBtn.style.right = `${marginRight + paddingRight + 4}px`;
+
+        fullscreenBtn.addEventListener('click', () => {
+            previousScrollOffset = [window.scrollX, window.scrollY];
+            const clone = mermaidDiv.cloneNode(true);
+            modalContent.innerHTML = '';
+            modalContent.appendChild(clone);
+
+            const svg = clone.querySelector('svg');
+            if (svg) {
+                svg.removeAttribute('width');
+                svg.removeAttribute('height');
+                svg.style.width = '100%';
+                svg.style.height = 'auto';
+                svg.style.maxWidth = '100%';
+                svg.style.display = 'block';
+
+                if (false) {
+                    setTimeout(() => {
+                        const g = svg.querySelector('g');
+                        if (g) {
+                            var svgD3 = d3.select(svg);
+                            svgD3.html("<g class='wrapper'>" + svgD3.html() + "</g>");
+                            var inner = svgD3.select("g");
+                            var zoom = d3.zoom().on("zoom", function(event) {
+                                inner.attr("transform", event.transform);
+                            });
+                            svgD3.call(zoom);
+                        }
+                    }, 100);
+                }
+            }
+
+            modal.classList.add('active');
+            document.body.style.overflow = 'hidden';
+        });
+        container.appendChild(fullscreenBtn);
+    });
+};
+
+
+
+const load = async () => {
+    initStyles();
+
+
+    await runMermaid(true);
+
+    const reRunIfThemeChanges = async () => {
+        const newDarkTheme = isDarkTheme();
+        if (newDarkTheme !== darkTheme) {
+            darkTheme = newDarkTheme;
+            console.log("Theme change detected, re-running mermaid with", darkTheme ? "dark" : "default", "theme");
+            await mermaid.initialize(
+                {...{"startOnLoad": false},
+                ...{ darkMode: darkTheme, theme: darkTheme ? "dark" : "default" },
+                }
+            );
+            await runMermaid(true);
+        }
+    };
+
+    // Update theme classes when theme changes
+    const themeObserver = new MutationObserver(reRunIfThemeChanges);
+    themeObserver.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ['class', 'style', 'data-theme']
+    });
+    themeObserver.observe(document.body, {
+        attributes: true,
+        attributeFilter: ['class', 'style', 'data-theme']
+    });
+};
+
+
+
+
+
+console.log("Initializing mermaid with", darkTheme ? "dark" : "default", "theme");
+mermaid.initialize(
+    {...{"startOnLoad": false},
+    ...{ darkMode: darkTheme, theme: darkTheme ? "dark" : "default" },
+    }
+);
+
+window.addEventListener("load", load);
+window.runMermaid = runMermaid;</script>
+    </body>
+</html>
