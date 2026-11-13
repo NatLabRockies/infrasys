@@ -49,6 +49,13 @@ def test_nonsequential_time_series_attributes(data, timestamps, variable_name):
     assert isinstance(ts.timestamps, np.ndarray)
 
 
+def test_nonsequential_time_series_accepts_irregular_timestamps():
+    timestamps = [datetime(2024, 1, 1), datetime(2024, 1, 2), datetime(2024, 1, 4)]
+
+    time_series = NonSequentialTimeSeries.from_array([1, 2, 3], timestamps, "demand")
+    assert list(time_series.timestamps) == timestamps
+
+
 def test_invalid_sequence_length(data, timestamps, variable_name):
     """Check that time series has at least 2 elements."""
     with pytest.raises(ValueError, match="length must be at least 2"):

@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 import pint
 from chronify import DatetimeRange, Store, TableSchema
+from dateutil.relativedelta import relativedelta
 from loguru import logger
 from sqlalchemy import Connection
 
@@ -162,12 +163,23 @@ class ChronifyTimeSeriesStorage(TimeSeriesStorageBase):
         assert self._store.engine.url.database is not None
         return Path(self._store.engine.url.database).parent
 
+    def validate_time_series(self, time_series: TimeSeriesData) -> None:
+        if isinstance(time_series, SingleTimeSeries) and isinstance(
+            time_series.resolution, relativedelta
+        ):
+            msg = (
+                "Chronify storage does not support calendar-month/year resolutions. "
+                "Use Arrow, HDF5, or in-memory storage instead."
+            )
+            raise ISInvalidParameter(msg)
+
     def add_time_series(
         self,
         metadata: TimeSeriesMetadata,
         time_series: TimeSeriesData,
         context: Connection | None = None,
     ) -> None:
+        self.validate_time_series(time_series)
         if not isinstance(time_series, SingleTimeSeries):
             msg = f"Bug: need to implement add_time_series for {type(time_series)}"
             raise NotImplementedError(msg)

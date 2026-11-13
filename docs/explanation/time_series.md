@@ -114,23 +114,28 @@ In this example, `ts_deterministic` creates a forecast for `active_power` by ext
 
 ## Resolution
 
-Infrastructure systems support two types of objects for passing the resolution:
-:class:`datetime.timedelta` and :class:`dateutil.relativedelta.relativedelta`.
-These types allow users to define durations with varying levels of granularity
-and semantic meaning.
-While `timedelta` is best suited for precise, fixed-length
-intervals (e.g., seconds, minutes, hours, days), `relativedelta` is more
-appropriate for calendar-aware durations such as months or years, which do not
-have a fixed number of days.
+`SingleTimeSeries.resolution` accepts `datetime.timedelta` for fixed intervals and
+`dateutil.relativedelta.relativedelta` for positive whole calendar months. A year counts as twelve
+months, so `relativedelta(months=13)` and `relativedelta(years=1, months=1)` both represent thirteen
+months. Calendar resolutions cannot include days, time units, or absolute fields. Use
+`timedelta(days=1)` for a fixed daily interval.
 
-Internally, all durations, regardless of whether they are specified using
-`timedelta` or `relativedelta`, are normalized and serialized into a strict [ISO
-8601 format](https://en.wikipedia.org/wiki/ISO_8601#Durations).
-This provides a consistent and standardized representation of
-durations across the system, ensuring compatibility and simplifying transport,
-storage, and validation.
-For example, a `timedelta` of 1 month will be converted to the ISO format string
-`P1M` and a `timedelta` of 1 hour will be converted to `P0DT1H`.
+Calendar timestamps are calculated from the initial timestamp. A monthly series starting on January
+31 follows January 31, February 28 or 29, March 31, and so on. The monthly cadence remains `P1M`,
+not a fixed 30-day interval.
+
+The resolution is serialized using ISO 8601 durations. For example, one calendar month is `P1M`,
+thirteen months is `P13M`, and one hour is `P0DT1H`. Arrow, HDF5, and in-memory storage support
+calendar resolutions. Chronify storage only supports fixed `timedelta` resolutions and rejects
+calendar resolutions.
+
+A calendar slice is rejected if its first timestamp cannot anchor the requested timestamps without
+changing them. In that case, read the full series and slice its data and timestamps instead.
+
+`from_time_array` infers a calendar resolution when at least three timestamps match an anchored
+calendar grid. Otherwise, it infers a fixed resolution when all timestamps share the same interval.
+Irregular timestamps are rejected. Use `NonSequentialTimeSeries` for those instead. With only two
+timestamps, the interval is ambiguous, so pass the calendar resolution to `from_array` explicitly.
 
 ## Behaviors
 

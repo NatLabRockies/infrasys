@@ -19,8 +19,11 @@ from uuid import UUID
 import numpy as np
 import pandas as pd
 import pint
+from dateutil.relativedelta import relativedelta
 from numpy.typing import NDArray
 from pydantic import (
+    AfterValidator,
+    BeforeValidator,
     Field,
     WithJsonSchema,
     computed_field,
@@ -35,12 +38,26 @@ from infrasys.exceptions import (
 )
 from infrasys.models import InfraSysBaseModel, InfraSysBaseModelWithIdentifers
 from infrasys.normalization import NormalizationModel
+from infrasys.utils.time_utils import (
+    as_datetime,
+    calendar_resolution_index,
+    calendar_slice_preserves_grid,
+    infer_time_series_resolution,
+    parse_time_series_resolution,
+    to_iso_8601,
+    validate_time_series_resolution,
+)
 
 TIME_COLUMN = "timestamp"
 VALUE_COLUMN = "value"
 
 
 ISArray: TypeAlias = Sequence | NDArray | pint.Quantity
+TimeSeriesResolution: TypeAlias = Annotated[
+    timedelta | relativedelta,
+    BeforeValidator(parse_time_series_resolution),
+    AfterValidator(validate_time_series_resolution),
+]
 
 
 class TimeSeriesStorageType(StrEnum):
@@ -74,8 +91,12 @@ class SingleTimeSeries(TimeSeriesData):
     """Defines a time array with a single dimension of floats."""
 
     data: NDArray | pint.Quantity
-    resolution: timedelta
+    resolution: TimeSeriesResolution
     initial_timestamp: datetime
+
+    @field_serializer("resolution", when_used="json")
+    def serialize_resolution(self, value: TimeSeriesResolution) -> str:
+        return to_iso_8601(value)
 
     @computed_field  # type: ignore
     @property
@@ -122,7 +143,7 @@ class SingleTimeSeries(TimeSeriesData):
         data: ISArray,
         name: str,
         initial_timestamp: datetime,
-        resolution: timedelta,
+        resolution: TimeSeriesResolution,
         normalization: NormalizationModel = None,
     ) -> "SingleTimeSeries":
         """Method of SingleTimeSeries that creates an instance from a sequence.
@@ -134,7 +155,8 @@ class SingleTimeSeries(TimeSeriesData):
         initial_time
             Start time for the time series (e.g., datetime(2020,1,1))
         resolution
-            Resolution of the time series (e.g., 30min, 1hr)
+            A fixed ``timedelta`` or a positive ``relativedelta`` containing
+            only whole calendar months and years.
         name
             Name assigned to the values of the time series (e.g., active_power)
 
@@ -167,7 +189,7 @@ class SingleTimeSeries(TimeSeriesData):
         cls,
         data: ISArray,
         name: str,
-        time_index: Sequence[datetime],
+        time_index: Sequence[datetime] | NDArray,
         normalization: NormalizationModel = None,
     ) -> "SingleTimeSeries":
         """Create SingleTimeSeries using time_index provided.
@@ -179,11 +201,18 @@ class SingleTimeSeries(TimeSeriesData):
         name
             Name assigned to the values of the time series (e.g., active_power)
         time_index
-            Sequence that contains the index of the time series
+            Sequence of Python or NumPy timestamps. NumPy timestamps must be
+            representable at microsecond precision.
 
         Returns
         -------
         SingleTimeSeries
+
+        Raises
+        ------
+        ValueError
+            If the timestamps are not a regular grid. Use ``NonSequentialTimeSeries``
+            for irregular timestamps.
 
         See Also
         --------
@@ -191,14 +220,13 @@ class SingleTimeSeries(TimeSeriesData):
 
         Note
         ----
-        The current implementation only uses the time_index to infer the initial time and resolution.
+        Three or more timestamps that match an anchored calendar-month/year grid infer a
+        ``relativedelta``. With two timestamps, the resolution is inferred as a fixed
+        ``timedelta`` because the cadence is ambiguous. Irregular timestamps are rejected.
 
         """
-        # Infer initial time from the time_index.
-        initial_timestamp = time_index[0]
-
-        # This does not cover changes mult-resolution time index.
-        resolution = time_index[1] - time_index[0]
+        resolution = infer_time_series_resolution(time_index)
+        initial_timestamp = as_datetime(time_index[0])
 
         return SingleTimeSeries.from_array(
             data,
@@ -210,6 +238,11 @@ class SingleTimeSeries(TimeSeriesData):
 
     def make_timestamps(self) -> NDArray:
         """Return the timestamps as a numpy array."""
+        if isinstance(self.resolution, relativedelta):
+            timestamps = [
+                self.initial_timestamp + index * self.resolution for index in range(len(self.data))
+            ]
+            return pd.DatetimeIndex(timestamps).values
         return pd.date_range(
             start=self.initial_timestamp, periods=len(self.data), freq=self.resolution
         ).values
@@ -405,8 +438,12 @@ class SingleTimeSeriesMetadataBase(TimeSeriesMetadata, abc.ABC):
 
     length: int
     initial_timestamp: datetime
-    resolution: timedelta
+    resolution: TimeSeriesResolution
     type: Literal["SingleTimeSeries", "SingleTimeSeriesScalingFactor"]
+
+    @field_serializer("resolution", when_used="json")
+    def serialize_resolution(self, value: TimeSeriesResolution) -> str:
+        return to_iso_8601(value)
 
     @classmethod
     def from_data(cls, time_series: SingleTimeSeries, **features) -> Any:
@@ -439,23 +476,27 @@ class SingleTimeSeriesMetadataBase(TimeSeriesMetadata, abc.ABC):
         if start_time is None and length is None:
             return (0, self.length)
 
-        if start_time is None:
-            index = 0
-        else:
+        index = 0
+        if start_time is not None:
             if start_time < self.initial_timestamp:
                 msg = "{start_time=} is less than {self.initial_time=}"
                 raise ISConflictingArguments(msg)
             if start_time >= self.initial_timestamp + self.length * self.resolution:
                 msg = f"{start_time=} is too large: {self=}"
                 raise ISConflictingArguments(msg)
-            diff = start_time - self.initial_timestamp
-            if (diff % self.resolution).total_seconds() != 0.0:
-                msg = (
-                    f"{start_time=} conflicts with initial_time={self.initial_timestamp} and "
-                    f"resolution={self.resolution}"
+            if isinstance(self.resolution, relativedelta):
+                index = calendar_resolution_index(
+                    self.initial_timestamp, self.resolution, start_time=start_time
                 )
-                raise ISConflictingArguments(msg)
-            index = int(diff / self.resolution)
+            else:
+                diff = start_time - self.initial_timestamp
+                if (diff % self.resolution).total_seconds() != 0.0:
+                    msg = (
+                        f"{start_time=} conflicts with initial_time={self.initial_timestamp} and "
+                        f"resolution={self.resolution}"
+                    )
+                    raise ISConflictingArguments(msg)
+                index = int(diff / self.resolution)
         if length is None:
             length = self.length - index
 
@@ -463,6 +504,22 @@ class SingleTimeSeriesMetadataBase(TimeSeriesMetadata, abc.ABC):
             msg = f"{start_time=} {length=} conflicts with {self=}"
             raise ISConflictingArguments(msg)
 
+        if (
+            start_time is not None
+            and isinstance(self.resolution, relativedelta)
+            and not calendar_slice_preserves_grid(
+                self.initial_timestamp,
+                self.resolution,
+                start_time=start_time,
+                index=index,
+                length=length,
+            )
+        ):
+            msg = (
+                f"Calendar slice at {start_time} cannot preserve the original timestamps. "
+                "Read the full series and slice its data and timestamps instead."
+            )
+            raise ISConflictingArguments(msg)
         return (index, length)
 
     @staticmethod
@@ -792,7 +849,11 @@ class SingleTimeSeriesKey(TimeSeriesKey):
 
     length: int
     initial_timestamp: datetime
-    resolution: timedelta
+    resolution: TimeSeriesResolution
+
+    @field_serializer("resolution", when_used="json")
+    def serialize_resolution(self, value: TimeSeriesResolution) -> str:
+        return to_iso_8601(value)
 
 
 class NonSequentialTimeSeriesKey(TimeSeriesKey):

@@ -1,9 +1,38 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
 
+import numpy as np
 import pytest
 from dateutil.relativedelta import relativedelta
 
-from infrasys.utils.time_utils import from_iso_8601, str_timedelta_to_iso_8601, to_iso_8601
+from infrasys.utils.time_utils import (
+    from_iso_8601,
+    infer_time_series_resolution,
+    str_timedelta_to_iso_8601,
+    to_iso_8601,
+)
+
+
+@pytest.mark.parametrize(
+    "timestamps",
+    [
+        [],
+        [datetime(2024, 1, 1)],
+        [datetime(2024, 1, 1), datetime(2024, 1, 1)],
+        [datetime(2024, 1, 2), datetime(2024, 1, 1)],
+        np.array(["2024-01-01", "2024-01-02", "NaT"], dtype="datetime64[ns]"),
+    ],
+)
+def test_infer_resolution_rejects_invalid_time_grids(timestamps):
+    with pytest.raises(ValueError):
+        infer_time_series_resolution(timestamps)
+
+
+def test_infer_resolution_rejects_submicrosecond_anchor():
+    start = np.datetime64("2024-01-01T00:00:00.000000001", "ns")
+    timestamps = start + np.arange(3) * np.timedelta64(1, "s")
+
+    with pytest.raises(ValueError, match="microsecond"):
+        infer_time_series_resolution(timestamps)
 
 
 def test_to_iso_8601():
@@ -31,6 +60,9 @@ def test_from_iso_8601():
     result = from_iso_8601(delta_str)
     assert isinstance(result, timedelta)
     assert result.total_seconds() == 0.1
+
+    assert from_iso_8601("PT1H") == timedelta(hours=1)
+    assert from_iso_8601("P0DT1M") == timedelta(minutes=1)
 
     delta_str = "P0DT35.0024S"
     with pytest.raises(ValueError):
@@ -61,7 +93,46 @@ def test_duration_round_trip():
     assert result_iso8601.months == 10.0
 
 
+def test_compound_duration_round_trip():
+    calendar_duration = relativedelta(
+        years=1,
+        months=2,
+        days=3,
+        hours=4,
+        minutes=5,
+        seconds=6,
+        microseconds=7_000,
+    )
+    fixed_duration = timedelta(days=2, hours=3, minutes=4, seconds=5, milliseconds=6)
+
+    assert to_iso_8601(calendar_duration) == "P14M3DT4H5M6.007S"
+    assert from_iso_8601("P1Y2M3DT4H5M6.007S") == calendar_duration
+    assert from_iso_8601(to_iso_8601(calendar_duration)) == calendar_duration
+    assert to_iso_8601(fixed_duration) == "P2DT3H4M5.006S"
+    assert from_iso_8601(to_iso_8601(fixed_duration)) == fixed_duration
+    assert to_iso_8601(relativedelta(days=7, hours=1)) == "P7DT1H"
+
+
+@pytest.mark.parametrize("duration", ["P", "PT", "P1DT", "P1W2D", "P1WT1H", "P1D2Y"])
+def test_from_iso_8601_rejects_invalid_compound_duration(duration):
+    with pytest.raises(ValueError):
+        from_iso_8601(duration)
+
+
+def test_from_iso_8601_requires_string():
+    with pytest.raises(TypeError, match="duration string"):
+        from_iso_8601(1)  # type: ignore[arg-type]
+
+
+def test_to_iso_8601_rejects_unrepresentable_relative_delta():
+    with pytest.raises(ValueError, match="absolute relativedelta fields"):
+        to_iso_8601(relativedelta(year=2024))
+
+
 def test_duration_with_relative_delta():
+    delta = relativedelta(years=1, months=1)
+    assert to_iso_8601(delta) == "P13M"
+
     delta = relativedelta(months=1)
     result = to_iso_8601(delta)
     assert isinstance(result, str)
