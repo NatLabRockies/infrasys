@@ -11,7 +11,7 @@ def test_unit_reference_examples(capsys: pytest.CaptureFixture[str]) -> None:
     document = path.read_text()
     sources = re.findall(r"```python\n(.*?)```", document, flags=re.DOTALL)
     outputs = re.findall(r"```text\n(.*?)```", document, flags=re.DOTALL)
-    assert len(sources) == len(outputs) == 3
+    assert len(sources) == len(outputs) == 4
 
     namespace: dict[str, object] = {"__name__": "unit_reference_example"}
     for source, expected in zip(sources, outputs, strict=True):

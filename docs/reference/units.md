@@ -82,11 +82,48 @@ infer those units from the numbers. Pydantic's generated JSON Schema describes
 accepted numeric/envelope input, but does not export the declared unit names and
 base relationships as dedicated schema properties.
 
-## Display context is not serialization context
+## Choosing a unit representation
 
-The `set_unit_system(mode)` function selects and returns the active global display mode.
-Use `unit_system(mode)` for temporary changes that restore the previous mode automatically.
-Both control representation only:
+`UnitSystem` selects how unit-aware scalar fields appear in `repr()`. It does not
+change stored values or Pydantic serialization.
+
+| Strategy | Representation | Choose it when |
+| --- | --- | --- |
+| `DEVICE_BASE` | Per-unit against each field's device base. This is the default. | You want to compare values relative to each device's own rating or base. |
+| `SYSTEM_BASE` | Per-unit against the bound system base. If no base is bound, output falls back to device-base per-unit. | You want to compare power values against a common system base. The same numeric base is applied to every relative field, so avoid this mode for mixed-dimension models such as those with both power and voltage fields. |
+| `NATURAL_UNITS` | The per-unit value multiplied by its device base and labeled with the base field's unit. | Physical-unit magnitudes are easier to interpret than per-unit values. Compound rates currently omit their residual time unit in `repr()`. |
+
+For example, this power-only model can be displayed against its device base,
+a shared system base, or in natural units:
+
+```python
+from typing import Annotated
+
+from infrasys.units import HasPerUnit, Unit, UnitSystem, unit_system
+
+
+class PowerDevice(HasPerUnit):
+    base_power: Annotated[float, Unit("MVA")]
+    rating: Annotated[float, Unit("pu", base="base_power")]
+
+
+power_device = PowerDevice(base_power=100.0, rating=0.5)
+power_device.bind_system_base(200.0)
+for mode in (UnitSystem.DEVICE_BASE, UnitSystem.SYSTEM_BASE, UnitSystem.NATURAL_UNITS):
+    with unit_system(mode):
+        print(f"{mode.value}: {power_device!r}")
+```
+
+```text
+DEVICE_BASE: PowerDevice(base_power='100.0 MVA', rating='0.5 pu')
+SYSTEM_BASE: PowerDevice(base_power='100.0 MVA', rating='0.25 pu (system)')
+NATURAL_UNITS: PowerDevice(base_power='100.0 MVA', rating='50 MVA')
+```
+
+Use `set_unit_system(mode)` to select and return the active global strategy.
+Use `unit_system(mode)` for temporary changes that restore the previous
+strategy automatically. For example, natural-unit representation changes
+`repr(device)`, but not its JSON:
 
 ```python
 with unit_system(UnitSystem.NATURAL_UNITS):
@@ -100,8 +137,7 @@ Device(base_power='100.0 MW', power='5 MW', ramp='10 MW')
 ```
 
 The ramp display above is a current limitation: the formatter uses the base
-field's `MW` label, although the physical ramp is 10 MW/min. Default display also
-labels relative scalars `pu` without distinguishing rates. Neither display mode
+field's `MW` label, although the physical ramp is 10 MW/min. Neither strategy
 changes the stored 0.1 or its rate contract. This model has no unit-aware JSON
 context that switches these scalar dumps to natural-unit strings or envelopes;
 `unit_system(...)` is not a Pydantic serialization option.
