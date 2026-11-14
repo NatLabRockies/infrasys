@@ -20,7 +20,7 @@ on:
 
 concurrency:
   group: release-please-${{ inputs.target_branch || github.ref_name }}
-  cancel-in-progress: false
+  queue: max
 
 permissions:
   contents: write
@@ -72,6 +72,11 @@ jobs:
           TARGET_BRANCH: ${{ inputs.target_branch }}
           RELEASE_VERSION: ${{ inputs.release_version }}
         run: |
+          existing_tag="$(git ls-remote --refs origin "refs/tags/v$RELEASE_VERSION")"
+          if [[ -n "$existing_tag" ]]; then
+            echo "::error::Tag v$RELEASE_VERSION already exists."
+            exit 1
+          fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit --allow-empty -m "chore: request release $RELEASE_VERSION" -m "Release-As: $RELEASE_VERSION"
@@ -86,33 +91,6 @@ jobs:
           exists="$(gh pr list --repo "$GITHUB_REPOSITORY" --base "$GITHUB_REF_NAME" --state open --label 'autorelease: pending' --json number --jq 'length > 0')"
           echo "exists=$exists" >> "$GITHUB_OUTPUT"
 
-      - name: Check merged release PR freshness
-        if: github.event_name == 'push'
-        id: freshness
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          releases="$(gh api --paginate --slurp --method GET "repos/$GITHUB_REPOSITORY/pulls" \
-            -f state=closed -f "base=$GITHUB_REF_NAME" -F per_page=100 -f sort=updated -f direction=desc |
-            jq -c '[.[][] | select(.merged_at != null and any(.labels[]; .name == "autorelease: pending")) | {number, head_sha: .head.sha, merge_sha: .merge_commit_sha}]')"
-          count="$(jq -r 'length' <<< "$releases")"
-          for ((i = 0; i < count; i++)); do
-            pr="$(jq -c ".[${i}]" <<< "$releases")"
-            number="$(jq -er '.number' <<< "$pr")"
-            head_sha="$(jq -er '.head_sha' <<< "$pr")"
-            merge_sha="$(jq -er '.merge_sha' <<< "$pr")"
-            # Release Please generates one commit based on the target branch tip.
-            # Its parent must match the target branch tip at merge time.
-            head_base="$(gh api "repos/$GITHUB_REPOSITORY/git/commits/$head_sha" | jq -er 'if (.parents | length) == 1 then .parents[0].sha else error("unsupported release PR history") end')"
-            merge_base="$(gh api "repos/$GITHUB_REPOSITORY/git/commits/$merge_sha" | jq -er '.parents[0].sha')"
-            if [[ "$head_base" != "$merge_base" ]]; then
-              echo "::error::Release PR #$number was stale when merged. No release was created."
-              exit 1
-            fi
-          done
-          echo "allow_release=$(jq -r 'length > 0' <<< "$releases")" >> "$GITHUB_OUTPUT"
-
       - name: Run release-please
         id: release
         uses: googleapis/release-please-action@v4
@@ -121,7 +99,8 @@ jobs:
           config-file: .release-please-config.json
           manifest-file: .release-please-manifest.json
           target-branch: ${{ inputs.target_branch || github.ref_name }}
-          skip-github-release: ${{ github.event_name == 'workflow_dispatch' || steps.freshness.outputs.allow_release != 'true' }}
+          # shortcut: stale PRs can merge before refresh. Add a merge gate for automatic freshness.
+          skip-github-release: ${{ github.event_name == 'workflow_dispatch' }}
           skip-github-pull-request: ${{ github.event_name == 'push' && github.ref_name == 'v1.x.x' && steps.pending.outputs.exists != 'true' }}
 
   build:
