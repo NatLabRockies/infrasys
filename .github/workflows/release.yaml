@@ -20,7 +20,7 @@ on:
 
 concurrency:
   group: release-please-${{ inputs.target_branch || github.ref_name }}
-  cancel-in-progress: false
+  queue: max
 
 permissions:
   contents: write
@@ -37,10 +37,9 @@ jobs:
       release_tag: ${{ steps.release.outputs.tag_name }}
     runs-on: ubuntu-latest
     steps:
-      - name: Prepare requested release
+      - name: Validate requested release
         if: github.event_name == 'workflow_dispatch'
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TARGET_BRANCH: ${{ inputs.target_branch }}
           RELEASE_VERSION: ${{ inputs.release_version }}
         run: |
@@ -56,29 +55,53 @@ jobs:
             echo "::error::The main branch requires a 2.x or later release version."
             exit 1
           fi
+          if [[ "$TARGET_BRANCH" != "v1.x.x" && "$TARGET_BRANCH" != "main" ]]; then
+            echo "::error::Select main or v1.x.x."
+            exit 1
+          fi
 
-          # Expand inputs in npm's child shell so npm does not print the token.
-          # shellcheck disable=SC2016
-          npx --yes --package=release-please@17.3.0 --call '
-            release-please release-pr \
-              --token "$GITHUB_TOKEN" \
-              --repo-url "$GITHUB_REPOSITORY" \
-              --target-branch "$TARGET_BRANCH" \
-              --config-file .release-please-config.json \
-              --manifest-file .release-please-manifest.json \
-              --release-as "$RELEASE_VERSION"
-          '
+      - name: Checkout requested branch
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.target_branch }}
+
+      - name: Record requested version
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TARGET_BRANCH: ${{ inputs.target_branch }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: |
+          existing_tag="$(git ls-remote --refs origin "refs/tags/v$RELEASE_VERSION")"
+          if [[ -n "$existing_tag" ]]; then
+            echo "::error::Tag v$RELEASE_VERSION already exists."
+            exit 1
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit --allow-empty -m "chore: request release $RELEASE_VERSION" -m "Release-As: $RELEASE_VERSION"
+          git push origin "HEAD:refs/heads/$TARGET_BRANCH"
+
+      - name: Find an open maintenance release PR
+        if: github.event_name == 'push' && github.ref_name == 'v1.x.x'
+        id: pending
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          exists="$(gh pr list --repo "$GITHUB_REPOSITORY" --base "$GITHUB_REF_NAME" --state open --label 'autorelease: pending' --json number --jq 'length > 0')"
+          echo "exists=$exists" >> "$GITHUB_OUTPUT"
 
       - name: Run release-please
-        if: github.event_name == 'push'
         id: release
         uses: googleapis/release-please-action@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           config-file: .release-please-config.json
           manifest-file: .release-please-manifest.json
-          target-branch: ${{ github.ref_name }}
-          skip-github-pull-request: ${{ github.ref_name == 'v1.x.x' }}
+          target-branch: ${{ inputs.target_branch || github.ref_name }}
+          # shortcut: stale PRs can merge before refresh. Add a merge gate for automatic freshness.
+          skip-github-release: ${{ github.event_name == 'workflow_dispatch' }}
+          skip-github-pull-request: ${{ github.event_name == 'push' && github.ref_name == 'v1.x.x' && steps.pending.outputs.exists != 'true' }}
 
   build:
     name: Build
