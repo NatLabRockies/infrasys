@@ -44,9 +44,9 @@ dependencies = [
 ]
 
 [project.urls]
-Documentation = "https://github.com/NREL/infrasys#readme"
-Issues = "https://github.com/NREL/infrasys/issues"
-Source = "https://github.com/NREL/infrasys"
+Documentation = "https://github.com/NatLabRockies/infrasys#readme"
+Issues = "https://github.com/NatLabRockies/infrasys/issues"
+Source = "https://github.com/NatLabRockies/infrasys"
 
 [tool.mypy]
 check_untyped_defs = true

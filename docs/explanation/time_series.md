@@ -292,7 +292,7 @@ behavior with these keyword arguments passed to the `System` constructor:
 - `time_series_directory`: The `System` stores time series data on the computer's tmp filesystem by
   default. This filesystem may be of limited size. If your data will exceed that limit, such as what
   is likely to happen on an HPC compute node, set this parameter to an alternate location (such as
-  `/tmp/scratch` on NREL's HPC systems).
+  `/tmp/scratch` on NLR's HPC systems).
 - `time_series_compression`, `time_series_compression_level`, `time_series_shuffle`: Control HDF5
   compression of the stored arrays. By default the backend uses `"deflate"` compression at level `3`
   with byte shuffle enabled; set `time_series_compression="none"` to disable compression.
