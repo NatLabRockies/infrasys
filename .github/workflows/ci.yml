@@ -13,7 +13,7 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref_name }}
   cancel-in-progress: true
 env:
-  UV_VERSION: "0.9.4"
+  UV_VERSION: "0.13.9"
 
 jobs:
   pre-commit:
@@ -43,13 +43,15 @@ jobs:
 
   pytest:
     name: Tests ${{ matrix.os }} / py${{ matrix.python }}
+    env:
+      UV_PYTHON: ${{ matrix.python }}
     needs: pre-commit
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        python: ["3.11", "3.12", "3.13"]
+        python: ["3.11", "3.12", "3.13", "3.14", "3.15"]
     defaults:
       run:
         shell: bash
