@@ -7,8 +7,8 @@
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 project = "Infrastructure Systems"
-copyright = "2024, NREL"
-author = "NREL"
+copyright = "2024, National Laboratory of the Rockies (NLR)"
+author = "National Laboratory of the Rockies (NLR)"
 release = "0.1.0"
 
 # -- General configuration ---------------------------------------------------

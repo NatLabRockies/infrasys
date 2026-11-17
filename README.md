@@ -1,15 +1,15 @@
 # infrasys
 
-[![CI](https://github.com/NREL/infrasys/actions/workflows/ci.yml/badge.svg)](https://github.com/NREL/infrasys/actions/workflows/ci.yml)
-[![Codecov](https://codecov.io/gh/NREL/infrasys/branch/main/graph/badge.svg)](https://codecov.io/gh/NREL/infrasys)
+[![CI](https://github.com/NatLabRockies/infrasys/actions/workflows/ci.yml/badge.svg)](https://github.com/NatLabRockies/infrasys/actions/workflows/ci.yml)
+[![Codecov](https://codecov.io/gh/NatLabRockies/infrasys/branch/main/graph/badge.svg)](https://codecov.io/gh/NatLabRockies/infrasys)
 [![PyPI](https://img.shields.io/pypi/v/infrasys.svg)](https://pypi.org/project/infrasys/)
 [![Ruff](https://img.shields.io/badge/Ruff-&gt;=_0.0-blue?logo=ruff&logoColor=white)](https://github.com/charliermarsh/ruff)
 [![Python](https://img.shields.io/badge/python-3.11%2B-3776ab?logo=python)](https://www.python.org/)
 [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-%23FE5196?logo=conventionalcommits&logoColor=white)](https://conventionalcommits.org)
 [![License](https://img.shields.io/badge/license-BSD%203--Clause-blue)](LICENSE.txt)
-[![Docs](https://img.shields.io/badge/docs-GitHub-blue)](https://github.com/NREL/infrasys/tree/main/docs)
-[![release-please](https://github.com/NREL/infrasys/actions/workflows/release.yaml/badge.svg)](https://github.com/NREL/infrasys/actions/workflows/release.yaml)
-[![Docs (GitHub Pages)](https://github.com/NREL/infrasys/actions/workflows/gh-pages.yml/badge.svg)](https://github.com/NREL/infrasys/actions/workflows/gh-pages.yml)
+[![Docs](https://img.shields.io/badge/docs-GitHub-blue)](https://github.com/NatLabRockies/infrasys/tree/main/docs)
+[![release-please](https://github.com/NatLabRockies/infrasys/actions/workflows/release.yaml/badge.svg)](https://github.com/NatLabRockies/infrasys/actions/workflows/release.yaml)
+[![Docs (GitHub Pages)](https://github.com/NatLabRockies/infrasys/actions/workflows/gh-pages.yml/badge.svg)](https://github.com/NatLabRockies/infrasys/actions/workflows/gh-pages.yml)
 
 infrasys is a lightweight data store that keeps track of components, their attributes, and
 time series for energy infrastructure models. The core package is opinionated about validation,
@@ -32,7 +32,7 @@ their domain problems instead of managing persistence concerns.
 ### Install
 
 ```bash
-pip install git+https://github.com/NREL/infrasys.git@main
+pip install git+https://github.com/NatLabRockies/infrasys.git@main
 ```
 
 Don’t forget to install pre-commit hooks so your push meets project quality checks:
@@ -141,7 +141,8 @@ uv run pytest
 
 ## Support & Contribution
 
-infrasys is being developed under NREL Software Record SWR-24-42. Report issues and feature
+infrasys is being developed at the National Laboratory of the Rockies (NLR) under Software
+Record SWR-24-42. Report issues and feature
 requests at [https://github.com/NatLabRockies/infrasys/issues](https://github.com/NatLabRockies/infrasys/issues).
 Review the `docs/reference` and `docs/how_tos` material before submitting a change so your
 diff is aligned with the project conventions.
