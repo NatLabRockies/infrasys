@@ -68,7 +68,7 @@ def validate_conversion_base(
 
 
 def validate_input_unit(input_unit: object) -> str:
-    """Return a nonempty unit name or reject malformed envelope input."""
+    """Return a nonempty unit name or reject a malformed unit mapping."""
     if not isinstance(input_unit, str) or not input_unit:
         msg = f"Unit mapping {UNIT_KEY!r} must be a non-empty string"
         raise ValueError(msg)
@@ -76,7 +76,7 @@ def validate_input_unit(input_unit: object) -> str:
 
 
 def parse_input_magnitude(value: object) -> float:
-    """Normalize supported envelope magnitudes and reject other values."""
+    """Convert a supported unit-mapping magnitude to a float."""
     msg = f"Unit mapping {VALUE_KEY!r} must be numeric"
     reject_boolean_magnitude(value)
     if not isinstance(value, (SupportsFloat, str)):
@@ -88,7 +88,7 @@ def parse_input_magnitude(value: object) -> float:
 
 
 def parse_unit_input(value: object) -> tuple[float, str]:
-    """Validate a unit envelope and return its numeric magnitude and unit."""
+    """Validate a unit mapping and return its magnitude and unit."""
     if not isinstance(value, dict) or VALUE_KEY not in value or UNIT_KEY not in value:
         msg = f"Expected a number or a mapping with {VALUE_KEY!r} and {UNIT_KEY!r} keys"
         raise ValueError(msg)

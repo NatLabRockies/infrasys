@@ -67,7 +67,7 @@ def convert_unit_input(
     base_value: object | None,
     base_unit: str | None,
 ) -> float:
-    """Convert one unit envelope to the model's internal value."""
+    """Convert one unit mapping to the model's internal value."""
     input_value, input_unit = parse_unit_input(value)
 
     if spec.unit == PER_UNIT_UNIT:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import types
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Union, get_args, get_origin
+from typing import TYPE_CHECKING, Any, Union, cast, get_args, get_origin
 
 from pydantic import BaseModel, GetCoreSchemaHandler
 from pydantic_core import core_schema
@@ -13,10 +13,10 @@ from .conversion import convert_unit_input
 from .schema import (
     PER_UNIT_UNIT,
     STRUCTURED_UNIT_SCHEMA_METADATA_KEY,
+    StructuredPerUnitMapping,
     UNIT_KEY,
     UNIT_SPEC_METADATA_KEY,
     VALUE_KEY,
-    make_structured_per_unit_envelope,
 )
 from .validation import reject_boolean_magnitude, validate_structured_base
 
@@ -42,17 +42,20 @@ def unit_value_type(annotation: object) -> object:
 
 @dataclass(frozen=True, slots=True)
 class UnitSpec:
-    """Immutable metadata descriptor for unit-aware fields.
+    """Immutable metadata descriptor for a unit-aware field.
 
-    The owning model resolves base units from its own fields. Annotations can
-    therefore be shared across models without retaining owner-specific state.
+    A ``UnitSpec`` can be created independently of any model. Its ``base`` is a
+    field-name reference, not a fixed value. When a ``HasUnits`` model uses the
+    specification, that model resolves the referenced field's unit and supplies
+    its value during conversion. The same annotation can therefore be reused by
+    models with different base values.
 
     Attributes
     ----------
     unit : str
         Unit string, such as ``"MVA"``, ``"pu"``, or ``"kV"``.
     base : str or None
-        Field name for device-base lookup.
+        Name of the model field that supplies the device base.
     """
 
     unit: str
@@ -100,7 +103,7 @@ class UnitSpec:
         from .mixins import HasUnits
 
         model_fields = type(value).model_fields
-        # Excluded fields remain validation inputs; nested envelopes prevent reconversion.
+        # Excluded fields remain validation inputs; normalized nested values prevent reconversion.
         structured_values: dict[str, object] = {
             field_name: getattr(value, field_name) for field_name in model_fields
         }
@@ -156,12 +159,12 @@ class UnitSpec:
     ) -> core_schema.CoreSchema:
         """Build the Pydantic schema for a unit-annotated field.
 
-        Scalar fields accept an internal number or a ``{"value", "unit"}``
-        input envelope, which is normalized to the declared unit. Structured
-        fields use Pydantic's model schema and convert natural values to internal
-        per-unit values when a base is declared. Relative structured fields
-        serialize in a ``{"value": ..., "unit": "pu"}`` envelope so validating
-        serialized data does not convert an already-internal value a second time.
+        Scalar fields accept an internal number or a unit mapping with
+        ``"value"`` and ``"unit"`` fields, normalized to the declared unit.
+        Structured fields use Pydantic's model schema and convert natural values
+        to internal per-unit values when a base is declared. Relative structured
+        fields serialize as ``{"value": ..., "unit": "pu"}`` to mark the value
+        as already normalized and prevent applying the base a second time.
 
         Parameters
         ----------
@@ -187,7 +190,7 @@ class UnitSpec:
                 next_validator: core_schema.ValidatorFunctionWrapHandler,
                 info: core_schema.ValidationInfo,
             ) -> object:
-                """Validate natural values or unwrap the internal per-unit envelope."""
+                """Validate natural values or read the standard per-unit mapping."""
                 if (
                     self.base is not None
                     and isinstance(value, dict)
@@ -221,10 +224,15 @@ class UnitSpec:
             def serialize_structured(
                 value: object, next_serializer: core_schema.SerializerFunctionWrapHandler
             ) -> object:
-                """Keep Pydantic's model serialization and wrap relative values."""
+                """Keep Pydantic's model serialization and mark relative values."""
                 result: dict[str, object] = next_serializer(value)
                 return (
-                    make_structured_per_unit_envelope(result) if self.base is not None else result
+                    cast(
+                        StructuredPerUnitMapping,
+                        {VALUE_KEY: result, UNIT_KEY: PER_UNIT_UNIT},
+                    )
+                    if self.base is not None
+                    else result
                 )
 
             return core_schema.with_info_wrap_validator_function(
@@ -249,7 +257,7 @@ class UnitSpec:
             *,
             base_unit: str | None = None,
         ) -> object:
-            """Normalize unit envelopes before Pydantic validates scalar values."""
+            """Normalize unit mappings before Pydantic validates scalar values."""
             reject_boolean_magnitude(value)
             if isinstance(value, dict) and {VALUE_KEY, UNIT_KEY} <= value.keys():
                 base_value: object | None = (
@@ -261,7 +269,7 @@ class UnitSpec:
             return next_validator(value)
 
         inner_schema = handler(source_type)
-        envelope_schema = core_schema.typed_dict_schema(
+        unit_mapping_schema = core_schema.typed_dict_schema(
             {
                 VALUE_KEY: core_schema.typed_dict_field(core_schema.float_schema()),
                 UNIT_KEY: core_schema.typed_dict_field(core_schema.str_schema(min_length=1)),
@@ -271,7 +279,7 @@ class UnitSpec:
         return core_schema.with_info_wrap_validator_function(
             validate_scalar,
             inner_schema,
-            json_schema_input_schema=core_schema.union_schema([inner_schema, envelope_schema]),
+            json_schema_input_schema=core_schema.union_schema([inner_schema, unit_mapping_schema]),
             metadata={UNIT_SPEC_METADATA_KEY: self},
         )
 
@@ -283,9 +291,9 @@ class UnitSpec:
     ) -> JsonSchemaValue:
         """Return validation and serialization JSON schemas for a unit field.
 
-        Validation schemas retain the accepted unit envelope. Serialization
-        schemas for relative structured values describe the explicit per-unit
-        envelope used by ``__get_pydantic_core_schema__``.
+        Validation schemas describe accepted unit mappings. Serialization
+        schemas for relative structured values describe the standard per-unit
+        mapping used by ``__get_pydantic_core_schema__``.
 
         Parameters
         ----------
@@ -317,7 +325,8 @@ def unit_spec(
     unit : str
         Unit string, such as ``"MVA"``, ``"kV"``, or ``"pu"``.
     base : str or None, optional
-        Name of the field that provides the device base.
+        Name of the model field that supplies the device base. The owning
+        ``HasUnits`` model resolves the field and its value.
 
     Returns
     -------
