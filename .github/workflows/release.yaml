@@ -3,10 +3,26 @@ on:
   push:
     branches:
       - main
+      - v1.x.x
+  workflow_dispatch:
+    inputs:
+      target_branch:
+        description: Branch to release
+        required: true
+        type: choice
+        options:
+          - v1.x.x
+          - main
+      release_version:
+        description: Stable version without the leading v (for example, 1.2.2)
+        required: true
+        type: string
 
 concurrency:
-  group: release-please
-  cancel-in-progress: true
+  group: release-please-${{ inputs.target_branch || github.ref_name }}
+  # By default, a newly queued run cancels the previous pending run.
+  # Keep up to 100 pending runs so a later dispatch does not drop a release merge run.
+  queue: max
 
 permissions:
   contents: write
@@ -23,6 +39,61 @@ jobs:
       release_tag: ${{ steps.release.outputs.tag_name }}
     runs-on: ubuntu-latest
     steps:
+      - name: Validate requested release
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TARGET_BRANCH: ${{ inputs.target_branch }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: |
+          if [[ ! "$RELEASE_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "::error::Use a stable version such as 1.2.2, without a leading v."
+            exit 1
+          fi
+          if [[ "$TARGET_BRANCH" == "v1.x.x" && "$RELEASE_VERSION" != 1.* ]]; then
+            echo "::error::The v1.x.x branch requires a 1.x release version."
+            exit 1
+          fi
+          if [[ "$TARGET_BRANCH" == "main" && ! "$RELEASE_VERSION" =~ ^([2-9]|[1-9][0-9]+)\. ]]; then
+            echo "::error::The main branch requires a 2.x or later release version."
+            exit 1
+          fi
+          # Only these branches trigger the workflow when a release PR is merged.
+          if [[ "$TARGET_BRANCH" != "v1.x.x" && "$TARGET_BRANCH" != "main" ]]; then
+            echo "::error::Select main or v1.x.x."
+            exit 1
+          fi
+
+      - name: Checkout requested branch
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.target_branch }}
+
+      - name: Record requested version
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TARGET_BRANCH: ${{ inputs.target_branch }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: |
+          existing_tag="$(git ls-remote --refs origin "refs/tags/v$RELEASE_VERSION")"
+          if [[ -n "$existing_tag" ]]; then
+            echo "::error::Tag v$RELEASE_VERSION already exists."
+            exit 1
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit --allow-empty -m "chore: request release $RELEASE_VERSION" -m "Release-As: $RELEASE_VERSION"
+          git push origin "HEAD:refs/heads/$TARGET_BRANCH"
+
+      - name: Find an open maintenance release PR
+        if: github.event_name == 'push' && github.ref_name == 'v1.x.x'
+        id: pending
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          exists="$(gh pr list --repo "$GITHUB_REPOSITORY" --base "$GITHUB_REF_NAME" --state open --label 'autorelease: pending' --json number --jq 'length > 0')"
+          echo "exists=$exists" >> "$GITHUB_OUTPUT"
+
       - name: Run release-please
         id: release
         uses: googleapis/release-please-action@v4
@@ -30,7 +101,10 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           config-file: .release-please-config.json
           manifest-file: .release-please-manifest.json
-          target-branch: main
+          target-branch: ${{ inputs.target_branch || github.ref_name }}
+          # shortcut: stale PRs can merge before refresh. Add a merge gate for automatic freshness.
+          skip-github-release: ${{ github.event_name == 'workflow_dispatch' }}
+          skip-github-pull-request: ${{ github.event_name == 'push' && github.ref_name == 'v1.x.x' && steps.pending.outputs.exists != 'true' }}
 
   build:
     name: Build
