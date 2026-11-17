@@ -15,6 +15,13 @@ This lets calculations use ordinary numbers while the model class retains the
 unit contract. Use `BaseQuantity` when the stored value should instead be a Pint
 quantity carrying its own units.
 
+A `UnitSpec` does not store a model's base value. `Unit("pu")` is valid by
+itself for values already expressed per-unit. To convert physical-unit input,
+attach it to a model field with a base reference, such as
+`Unit("pu", base="base_power")`. `HasUnits` resolves that field and supplies
+its value for each model instance. The same `UnitSpec` can therefore be used by
+models with different base values.
+
 Pydantic handles model validation and serialization. The `Unit` hook can convert
 an absolute field even without `HasUnits`; relative natural-unit inputs need
 `HasUnits` to resolve the base field's unit. Removing `HasUnits` from the model
@@ -79,8 +86,8 @@ print(restored.model_dump_json())
 This round trip works because the receiving code uses the same `Device` contract
 and numeric inputs are already internal values. A generic JSON consumer cannot
 infer those units from the numbers. Pydantic's generated JSON Schema describes
-accepted numeric/envelope input, but does not export the declared unit names and
-base relationships as dedicated schema properties.
+accepted numbers and unit mappings, but does not export the declared unit names
+and base relationships as dedicated schema properties.
 
 ## Choosing a unit representation
 
@@ -139,7 +146,7 @@ Device(base_power='100.0 MW', power='5 MW', ramp='10 MW')
 The ramp display above is a current limitation: the formatter uses the base
 field's `MW` label, although the physical ramp is 10 MW/min. Neither strategy
 changes the stored 0.1 or its rate contract. This model has no unit-aware JSON
-context that switches these scalar dumps to natural-unit strings or envelopes;
+context that switches these scalar dumps to natural-unit strings or mappings;
 `unit_system(...)` is not a Pydantic serialization option.
 
 ## Explicit configuration in the unit API
@@ -165,7 +172,7 @@ Structured model inputs with a base divide their numeric fields by that base.
 For nested `HasUnits` models, only absolute unit fields are divided. Unannotated
 numeric fields and nested per-unit fields are preserved. Structured dumps use
 `{"value": { ... }, "unit": "pu"}` so revalidation does not divide twice.
-This envelope is distinct from `BaseQuantity.to_dict()`'s `{value, units}` format.
+This mapping is distinct from `BaseQuantity.to_dict()`'s `{value, units}` format.
 Optional values remain `None`. Scalar dumps remain internal numbers.
 Structured conversion accepts alias-only fields and keeps Pydantic validation
 active when rebuilding converted values. Serialization exclusions do not remove
