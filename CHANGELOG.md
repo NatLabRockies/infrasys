@@ -1,5 +1,29 @@
 # Changelog
 
+## [2.0.0](https://github.com/NatLabRockies/infrasys/compare/v1.2.1...v2.0.0) (2026-11-17)
+
+
+### ⚠ BREAKING CHANGES
+
+* clean break on persistence. System.DB_FILENAME ("time_series_metadata.db"), the backup/restore of that file, and System._con are gone. Supplemental attribute associations now travel inside the time series store artifact instead of a sidecar SQLite file, so systems saved by an earlier build will no longer load. This is intended. TimeSeriesStorageContext.metadata_conn was removed for the same reason.
+
+### Features
+
+* **system:** add typed show_components columns ([#160](https://github.com/NatLabRockies/infrasys/issues/160)) ([ab55bd9](https://github.com/NatLabRockies/infrasys/commit/ab55bd9bfd91a71d75d81503f6a6c75462a8fe1f))
+* **time-series:** implement native infrastore copy ([#170](https://github.com/NatLabRockies/infrasys/issues/170)) ([0eca057](https://github.com/NatLabRockies/infrasys/commit/0eca0570ccd9c21ea9685d0caa638706051d452c))
+* Use infrastore as the backend for time series and component/supplemental_attribute associations ([#162](https://github.com/NatLabRockies/infrasys/issues/162)) ([34d5af5](https://github.com/NatLabRockies/infrasys/commit/34d5af52d2f070859c6df8934d97ae23d6629c58))
+
+
+### Bug Fixes
+
+* bumping down. ([#166](https://github.com/NatLabRockies/infrasys/issues/166)) ([6c94916](https://github.com/NatLabRockies/infrasys/commit/6c94916c68333baa7cff5f15452bd60beb3f843a))
+* **ci:** keep release pull requests current ([#189](https://github.com/NatLabRockies/infrasys/issues/189)) ([461c875](https://github.com/NatLabRockies/infrasys/commit/461c8757de31c8fc70127dedb3303544c57b19d7))
+
+
+### Documentation
+
+* update laboratory references to NLR ([#190](https://github.com/NatLabRockies/infrasys/issues/190)) ([f5862f7](https://github.com/NatLabRockies/infrasys/commit/f5862f706faf8b3f35802481632ba8edf12c3a7e))
+
 ## [1.2.1](https://github.com/NatLabRockies/infrasys/compare/v1.2.0...v1.2.1) (2026-08-28)
 
 
