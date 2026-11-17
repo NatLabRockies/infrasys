@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 import types
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Union, get_args, get_origin
@@ -10,15 +9,29 @@ from typing import TYPE_CHECKING, Any, Union, get_args, get_origin
 from pydantic import BaseModel, GetCoreSchemaHandler
 from pydantic_core import core_schema
 
-from .conversion import UnitInput, convert_to_internal
+from .conversion import convert_unit_input
+from .schema import (
+    PER_UNIT_UNIT,
+    STRUCTURED_UNIT_SCHEMA_METADATA_KEY,
+    UNIT_KEY,
+    UNIT_SPEC_METADATA_KEY,
+    VALUE_KEY,
+    make_structured_per_unit_envelope,
+)
+from .validation import reject_boolean_magnitude, validate_structured_base
 
 if TYPE_CHECKING:
     from pydantic import GetJsonSchemaHandler
     from pydantic.json_schema import JsonSchemaValue
 
 
-def unit_value_type(annotation: Any) -> Any:
-    """Return the non-None value type of a unit field annotation."""
+def unit_value_type(annotation: object) -> object:
+    """Return the value type underlying an optional unit field annotation.
+
+    For ``T | None``, this returns ``T`` so schema construction can inspect the
+    annotated value type without treating ``None`` as the structured type.
+    Other annotations are returned unchanged.
+    """
     if get_origin(annotation) in (Union, types.UnionType):
         return next(
             (argument for argument in get_args(annotation) if argument is not type(None)),
@@ -51,26 +64,48 @@ class UnitSpec:
         *,
         info: core_schema.ValidationInfo,
     ) -> BaseModel:
-        """Convert numeric fields of a structured value to per-unit form."""
+        """Convert a structured natural-unit value to internal per-unit form.
+
+        The base comes from the already-validated outer model fields in
+        ``info.data``. If this spec has no base, the structured value is returned
+        unchanged. For nested ``HasUnits`` models, only unit fields without their
+        own base are divided by the outer base. For other Pydantic models, numeric
+        fields are divided. Booleans and nonnumeric fields remain unchanged.
+
+        Parameters
+        ----------
+        value : BaseModel
+            Parsed nested value supplied by Pydantic.
+        info : ValidationInfo
+            Validation context containing the outer model's earlier fields.
+
+        Returns
+        -------
+        BaseModel
+            The nested value with eligible numeric fields converted.
+
+        Raises
+        ------
+        ValueError
+            If the required outer base is missing, zero, or non-finite.
+        """
         if self.base is None:
             return value
 
-        base_value = info.data.get(self.base) if info.data is not None else None
-        if base_value is None:
-            msg = f"Base value {self.base!r} is required for unit conversion"
-            raise ValueError(msg)
-        if not math.isfinite(base_value) or base_value == 0:
-            msg = f"Base value {self.base!r} must be finite and non-zero for unit conversion"
-            raise ValueError(msg)
+        base_value = validate_structured_base(
+            info.data.get(self.base) if info.data is not None else None,
+            base_field=self.base,
+        )
 
         from .mixins import HasUnits
 
         model_fields = type(value).model_fields
         # Excluded fields remain validation inputs; nested envelopes prevent reconversion.
-        structured_values = {
+        structured_values: dict[str, object] = {
             field_name: getattr(value, field_name) for field_name in model_fields
-        } | value.model_dump(round_trip=True, by_alias=False)
-        converted_fields: dict[str, Any] = {}
+        }
+        structured_values.update(value.model_dump(round_trip=True, by_alias=False))
+        converted_fields: dict[str, object] = {}
 
         if isinstance(value, HasUnits):
             convertible_fields = {
@@ -81,7 +116,7 @@ class UnitSpec:
             for field_name, field_value in structured_values.items():
                 if (
                     field_name in convertible_fields
-                    and isinstance(field_value, int | float)
+                    and isinstance(field_value, (int, float))
                     and not isinstance(field_value, bool)
                 ):
                     converted_fields[field_name] = field_value / base_value
@@ -99,13 +134,13 @@ class UnitSpec:
 
             is_numeric = field_type in (int, float) or (
                 isinstance(field_type, type)
-                and issubclass(field_type, int | float)
+                and issubclass(field_type, (int, float))
                 and not issubclass(field_type, bool)
             )
 
             if (
                 is_numeric
-                and isinstance(field_value, int | float)
+                and isinstance(field_value, (int, float))
                 and not isinstance(field_value, bool)
             ):
                 converted_fields[field_name] = field_value / base_value
@@ -119,11 +154,26 @@ class UnitSpec:
         source_type: Any,
         handler: GetCoreSchemaHandler,
     ) -> core_schema.CoreSchema:
-        """Build validation and serialization behavior for an annotated field.
+        """Build the Pydantic schema for a unit-annotated field.
 
-        Structured per-unit fields serialize as ``{"value": ..., "unit": "pu"}``.
-        This explicit envelope marks stored internal values and prevents a second
-        natural-unit conversion when validating serialized data.
+        Scalar fields accept an internal number or a ``{"value", "unit"}``
+        input envelope, which is normalized to the declared unit. Structured
+        fields use Pydantic's model schema and convert natural values to internal
+        per-unit values when a base is declared. Relative structured fields
+        serialize in a ``{"value": ..., "unit": "pu"}`` envelope so validating
+        serialized data does not convert an already-internal value a second time.
+
+        Parameters
+        ----------
+        source_type : Any
+            The field's annotated value type supplied by Pydantic.
+        handler : GetCoreSchemaHandler
+            Pydantic's handler for constructing the underlying field schema.
+
+        Returns
+        -------
+        CoreSchema
+            The combined validation and serialization schema for the field.
         """
         actual_type = unit_value_type(source_type)
 
@@ -133,32 +183,35 @@ class UnitSpec:
             inner_schema = handler(source_type)
 
             def validate_structured(
-                value: Any,
+                value: object,
                 next_validator: core_schema.ValidatorFunctionWrapHandler,
                 info: core_schema.ValidationInfo,
-            ) -> Any:
-                """Accept natural structured values or the explicit internal envelope."""
+            ) -> object:
+                """Validate natural values or unwrap the internal per-unit envelope."""
                 if (
                     self.base is not None
                     and isinstance(value, dict)
-                    and {"value", "unit"} <= value.keys()
-                    and isinstance(value["value"], dict)
+                    and {VALUE_KEY, UNIT_KEY} <= value.keys()
+                    and isinstance(value[VALUE_KEY], dict)
                 ):
-                    if set(value) != {"value", "unit"} or value["unit"] != "pu":
+                    if set(value) != {VALUE_KEY, UNIT_KEY} or value[UNIT_KEY] != PER_UNIT_UNIT:
                         msg = (
-                            "Serialized structured unit value must be {'value': ..., 'unit': 'pu'}"
+                            f"Serialized structured unit value must be "
+                            f"{{{VALUE_KEY!r}: ..., {UNIT_KEY!r}: {PER_UNIT_UNIT!r}}}"
                         )
                         raise ValueError(msg)
-                    return next_validator(value["value"])
-                parsed = next_validator(value)
+                    return next_validator(value[VALUE_KEY])
+                parsed: BaseModel | None = next_validator(value)
                 return None if parsed is None else self.convert_structured_value(parsed, info=info)
 
             serialized_schema = inner_schema
             if self.base is not None:
                 serialized_schema = core_schema.typed_dict_schema(
                     {
-                        "value": core_schema.typed_dict_field(inner_schema),
-                        "unit": core_schema.typed_dict_field(core_schema.literal_schema(["pu"])),
+                        VALUE_KEY: core_schema.typed_dict_field(inner_schema),
+                        UNIT_KEY: core_schema.typed_dict_field(
+                            core_schema.literal_schema([PER_UNIT_UNIT])
+                        ),
                     },
                     extra_behavior="forbid",
                 )
@@ -166,11 +219,13 @@ class UnitSpec:
                     serialized_schema = core_schema.nullable_schema(serialized_schema)
 
             def serialize_structured(
-                value: Any, next_serializer: core_schema.SerializerFunctionWrapHandler
-            ) -> Any:
-                """Serialize internal values while honoring Pydantic serialization options."""
-                result = next_serializer(value)
-                return {"value": result, "unit": "pu"} if self.base is not None else result
+                value: object, next_serializer: core_schema.SerializerFunctionWrapHandler
+            ) -> object:
+                """Keep Pydantic's model serialization and wrap relative values."""
+                result: dict[str, object] = next_serializer(value)
+                return (
+                    make_structured_per_unit_envelope(result) if self.base is not None else result
+                )
 
             return core_schema.with_info_wrap_validator_function(
                 validate_structured,
@@ -178,7 +233,7 @@ class UnitSpec:
                 json_schema_input_schema=core_schema.union_schema(
                     [inner_schema, serialized_schema]
                 ),
-                metadata={"infrasys.structured_unit_schema": serialized_schema},
+                metadata={STRUCTURED_UNIT_SCHEMA_METADATA_KEY: serialized_schema},
                 serialization=core_schema.wrap_serializer_function_ser_schema(
                     serialize_structured,
                     schema=inner_schema,
@@ -188,27 +243,28 @@ class UnitSpec:
             )
 
         def validate_scalar(
-            value: Any,
+            value: object,
             next_validator: core_schema.ValidatorFunctionWrapHandler,
             info: core_schema.ValidationInfo,
             *,
             base_unit: str | None = None,
-        ) -> Any:
-            if isinstance(value, dict) and {"value", "unit"} <= value.keys():
-                base_value = (
+        ) -> object:
+            """Normalize unit envelopes before Pydantic validates scalar values."""
+            reject_boolean_magnitude(value)
+            if isinstance(value, dict) and {VALUE_KEY, UNIT_KEY} <= value.keys():
+                base_value: object | None = (
                     info.data.get(self.base) if self.base is not None and info.data else None
                 )
-                unit_input: UnitInput = {"value": value["value"], "unit": value["unit"]}
-                value = convert_to_internal(
-                    unit_input, spec=self, base_value=base_value, base_unit=base_unit
+                value = convert_unit_input(
+                    value, spec=self, base_value=base_value, base_unit=base_unit
                 )
             return next_validator(value)
 
         inner_schema = handler(source_type)
         envelope_schema = core_schema.typed_dict_schema(
             {
-                "value": core_schema.typed_dict_field(core_schema.float_schema()),
-                "unit": core_schema.typed_dict_field(core_schema.str_schema(min_length=1)),
+                VALUE_KEY: core_schema.typed_dict_field(core_schema.float_schema()),
+                UNIT_KEY: core_schema.typed_dict_field(core_schema.str_schema(min_length=1)),
             },
             extra_behavior="allow",
         )
@@ -216,7 +272,7 @@ class UnitSpec:
             validate_scalar,
             inner_schema,
             json_schema_input_schema=core_schema.union_schema([inner_schema, envelope_schema]),
-            metadata={"infrasys.unit_spec": self},
+            metadata={UNIT_SPEC_METADATA_KEY: self},
         )
 
     @classmethod
@@ -225,8 +281,25 @@ class UnitSpec:
         schema: core_schema.CoreSchema,
         handler: GetJsonSchemaHandler,
     ) -> JsonSchemaValue:
-        """Describe the field's scalar or structured unit representation."""
-        structured_schema = schema.get("metadata", {}).get("infrasys.structured_unit_schema")
+        """Return validation and serialization JSON schemas for a unit field.
+
+        Validation schemas retain the accepted unit envelope. Serialization
+        schemas for relative structured values describe the explicit per-unit
+        envelope used by ``__get_pydantic_core_schema__``.
+
+        Parameters
+        ----------
+        schema : CoreSchema
+            The core schema whose JSON schema is being requested.
+        handler : GetJsonSchemaHandler
+            Pydantic's handler for generating the default JSON schema.
+
+        Returns
+        -------
+        JsonSchemaValue
+            The validation or serialization JSON schema.
+        """
+        structured_schema = schema.get("metadata", {}).get(STRUCTURED_UNIT_SCHEMA_METADATA_KEY)
         if handler.mode == "serialization" and structured_schema is not None:
             return handler(structured_schema)
         return handler(schema)

@@ -221,6 +221,18 @@ def test_structured_base_must_be_finite_and_nonzero(
     assert expected_error in str(exc_info.value)
 
 
+def test_structured_conversion_rejects_base_outside_float_range() -> None:
+    class Limits(BaseModel):
+        minimum: float
+
+    class Device(HasUnits, BaseModel):
+        base_power: Annotated[int, Unit("MW")]
+        limits: Annotated[Limits, Unit("MW", base="base_power")]
+
+    with pytest.raises(ValidationError, match="finite and non-zero"):
+        Device.model_validate({"base_power": 10**400, "limits": {"minimum": 1.0}})
+
+
 def test_structured_unit_serialization_preserves_aliases_and_exclusions() -> None:
     class AliasedLimits(BaseModel):
         model_config = ConfigDict(populate_by_name=True)

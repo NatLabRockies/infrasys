@@ -1,14 +1,16 @@
-"""Unit handling for power system models.
+"""Unit-aware fields and unit representations for power system models.
 
-This module provides unit-aware field annotations, automatic conversion between
-natural units and per-unit values, and configurable display formatting.
+This module provides field annotations, natural-to-per-unit conversion, and
+representation policies for unit-aware model values. A representation policy
+changes ``__repr__`` output only. It does not change stored values or serialized
+model data.
 
 Notes
 -----
 * Annotate numeric fields with ``Annotated[float, Unit("pu", base="base_field")]``
 * Natural-unit inputs (``{"value": 138, "unit": "kV"}``) are converted to per-unit when ``base`` is set
 * Internal storage is always float (device-base per-unit for relative quantities)
-* Global display mode (device base, system base, or natural units) affects ``__repr__`` formatting only
+* Unit representations (device base, system base, or natural units) affect ``__repr__`` only
 """
 
 from __future__ import annotations
@@ -17,22 +19,26 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from enum import StrEnum
 
-from .conversion import UnitInput, convert_to_internal, format_for_display, ureg
+from .conversion import convert_to_internal, format_for_display, ureg
 from .mixins import HasPerUnit, HasUnits
+from .schema import UnitInput
 from .specs import Unit, UnitSpec, unit_spec
 
 
 class UnitSystem(StrEnum):
-    """Display modes for formatted representation.
+    """Unit representation strategies for unit-aware model values.
+
+    The selected strategy controls how ``HasUnits`` values appear in model
+    ``__repr__`` output. It does not alter internal values or serialization.
 
     Attributes
     ----------
     DEVICE_BASE : str
-        Display per-unit values relative to device base
+        Represent relative values in per-unit against each device's base.
     SYSTEM_BASE : str
-        Display per-unit values relative to system base
+        Represent relative values in per-unit against a bound system base.
     NATURAL_UNITS : str
-        Display values in their natural units (e.g., kV, MVA)
+        Represent relative values using their declared natural units.
     """
 
     DEVICE_BASE = "DEVICE_BASE"
@@ -44,28 +50,28 @@ current_unit_system: UnitSystem = UnitSystem.DEVICE_BASE
 
 
 def get_unit_system() -> UnitSystem:
-    """Get the current global display mode.
+    """Get the current global unit representation strategy.
 
     Returns
     -------
     UnitSystem
-        Current display mode
+        Current strategy for unit-aware model representations.
     """
     return current_unit_system
 
 
 def set_unit_system(unit_system: UnitSystem) -> UnitSystem:
-    """Set and return the active global display mode.
+    """Set and return the active global unit representation strategy.
 
     Parameters
     ----------
     unit_system : UnitSystem
-        Display mode to set
+        Representation strategy to apply to unit-aware model ``__repr__`` output.
 
     Returns
     -------
     UnitSystem
-        The active display mode after setting it.
+        The strategy active after setting it.
     """
     global current_unit_system
     current_unit_system = unit_system
@@ -74,12 +80,12 @@ def set_unit_system(unit_system: UnitSystem) -> UnitSystem:
 
 @contextmanager
 def unit_system(mode: UnitSystem) -> Iterator[None]:
-    """Context manager for temporary display mode changes.
+    """Temporarily select a unit representation strategy.
 
     Parameters
     ----------
     mode : UnitSystem
-        Temporary display mode to use within the context
+        Strategy to apply to unit-aware model ``__repr__`` output in the context.
 
     Yields
     ------

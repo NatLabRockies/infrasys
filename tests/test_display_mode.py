@@ -60,6 +60,16 @@ def test_optional_unit_fields_remain_none_in_direct_and_inherited_models(
     assert f"rating='{expected_rating}'" in rendered
 
 
+@pytest.mark.parametrize("system_base", [0.0, float("inf"), float("nan"), True, 10**400])
+def test_system_base_binding_rejects_invalid_values(system_base: float) -> None:
+    device = Demo(name="demo", base_power=100.0, rating=0.5)
+
+    with pytest.raises(ValueError, match="finite and non-zero"):
+        device.bind_system_base(system_base)
+
+    assert device.system_base is None
+
+
 def test_optional_per_unit_field_remains_none_after_system_binding() -> None:
     device = Demo(name="demo", base_power=100.0, rating=0.5)
     device.bind_system_base(200.0)
@@ -125,6 +135,17 @@ def test_unit_models_respect_fields_hidden_from_repr(hidden_unit: bool) -> None:
     assert "123456789" not in repr(device)
     assert "1.0 MW" in repr(device)
     assert device.model_dump()["secret"] == 123456789
+
+
+def test_boolean_field_assignment_is_not_formatted_as_a_unit() -> None:
+    model = DisplayFields(base_power=100.0, rating=0.5)
+    model.rating = True
+
+    with unit_system(UnitSystem.DEVICE_BASE):
+        rendered = repr(model)
+
+    assert "rating=True" in rendered
+    assert "True pu" not in rendered
 
 
 @pytest.mark.parametrize("mode", list(UnitSystem))

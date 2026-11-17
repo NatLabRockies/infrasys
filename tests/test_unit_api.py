@@ -2,7 +2,7 @@
 
 from collections.abc import Callable
 from inspect import Parameter, signature
-from typing import get_type_hints
+from typing import SupportsFloat, get_type_hints
 
 import pytest
 
@@ -16,7 +16,7 @@ def test_conversion_helpers_are_exported_from_units_package() -> None:
 
 def test_convert_to_internal_declares_supported_input_types() -> None:
     annotations = get_type_hints(convert_to_internal, localns={"UnitSpec": UnitSpec})
-    assert annotations["value"] == int | float | UnitInput
+    assert annotations["value"] == int | float | UnitInput[SupportsFloat | str, str]
 
 
 @pytest.mark.parametrize(

@@ -5,7 +5,7 @@ from typing import Annotated
 import pytest
 from infrasys import Component
 
-from infrasys.units import HasPerUnit, Unit, UnitSystem, set_unit_system
+from infrasys.units import HasPerUnit, Unit, UnitSystem, unit_system
 
 
 class Generator(HasPerUnit, Component):
@@ -110,13 +110,10 @@ def test_display_natural_units() -> None:
         voltage=1.05,
     )
 
-    set_unit_system(UnitSystem.NATURAL_UNITS)
-
-    repr_str = repr(gen)
-    assert "80" in repr_str and "MVA" in repr_str  # rating: 0.8 * 100 MVA = 80 MVA
-    assert "14.49" in repr_str and "kV" in repr_str  # voltage: 1.05 * 13.8 kV = 14.49 kV
-
-    set_unit_system(UnitSystem.DEVICE_BASE)
+    with unit_system(UnitSystem.NATURAL_UNITS):
+        repr_str = repr(gen)
+        assert "80" in repr_str and "MVA" in repr_str  # rating: 0.8 * 100 MVA = 80 MVA
+        assert "14.49" in repr_str and "kV" in repr_str  # voltage: 1.05 * 13.8 kV = 14.49 kV
 
 
 def test_display_system_base() -> None:
@@ -130,13 +127,10 @@ def test_display_system_base() -> None:
     )
     gen.bind_system_base(200.0)
 
-    set_unit_system(UnitSystem.SYSTEM_BASE)
-
-    repr_str = repr(gen)
-    # rating: 0.8 pu * 100 MVA = 80 MVA / 200 MVA = 0.4 pu (system)
-    assert "0.4" in repr_str and "pu (system)" in repr_str
-
-    set_unit_system(UnitSystem.DEVICE_BASE)
+    with unit_system(UnitSystem.SYSTEM_BASE):
+        repr_str = repr(gen)
+        # rating: 0.8 pu * 100 MVA = 80 MVA / 200 MVA = 0.4 pu (system)
+        assert "0.4" in repr_str and "pu (system)" in repr_str
 
 
 def test_field_access_returns_float() -> None:
@@ -205,13 +199,10 @@ def test_display_uses_declared_base_unit() -> None:
         rating: Annotated[float, Unit("pu", base="base_power")]
 
     comp = ComponentNoNaturalUnit(name="C1", base_power=100.0, rating=0.8)
-    set_unit_system(UnitSystem.NATURAL_UNITS)
 
-    # Should convert to natural units (MVA)
-    repr_str = repr(comp)
-    assert "80" in repr_str  # 0.8 * 100 MVA = 80 MVA
-
-    set_unit_system(UnitSystem.DEVICE_BASE)
+    with unit_system(UnitSystem.NATURAL_UNITS):
+        repr_str = repr(comp)
+        assert "80" in repr_str  # 0.8 * 100 MVA = 80 MVA
 
 
 def test_component_without_system_base() -> None:
@@ -224,8 +215,6 @@ def test_component_without_system_base() -> None:
         voltage=1.05,
     )
 
-    set_unit_system(UnitSystem.SYSTEM_BASE)
-    repr_str = repr(gen)
-    assert "pu" in repr_str
-
-    set_unit_system(UnitSystem.DEVICE_BASE)
+    with unit_system(UnitSystem.SYSTEM_BASE):
+        repr_str = repr(gen)
+        assert "pu" in repr_str

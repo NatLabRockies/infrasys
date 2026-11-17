@@ -1,28 +1,28 @@
-"""Unit conversion and display formatting."""
+"""Unit conversion and model representation formatting."""
 
 from __future__ import annotations
 
-import math
-from typing import TYPE_CHECKING, SupportsFloat, TypedDict
+from typing import TYPE_CHECKING, SupportsFloat
 
 import pint
 
 from infrasys.base_quantity import ureg
+
+from .schema import PER_UNIT_UNIT, UnitInput
+from .validation import (
+    parse_unit_input,
+    reject_boolean_magnitude,
+    validate_conversion_base,
+    validate_system_base,
+)
 
 if TYPE_CHECKING:
     from . import UnitSystem
     from .specs import UnitSpec
 
 
-class UnitInput(TypedDict):
-    """Unit-bearing input mapping accepted by ``convert_to_internal``."""
-
-    value: SupportsFloat | str
-    unit: str
-
-
 def convert_to_internal(
-    value: int | float | UnitInput,
+    value: int | float | UnitInput[SupportsFloat | str, str],
     *,
     spec: UnitSpec,
     base_value: float | None = None,
@@ -52,27 +52,60 @@ def convert_to_internal(
         If input is malformed, units are unknown or incompatible, or a required
         base is missing, zero, or non-finite.
     """
-    if isinstance(value, int | float):
-        return float(value)
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        result = float(value)
+    else:
+        reject_boolean_magnitude(value)
+        result = convert_unit_input(value, spec=spec, base_value=base_value, base_unit=base_unit)
+    return result
 
-    if not isinstance(value, dict) or "value" not in value or "unit" not in value:
-        msg = "Expected a number or a mapping with 'value' and 'unit' keys"
-        raise ValueError(msg)
 
-    input_value = parse_input_magnitude(value["value"])
-    input_unit = validate_input_unit(value["unit"])
+def convert_unit_input(
+    value: object,
+    *,
+    spec: UnitSpec,
+    base_value: object | None,
+    base_unit: str | None,
+) -> float:
+    """Convert one unit envelope to the model's internal value."""
+    input_value, input_unit = parse_unit_input(value)
 
-    if spec.unit == "pu":
-        if input_unit == "pu":
+    if spec.unit == PER_UNIT_UNIT:
+        if input_unit == PER_UNIT_UNIT:
             return input_value
         if spec.base is None:
             msg = "Per-unit conversion requires a declared base field"
             raise ValueError(msg)
 
-    target_unit = base_unit if spec.unit == "pu" else spec.unit
     if spec.base is not None:
-        validate_conversion_base(spec, base_value=base_value, base_unit=base_unit)
+        base_value, base_unit = validate_conversion_base(
+            spec, base_value=base_value, base_unit=base_unit
+        )
+        target_unit = base_unit if spec.unit == PER_UNIT_UNIT else spec.unit
+    else:
+        base_value = None
+        base_unit = None
+        target_unit = spec.unit
+    return convert_unit_magnitude(
+        input_value,
+        input_unit,
+        target_unit,
+        spec=spec,
+        base_value=base_value,
+        base_unit=base_unit,
+    )
 
+
+def convert_unit_magnitude(
+    input_value: float,
+    input_unit: str,
+    target_unit: str,
+    *,
+    spec: UnitSpec,
+    base_value: float | None,
+    base_unit: str | None,
+) -> float:
+    """Use Pint to normalize a parsed magnitude and apply its device base."""
     try:
         normalized = ureg.Quantity(input_value, input_unit).to(target_unit)
         if spec.base is None:
@@ -96,7 +129,7 @@ def format_for_display(
     base_unit: str | None = None,
     system_base: float | None = None,
 ) -> str:
-    """Format an internal value according to the selected display mode.
+    """Format an internal value for the selected unit representation.
 
     Parameters
     ----------
@@ -105,7 +138,7 @@ def format_for_display(
     spec : UnitSpec
         Unit metadata for the field.
     unit_system : UnitSystem
-        Active display mode.
+        Representation strategy for the model value.
     base_value : float or None, optional
         Base field value for natural-unit conversion.
     base_unit : str or None, optional
@@ -117,6 +150,11 @@ def format_for_display(
     -------
     str
         Value formatted with its display unit.
+
+    Raises
+    ------
+    ValueError
+        If ``system_base`` is nonnumeric, non-finite, or zero.
     """
     from . import UnitSystem
 
@@ -124,57 +162,22 @@ def format_for_display(
         return f"{value} {spec.unit}"
 
     if unit_system == UnitSystem.DEVICE_BASE:
-        return f"{value} pu"
+        return f"{value} {PER_UNIT_UNIT}"
 
     if unit_system == UnitSystem.NATURAL_UNITS:
         if base_value is None or base_unit is None:
-            return f"{value} pu"
+            return f"{value} {PER_UNIT_UNIT}"
         natural_value = value * base_value
         return f"{natural_value:.4g} {base_unit}"
 
     if unit_system == UnitSystem.SYSTEM_BASE:
         if base_value is None:
-            return f"{value} pu"
+            return f"{value} {PER_UNIT_UNIT}"
         natural_value = value * base_value
-        if system_base is not None and isinstance(system_base, int | float):
+        if system_base is not None:
+            validate_system_base(system_base)
             system_pu = natural_value / system_base
-            return f"{system_pu:.4g} pu (system)"
-        return f"{value} pu"
+            return f"{system_pu:.4g} {PER_UNIT_UNIT} (system)"
+        return f"{value} {PER_UNIT_UNIT}"
 
-    return f"{value} pu"
-
-
-def validate_conversion_base(
-    spec: UnitSpec, *, base_value: float | None, base_unit: str | None
-) -> None:
-    """Require a usable, explicitly annotated base for relative conversion."""
-    if base_value is None:
-        msg = f"Base field '{spec.base}' is required for unit conversion but was not provided or is None"
-        raise ValueError(msg)
-    if base_unit is None:
-        msg = (
-            f"Base unit for field '{spec.base}' could not be determined - check field annotations"
-        )
-        raise ValueError(msg)
-    if not math.isfinite(base_value) or base_value == 0:
-        msg = f"Base field '{spec.base}' must be finite and non-zero for per-unit conversion"
-        raise ValueError(msg)
-
-
-def validate_input_unit(input_unit: object) -> str:
-    """Return a nonempty unit name or reject malformed envelope input."""
-    if not isinstance(input_unit, str) or not input_unit:
-        msg = "Unit mapping 'unit' must be a non-empty string"
-        raise ValueError(msg)
-    return input_unit
-
-
-def parse_input_magnitude(value: object) -> float:
-    """Normalize supported envelope magnitudes and reject other values."""
-    msg = "Unit mapping 'value' must be numeric"
-    if not isinstance(value, SupportsFloat | str):
-        raise ValueError(msg)
-    try:
-        return float(value)
-    except (TypeError, ValueError) as error:
-        raise ValueError(msg) from error
+    return f"{value} {PER_UNIT_UNIT}"

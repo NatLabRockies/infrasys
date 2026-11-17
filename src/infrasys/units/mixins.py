@@ -9,7 +9,9 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from pydantic import BaseModel, GetCoreSchemaHandler, PrivateAttr
 from pydantic_core import core_schema
 
+from .schema import UNIT_SPEC_METADATA_KEY
 from .specs import UnitSpec
+from .validation import validate_system_base
 
 if TYPE_CHECKING:
     from pydantic.fields import FieldInfo
@@ -22,7 +24,7 @@ def bind_unit_nodes(
     if schema["type"] == "model" and schema["cls"] is not model_type:
         return schema
 
-    spec = schema.get("metadata", {}).get("infrasys.unit_spec")
+    spec = schema.get("metadata", {}).get(UNIT_SPEC_METADATA_KEY)
     if schema["type"] == "function-wrap" and isinstance(spec, UnitSpec) and spec.base is not None:
         function = schema["function"]
         return {
@@ -57,7 +59,7 @@ def bind_unit_nodes(
 
 
 class HasUnits:
-    """Add unit metadata and display formatting to a Pydantic model.
+    """Add unit metadata and representations to a Pydantic model.
 
     Unit specifications are collected whenever Pydantic builds a model schema.
     Base units are resolved from the owning model without mutating annotations.
@@ -99,7 +101,7 @@ class HasUnits:
 
     @recursive_repr()
     def __repr__(self) -> str:
-        """Format model fields using the active unit display mode."""
+        """Format model fields using the active unit representation."""
         from . import get_unit_system
         from .conversion import format_for_display
 
@@ -112,7 +114,11 @@ class HasUnits:
 
             value = getattr(self, field_name)
             spec = type(self).unit_specs.get(field_name)
-            if spec is not None and isinstance(value, int | float):
+            if (
+                spec is not None
+                and isinstance(value, (int, float))
+                and not isinstance(value, bool)
+            ):
                 base_value = getattr(self, spec.base) if spec.base is not None else None
                 base_unit = (
                     type(self).unit_specs[spec.base].unit if spec.base is not None else None
@@ -131,7 +137,7 @@ class HasUnits:
 
 
 class HasPerUnit(HasUnits, BaseModel):
-    """Add system-base display state to a unit-aware model."""
+    """Add system-base representation state to a unit-aware model."""
 
     _system_base: float | None = PrivateAttr(default=None)
 
@@ -146,6 +152,13 @@ class HasPerUnit(HasUnits, BaseModel):
         Parameters
         ----------
         base_power : float or None
-            System base power to bind to this model.
+            System base power to bind to this model, or ``None`` to clear it.
+
+        Raises
+        ------
+        ValueError
+            If ``base_power`` is nonnumeric, non-finite, or zero.
         """
+        if base_power is not None:
+            validate_system_base(base_power)
         self._system_base = base_power

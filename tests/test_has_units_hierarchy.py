@@ -6,7 +6,7 @@ import pytest
 from infrasys import Component
 from pydantic import BaseModel, model_validator
 
-from infrasys.units import HasPerUnit, HasUnits, Unit, UnitSystem, set_unit_system
+from infrasys.units import HasPerUnit, HasUnits, Unit, UnitSystem, unit_system
 
 
 class Sensor(HasUnits, Component):
@@ -70,7 +70,6 @@ def test_has_per_units_with_natural_unit_input() -> None:
 
 def test_has_per_units_repr_device_base() -> None:
     """Test HasPerUnit repr in device base mode."""
-    set_unit_system(UnitSystem.DEVICE_BASE)
     gen = Generator(
         name="Gen1",
         base_power=100.0,
@@ -78,14 +77,14 @@ def test_has_per_units_repr_device_base() -> None:
         rating=0.8,
         voltage=1.0,
     )
-    repr_str = repr(gen)
-    assert "0.8 pu" in repr_str
-    assert "1.0 pu" in repr_str
+    with unit_system(UnitSystem.DEVICE_BASE):
+        repr_str = repr(gen)
+        assert "0.8 pu" in repr_str
+        assert "1.0 pu" in repr_str
 
 
 def test_has_per_units_repr_natural_units() -> None:
     """Test HasPerUnit repr in natural units mode."""
-    set_unit_system(UnitSystem.NATURAL_UNITS)
     gen = Generator(
         name="Gen1",
         base_power=100.0,
@@ -93,12 +92,12 @@ def test_has_per_units_repr_natural_units() -> None:
         rating=0.8,
         voltage=1.0,
     )
-    repr_str = repr(gen)
-    assert "80" in repr_str
-    assert "MVA" in repr_str
-    assert "13.8" in repr_str
-    assert "kV" in repr_str
-    set_unit_system(UnitSystem.DEVICE_BASE)
+    with unit_system(UnitSystem.NATURAL_UNITS):
+        repr_str = repr(gen)
+        assert "80" in repr_str
+        assert "MVA" in repr_str
+        assert "13.8" in repr_str
+        assert "kV" in repr_str
 
 
 def test_class_hierarchy_isinstance_sensor() -> None:
@@ -158,7 +157,6 @@ def test_system_base_binding_is_instance_local_and_excluded_from_serialization()
 
 def test_has_per_units_system_base_repr() -> None:
     """Test HasPerUnit repr with system base set."""
-    set_unit_system(UnitSystem.SYSTEM_BASE)
     gen = Generator(
         name="Gen1",
         base_power=100.0,
@@ -167,9 +165,9 @@ def test_has_per_units_system_base_repr() -> None:
         voltage=1.0,
     )
     gen.bind_system_base(150.0)
-    repr_str = repr(gen)
-    assert "pu (system)" in repr_str
-    set_unit_system(UnitSystem.DEVICE_BASE)
+    with unit_system(UnitSystem.SYSTEM_BASE):
+        repr_str = repr(gen)
+        assert "pu (system)" in repr_str
 
 
 def test_mixed_units_conversion() -> None:

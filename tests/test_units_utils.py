@@ -6,7 +6,7 @@ import pytest
 from pydantic import BaseModel, ValidationError
 
 from infrasys import HasUnits, Unit
-from infrasys.units import UnitSystem, set_unit_system
+from infrasys.units import UnitSystem
 from infrasys.units.conversion import convert_to_internal, format_for_display
 from infrasys.units.specs import UnitSpec
 
@@ -90,6 +90,19 @@ def test_convert_to_internal_with_float() -> None:
     assert convert_to_internal(50.5, spec=spec) == 50.5
 
 
+def test_convert_to_internal_rejects_boolean_number() -> None:
+    with pytest.raises(ValueError, match="Boolean values"):
+        convert_to_internal(True, spec=UnitSpec(unit="MW"))
+
+
+def test_convert_to_internal_rejects_boolean_mapping_magnitude() -> None:
+    with pytest.raises(ValueError, match="Boolean values"):
+        convert_to_internal(
+            {"value": True, "unit": "MW"},
+            spec=UnitSpec(unit="MW"),  # type: ignore[arg-type]
+        )
+
+
 def test_convert_to_internal_with_invalid_type() -> None:
     spec = UnitSpec(unit="MVA")
     with pytest.raises(ValueError, match="Expected"):
@@ -136,6 +149,12 @@ def test_has_units_normalizes_prefixed_natural_unit_input() -> None:
     model = PowerModel(base_power=100.0, power={"value": 5000.0, "unit": "kW"})
 
     assert model.power == 0.05
+
+
+@pytest.mark.parametrize("value", [True, {"value": True, "unit": "MW"}])
+def test_has_units_rejects_boolean_magnitudes(value: object) -> None:
+    with pytest.raises(ValidationError, match="Boolean values"):
+        PowerModel(base_power=100.0, power=value)  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize(
@@ -206,6 +225,7 @@ def test_has_units_rejects_incompatible_natural_unit_input() -> None:
     ("value", "message"),
     [
         ({"value": "not numeric", "unit": "MW"}, "value' must be numeric"),
+        ({"value": 10**400, "unit": "MW"}, "value' must be numeric"),
         ({"value": 1.0, "unit": None}, "unit' must be a non-empty string"),
         ({"value": 1.0, "unit": ""}, "unit' must be a non-empty string"),
     ],
@@ -238,6 +258,18 @@ def test_convert_to_internal_rejects_zero_base() -> None:
     with pytest.raises(ValueError, match="non-zero"):
         convert_to_internal(
             {"value": 100.0, "unit": "MW"}, spec=spec, base_value=0.0, base_unit="MW"
+        )
+
+
+def test_convert_to_internal_rejects_base_outside_float_range() -> None:
+    spec = UnitSpec(unit="pu", base="base_power")
+
+    with pytest.raises(ValueError, match="finite and non-zero"):
+        convert_to_internal(
+            {"value": 100.0, "unit": "MW"},
+            spec=spec,
+            base_value=10**400,
+            base_unit="MW",
         )
 
 
@@ -287,7 +319,6 @@ def test_convert_to_internal_with_dimensionality_error() -> None:
 
 def test_format_for_display_device_base_no_base_value() -> None:
     spec = UnitSpec(unit="pu", base="base_power")
-    set_unit_system(UnitSystem.DEVICE_BASE)
 
     assert format_for_display(0.8, spec=spec, unit_system=UnitSystem.DEVICE_BASE) == "0.8 pu"
 
@@ -320,3 +351,16 @@ def test_format_for_display_system_base_no_system_base() -> None:
         )
         == "0.8 pu"
     )
+
+
+@pytest.mark.parametrize("system_base", [0.0, float("inf"), float("nan"), True])
+def test_format_for_display_rejects_invalid_system_bases(system_base: float) -> None:
+    with pytest.raises(ValueError, match="finite and non-zero"):
+        format_for_display(
+            0.8,
+            spec=UnitSpec(unit="pu", base="base_power"),
+            unit_system=UnitSystem.SYSTEM_BASE,
+            base_value=100.0,
+            base_unit="MVA",
+            system_base=system_base,
+        )
