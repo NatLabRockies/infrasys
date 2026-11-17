@@ -20,6 +20,7 @@ on:
 
 concurrency:
   group: release-please-${{ inputs.target_branch || github.ref_name }}
+  # Do not cancel a pending release run when another push or dispatch is queued.
   queue: max
 
 permissions:
