@@ -55,6 +55,7 @@ jobs:
             echo "::error::The main branch requires a 2.x or later release version."
             exit 1
           fi
+          # Only these branches trigger the workflow when a release PR is merged.
           if [[ "$TARGET_BRANCH" != "v1.x.x" && "$TARGET_BRANCH" != "main" ]]; then
             echo "::error::Select main or v1.x.x."
             exit 1
