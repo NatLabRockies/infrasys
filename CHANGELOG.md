@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.3.0](https://github.com/NatLabRockies/infrasys/compare/v1.2.1...v1.3.0) (2026-11-17)
+
+
+### Features
+
+* **time-series:** support calendar-month resolution ([#186](https://github.com/NatLabRockies/infrasys/issues/186)) ([7d53c64](https://github.com/NatLabRockies/infrasys/commit/7d53c64f7f82c0445c4b6ecfadf13f2004faac37))
+
+
+### Miscellaneous Chores
+
+* request release 1.3.0 ([eb7aab7](https://github.com/NatLabRockies/infrasys/commit/eb7aab79f47d98b1b070792dbd27e4d1ab0564c2))
+
 ## [1.2.1](https://github.com/NatLabRockies/infrasys/compare/v1.2.0...v1.2.1) (2026-08-28)
 
 
