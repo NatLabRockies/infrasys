@@ -160,6 +160,13 @@ inputs to `convert_to_internal`. `Unit(unit, *, base=None)` and
 `UnitSpec(unit, *, base=None)` keep the unit name as the primary argument and the
 base reference keyword-only.
 
+This mapping is the interface between input parsing and Pydantic validation and
+serialization. `UnitInput` describes its current shape, and shared key constants
+keep the implementation aligned so a future serialization change can update
+the contract and Pydantic hooks deliberately. `VALUE_KEY` and `UNIT_KEY` are
+`Final` so type checkers catch accidental reassignment; `Final` has no runtime
+effect.
+
 ## Other input and persistence contracts
 
 The mixin precedes `BaseModel` or `Component` in the inheritance list. Numeric
