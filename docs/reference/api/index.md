@@ -13,5 +13,6 @@
     time_series
     location
     quantities
+    units
     function_data
 ```
