@@ -197,9 +197,3 @@ Unit display honors `Field(repr=False)`. Structured values retain their native
 model representation in every display mode; only scalar values receive numeric
 unit formatting. The initial migration preserves the source formatting
 limitations for compound rates.
-
-The implementation and regression tests originate in r2x-core `feat/csv-2`
-(PR #167) at `dd44fac8b231ab7bb1b96641b560e9617fca5725`, rather than R2X main.
-At migration time, `feat/csv-2` was the only matching remote branch; an exact
-lookup for `feat/csv` returned no branch. Infrasys does not import R2X.
-R2X ingestion, parser policy, and automatic system-base binding remain in R2X.
