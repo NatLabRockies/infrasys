@@ -11,7 +11,7 @@ from pydantic_core import core_schema
 
 from .conversion import convert_unit_input
 from .schema import (
-    PER_UNIT_UNIT,
+    PER_UNIT_LABEL,
     UNIT_SCHEMA_METADATA_KEY,
     UNIT_KEY,
     UNIT_SPEC_METADATA_KEY,
@@ -196,10 +196,10 @@ class UnitSpec:
                     and {VALUE_KEY, UNIT_KEY} <= value.keys()
                     and isinstance(value[VALUE_KEY], dict)
                 ):
-                    if set(value) != {VALUE_KEY, UNIT_KEY} or value[UNIT_KEY] != PER_UNIT_UNIT:
+                    if set(value) != {VALUE_KEY, UNIT_KEY} or value[UNIT_KEY] != PER_UNIT_LABEL:
                         msg = (
                             f"Serialized structured unit value must be "
-                            f"{{{VALUE_KEY!r}: ..., {UNIT_KEY!r}: {PER_UNIT_UNIT!r}}}"
+                            f"{{{VALUE_KEY!r}: ..., {UNIT_KEY!r}: {PER_UNIT_LABEL!r}}}"
                         )
                         raise ValueError(msg)
                     return next_validator(value[VALUE_KEY])
@@ -212,7 +212,7 @@ class UnitSpec:
                     {
                         VALUE_KEY: core_schema.typed_dict_field(inner_schema),
                         UNIT_KEY: core_schema.typed_dict_field(
-                            core_schema.literal_schema([PER_UNIT_UNIT])
+                            core_schema.literal_schema([PER_UNIT_LABEL])
                         ),
                     },
                     extra_behavior="forbid",
@@ -226,7 +226,7 @@ class UnitSpec:
                 """Keep Pydantic's model serialization and mark relative values."""
                 result: dict[str, object] = next_serializer(value)
                 return (
-                    {VALUE_KEY: result, UNIT_KEY: PER_UNIT_UNIT}
+                    {VALUE_KEY: result, UNIT_KEY: PER_UNIT_LABEL}
                     if self.base is not None
                     else result
                 )

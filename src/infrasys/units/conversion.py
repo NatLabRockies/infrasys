@@ -8,7 +8,7 @@ import pint
 
 from infrasys.base_quantity import ureg
 
-from .schema import PER_UNIT_UNIT, UnitInput
+from .schema import PER_UNIT_LABEL, UnitInput
 from .validation import (
     parse_unit_input,
     reject_boolean_magnitude,
@@ -70,8 +70,8 @@ def convert_unit_input(
     """Convert one unit mapping to the model's internal value."""
     input_value, input_unit = parse_unit_input(value)
 
-    if spec.unit == PER_UNIT_UNIT:
-        if input_unit == PER_UNIT_UNIT:
+    if spec.unit == PER_UNIT_LABEL:
+        if input_unit == PER_UNIT_LABEL:
             return input_value
         if spec.base is None:
             msg = "Per-unit conversion requires a declared base field"
@@ -81,7 +81,7 @@ def convert_unit_input(
         base_value, base_unit = validate_conversion_base(
             spec, base_value=base_value, base_unit=base_unit
         )
-        target_unit = base_unit if spec.unit == PER_UNIT_UNIT else spec.unit
+        target_unit = base_unit if spec.unit == PER_UNIT_LABEL else spec.unit
     else:
         base_value = None
         base_unit = None
@@ -162,22 +162,22 @@ def format_for_display(
         return f"{value} {spec.unit}"
 
     if unit_system == UnitSystem.DEVICE_BASE:
-        return f"{value} {PER_UNIT_UNIT}"
+        return f"{value} {PER_UNIT_LABEL}"
 
     if unit_system == UnitSystem.NATURAL_UNITS:
         if base_value is None or base_unit is None:
-            return f"{value} {PER_UNIT_UNIT}"
+            return f"{value} {PER_UNIT_LABEL}"
         natural_value = value * base_value
         return f"{natural_value:.4g} {base_unit}"
 
     if unit_system == UnitSystem.SYSTEM_BASE:
         if base_value is None:
-            return f"{value} {PER_UNIT_UNIT}"
+            return f"{value} {PER_UNIT_LABEL}"
         natural_value = value * base_value
         if system_base is not None:
             validate_system_base(system_base)
             system_pu = natural_value / system_base
-            return f"{system_pu:.4g} {PER_UNIT_UNIT} (system)"
-        return f"{value} {PER_UNIT_UNIT}"
+            return f"{system_pu:.4g} {PER_UNIT_LABEL} (system)"
+        return f"{value} {PER_UNIT_LABEL}"
 
-    return f"{value} {PER_UNIT_UNIT}"
+    return f"{value} {PER_UNIT_LABEL}"

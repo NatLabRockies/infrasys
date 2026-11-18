@@ -16,7 +16,7 @@ from typing import Final, Generic, Literal, TypeVar, TypedDict
 
 VALUE_KEY: Final = "value"
 UNIT_KEY: Final = "unit"
-PER_UNIT_UNIT: Final[Literal["pu"]] = "pu"
+PER_UNIT_LABEL: Final[Literal["pu"]] = "pu"
 UNIT_SPEC_METADATA_KEY: Final = "infrasys.unit_spec"
 UNIT_SCHEMA_METADATA_KEY: Final = "infrasys.unit_schema"
 
