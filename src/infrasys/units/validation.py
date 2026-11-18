@@ -67,29 +67,24 @@ def validate_conversion_base(
     return numeric_base, base_unit
 
 
-def validate_input_unit(input_unit: object) -> str:
-    """Return a nonempty unit name or reject a malformed unit mapping."""
-    if not isinstance(input_unit, str) or not input_unit:
-        msg = f"Unit mapping {UNIT_KEY!r} must be a non-empty string"
-        raise ValueError(msg)
-    return input_unit
-
-
-def parse_input_magnitude(value: object) -> float:
-    """Convert a supported unit-mapping magnitude to a float."""
-    msg = f"Unit mapping {VALUE_KEY!r} must be numeric"
-    reject_boolean_magnitude(value)
-    if not isinstance(value, (SupportsFloat, str)):
-        raise ValueError(msg)
-    try:
-        return float(value)
-    except (OverflowError, TypeError, ValueError) as error:
-        raise ValueError(msg) from error
-
-
 def parse_unit_input(value: object) -> tuple[float, str]:
     """Validate a unit mapping and return its magnitude and unit."""
     if not isinstance(value, dict) or VALUE_KEY not in value or UNIT_KEY not in value:
         msg = f"Expected a number or a mapping with {VALUE_KEY!r} and {UNIT_KEY!r} keys"
         raise ValueError(msg)
-    return parse_input_magnitude(value[VALUE_KEY]), validate_input_unit(value[UNIT_KEY])
+
+    magnitude = value[VALUE_KEY]
+    msg = f"Unit mapping {VALUE_KEY!r} must be numeric"
+    reject_boolean_magnitude(magnitude)
+    if not isinstance(magnitude, (SupportsFloat, str)):
+        raise ValueError(msg)
+    try:
+        parsed_magnitude = float(magnitude)
+    except (OverflowError, TypeError, ValueError) as error:
+        raise ValueError(msg) from error
+
+    unit = value[UNIT_KEY]
+    if not isinstance(unit, str) or not unit:
+        msg = f"Unit mapping {UNIT_KEY!r} must be a non-empty string"
+        raise ValueError(msg)
+    return parsed_magnitude, unit

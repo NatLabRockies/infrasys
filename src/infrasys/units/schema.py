@@ -12,12 +12,11 @@ conversion.
 
 from __future__ import annotations
 
-from typing import Final, Generic, Literal, TypeAlias, TypeVar, TypedDict
+from typing import Final, Generic, Literal, TypeVar, TypedDict
 
 VALUE_KEY: Final = "value"
 UNIT_KEY: Final = "unit"
-PerUnitLabel: TypeAlias = Literal["pu"]
-PER_UNIT_UNIT: Final[PerUnitLabel] = "pu"
+PER_UNIT_UNIT: Final[Literal["pu"]] = "pu"
 UNIT_SPEC_METADATA_KEY: Final = "infrasys.unit_spec"
 UNIT_SCHEMA_METADATA_KEY: Final = "infrasys.unit_schema"
 
