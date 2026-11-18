@@ -12,7 +12,7 @@ from pydantic_core import core_schema
 from .conversion import convert_unit_input
 from .schema import (
     PER_UNIT_UNIT,
-    STRUCTURED_UNIT_SCHEMA_METADATA_KEY,
+    UNIT_SCHEMA_METADATA_KEY,
     UNIT_KEY,
     UNIT_SPEC_METADATA_KEY,
     VALUE_KEY,
@@ -237,7 +237,7 @@ class UnitSpec:
                 json_schema_input_schema=core_schema.union_schema(
                     [inner_schema, serialized_schema]
                 ),
-                metadata={STRUCTURED_UNIT_SCHEMA_METADATA_KEY: serialized_schema},
+                metadata={UNIT_SCHEMA_METADATA_KEY: serialized_schema},
                 serialization=core_schema.wrap_serializer_function_ser_schema(
                     serialize_structured,
                     schema=inner_schema,
@@ -303,7 +303,7 @@ class UnitSpec:
         JsonSchemaValue
             The validation or serialization JSON schema.
         """
-        structured_schema = schema.get("metadata", {}).get(STRUCTURED_UNIT_SCHEMA_METADATA_KEY)
+        structured_schema = schema.get("metadata", {}).get(UNIT_SCHEMA_METADATA_KEY)
         if handler.mode == "serialization" and structured_schema is not None:
             return handler(structured_schema)
         return handler(schema)

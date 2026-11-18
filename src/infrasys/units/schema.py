@@ -19,7 +19,7 @@ UNIT_KEY: Final = "unit"
 PerUnitLabel: TypeAlias = Literal["pu"]
 PER_UNIT_UNIT: Final[PerUnitLabel] = "pu"
 UNIT_SPEC_METADATA_KEY: Final = "infrasys.unit_spec"
-STRUCTURED_UNIT_SCHEMA_METADATA_KEY: Final = "infrasys.structured_unit_schema"
+UNIT_SCHEMA_METADATA_KEY: Final = "infrasys.unit_schema"
 
 
 ValueType = TypeVar("ValueType")
