@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import types
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Union, cast, get_args, get_origin
+from typing import TYPE_CHECKING, Any, Union, get_args, get_origin
 
 from pydantic import BaseModel, GetCoreSchemaHandler
 from pydantic_core import core_schema
@@ -13,7 +13,6 @@ from .conversion import convert_unit_input
 from .schema import (
     PER_UNIT_UNIT,
     STRUCTURED_UNIT_SCHEMA_METADATA_KEY,
-    StructuredPerUnitMapping,
     UNIT_KEY,
     UNIT_SPEC_METADATA_KEY,
     VALUE_KEY,
@@ -227,10 +226,7 @@ class UnitSpec:
                 """Keep Pydantic's model serialization and mark relative values."""
                 result: dict[str, object] = next_serializer(value)
                 return (
-                    cast(
-                        StructuredPerUnitMapping,
-                        {VALUE_KEY: result, UNIT_KEY: PER_UNIT_UNIT},
-                    )
+                    {VALUE_KEY: result, UNIT_KEY: PER_UNIT_UNIT}
                     if self.base is not None
                     else result
                 )

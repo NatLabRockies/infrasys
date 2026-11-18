@@ -31,6 +31,3 @@ class UnitInput(TypedDict, Generic[ValueType, UnitType]):
 
     value: ValueType
     unit: UnitType
-
-
-StructuredPerUnitMapping: TypeAlias = UnitInput[dict[str, object], PerUnitLabel]
